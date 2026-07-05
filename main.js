@@ -160,6 +160,20 @@ app.whenReady().then(() => {
     }
   });
 
+  // Generic https GET (runs here to sidestep the renderer CSP). Used by optional local
+  // live-TV provider modules to reach their APIs. https only; no provider logic ships here.
+  ipcMain.handle('httpGet', async (_e, url) => {
+    try {
+      const u = String(url);
+      const okScheme = /^https:\/\//i.test(u) || /^http:\/\/(127\.0\.0\.1|localhost)(:|\/)/i.test(u);
+      if (!okScheme) return { error: 'https only' };
+      const r = await fetch(u);
+      return { ok: r.ok, status: r.status, body: await r.text() };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
   createWindow();
 });
 app.on('window-all-closed', () => app.quit());

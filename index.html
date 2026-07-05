@@ -24,17 +24,7 @@
 
     <h2>Players &amp; Sources</h2>
     <div id="sources"></div>
-    <form id="add-source">
-      <input id="src-name" placeholder="Name (e.g. Vidking)" required>
-      <input id="src-url" placeholder="https://player-site.com" required>
-      <input id="src-template" title="Paste the site's own embed URL using {id} {season} {episode} tokens; movies auto-trim season/episode. Blank = {origin}/embed/{type}/{id}/{season}/{episode}" placeholder="Embed pattern (optional): {origin}/embed/{type}/{id}/{season}/{episode}">
-      <select id="src-cat">
-        <option value="vod">Movies / TV Shows</option>
-        <option value="anime">Anime</option>
-        <option value="live">Live TV</option>
-      </select>
-      <button type="submit">+ Add player / source</button>
-    </form>
+    <button id="add-source-btn" class="add-btn">+ Add player / source</button>
   </div>
 
   <div id="content">
@@ -53,6 +43,8 @@
       <webview id="webview" allowpopups hidden></webview>
     </div>
   </div>
+
+  <div id="wizard" hidden></div>
 
   <script src="renderer.js"></script>
 </body>

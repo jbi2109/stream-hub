@@ -64,8 +64,9 @@ On Windows you can also double-click **`launch.bat`**.
 
 1. Paste a free **TMDB API key** into the Settings field (themoviedb.org → Settings → API →
    API Key v3) to power the Browse home.
-2. Under **Settings**, click **+ Add player / source**, enter a name and URL, and pick a category
-   (Movies/TV Shows, Anime, or Live TV). Optionally set a watch-URL pattern; pick a **default player**.
+2. Under **Settings**, click **+ Add player / source** — a short **step-by-step wizard** (Name →
+   Type → URL → Pattern) walks you through it, with an example on hover over each box and a live
+   preview of the watch link it builds. Pick a **default player** once you have a few.
 3. **Browse** (the landing page) to discover Movies / TV / Anime and click a title; on the detail
    page choose a source and hit **Watch** (swap sources mid-watch from the top bar). The **Live TV**
    and **YouTube** tabs launch those directly.
@@ -93,10 +94,10 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 40-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 44-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
-picker/switcher, the tabbed library, categorisation, and persistence.
+picker/switcher, the add-player wizard, the tabbed library, categorisation, and persistence.
 
 ## Disclaimer
 

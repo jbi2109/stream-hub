@@ -172,11 +172,7 @@ async function main() {
   ok('UI boots on Browse: 5 tabs, no-key prompt, no default sources');
 
   // 2. add local test source + click it -> interaction regression check
-  await page.eval(`
-    document.getElementById('src-name').value = 'LocalTest';
-    document.getElementById('src-url').value = '${SITE}';
-    document.getElementById('add-source').requestSubmit();
-  `);
+  await page.eval(`addSource({ name: 'LocalTest', url: '${SITE}', category: 'vod' })`);
   assert.strictEqual(await page.eval(`document.querySelectorAll('#sources li').length`), 1, 'source not added');
   await page.eval(`[...document.querySelectorAll('#sources li')].find((li) => li.textContent.includes('LocalTest')).click()`);
   assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), false, 'webview must show after choosing a source');
@@ -368,12 +364,7 @@ async function main() {
 
   // 16. add a Live TV source via the category select; unified list shows it with a category label,
   //     and the Default-player picker lists only Movies/TV/Anime players (not Live TV).
-  await page.eval(`
-    document.getElementById('src-name').value = 'LiveFix';
-    document.getElementById('src-url').value = '${PLAYER}';
-    document.getElementById('src-cat').value = 'live';
-    document.getElementById('add-source').requestSubmit();
-  `);
+  await page.eval(`addSource({ name: 'LiveFix', url: '${PLAYER}', category: 'live' })`);
   const srcs = await page.eval(`JSON.parse(localStorage.getItem('sources'))`);
   assert.ok(srcs.some((s) => s.name === 'LiveFix' && s.category === 'live'), 'live source not stored with category');
   assert.ok(await page.eval(`[...document.querySelectorAll('#sources li')].some((li) => li.textContent.includes('LiveFix') && li.textContent.includes('Live TV'))`), 'live source not shown with a category label in the unified list');
@@ -461,12 +452,7 @@ async function main() {
   ok('persistence: sources + continue + watch later (incl. live) survive restart');
 
   // 23. Browse: TMDB grid renders (add a vod source + TMDB key first)
-  await page.eval(`
-    document.getElementById('src-name').value = 'BrowseSrc';
-    document.getElementById('src-url').value = '${SITE}';
-    document.getElementById('src-cat').value = 'vod';
-    document.getElementById('add-source').requestSubmit();
-  `);
+  await page.eval(`addSource({ name: 'BrowseSrc', url: '${SITE}', category: 'vod' })`);
   await page.eval(`(() => {
     const k = document.getElementById('tmdb-key');
     k.value = 'testkey';
@@ -541,12 +527,7 @@ async function main() {
 
   // 28. edit a source's play-URL pattern via the inline ✎ editor; it persists
   await page.eval(`document.getElementById('home-btn').click()`); // leave any embed
-  await page.eval(`
-    document.getElementById('src-name').value = 'CineTest';
-    document.getElementById('src-url').value = '${PLAYER}';
-    document.getElementById('src-cat').value = 'vod';
-    document.getElementById('add-source').requestSubmit();
-  `);
+  await page.eval(`addSource({ name: 'CineTest', url: '${PLAYER}', category: 'vod' })`);
   await page.eval(`[...document.querySelectorAll('#sources li')].find(li => li.textContent.includes('CineTest')).querySelector('button[title^="Edit"]').click()`);
   await page.eval(`(() => {
     const inp = document.querySelector('#sources li input');
@@ -583,6 +564,53 @@ async function main() {
   await page.eval(`document.getElementById('browse-btn').click()`);
   assert.strictEqual(await page.eval(`document.getElementById('src-switch').hidden`), true, 'src-switch should hide off the embed');
   ok('topbar: switch source hidden when not watching');
+
+  // 32b. Add-player wizard: Movies branch, live preview, hover example, adds with custom pattern
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`document.getElementById('add-source-btn').click()`);
+  await until(() => page.eval(`!document.getElementById('wizard').hidden && !!document.querySelector('.wiz-card')`), 'wizard opened');
+  assert.ok(await page.eval(`!!document.querySelector('.wiz-example')`), 'wizard step should carry a hover example');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'WizPlayer'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> type
+  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('Movies')).click()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> url
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'https://wiz.example'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> pattern (last)
+  await until(() => page.eval(`(document.querySelector('.wiz-preview')||{}).textContent?.includes('/embed/movie/27205')`), 'wizard shows default preview');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = '{origin}/player/{id}/{season}/{episode}'; i.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`(document.querySelector('.wiz-preview')||{}).textContent?.includes('/player/27205')`), 'wizard preview updates for custom pattern');
+  await page.eval(`document.querySelector('.wiz-next').click()`); // Add
+  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'wizard closes after Add');
+  assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'WizPlayer'); return s && s.category === 'vod' && s.template === '{origin}/player/{id}/{season}/{episode}'; })()`), 'wizard did not add player with custom pattern');
+  ok('wizard: guided add (Movies) with live preview + hover example');
+
+  // 32c. wizard Live TV branch: 3 steps (no pattern), adds a live source
+  await page.eval(`document.getElementById('add-source-btn').click()`);
+  await until(() => page.eval(`!!document.querySelector('.wiz-card')`), 'wizard reopened');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'WizLive'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`);
+  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('Live')).click()`);
+  assert.strictEqual(await page.eval(`document.querySelectorAll('.wiz-dots span').length`), 3, 'Live TV wizard should be 3 steps');
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> url (last)
+  assert.strictEqual(await page.eval(`document.querySelector('.wiz-next').textContent`), 'Add', 'URL is the last step for Live TV');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'https://livesite.example'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`);
+  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'live wizard closes');
+  assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'WizLive'); return s && s.category === 'live' && !s.template; })()`), 'wizard Live TV entry wrong');
+  ok('wizard: Live TV branch is 3 steps + adds a live source');
+
+  // 32d. sh.httpGet fetches a (loopback) URL body via main — the hook local live providers use
+  assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${SITE}/'); return !!(r && r.body && r.body.includes('Widow')); })()`), 'sh.httpGet should return the fetched body');
+  ok('ipc: sh.httpGet returns fetched body (for local live providers)');
+
+  // 32e. live-provider registry: a stub provider's catalog renders in the Live tab; click embeds it
+  await page.eval(`registerLiveProvider({ name: 'FixtureLive', list: async () => [{ title: 'Chan 1', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') }] })`);
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Chan 1'))`), 'live provider catalog tile');
+  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Chan 1')).click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/7'`), 'live tile embeds the stream');
+  ok('live: registered provider catalog renders + click embeds the stream');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`

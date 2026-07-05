@@ -5,4 +5,5 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('sh', {
   onVideoProgress: (cb) => ipcRenderer.on('video-progress', (_e, d) => cb(d)),
   tmdb: (path, params) => ipcRenderer.invoke('tmdb', { path, params }),
+  httpGet: (url) => ipcRenderer.invoke('httpGet', url), // generic GET for local live-provider modules
 });

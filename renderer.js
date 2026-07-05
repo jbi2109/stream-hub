@@ -18,6 +18,13 @@ let defaultSource = load('defaultSource', null); // preferred player URL for Mov
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
+// Optional live-TV providers, registered at runtime by a local, gitignored module
+// (live-providers.local.js). The committed app ships none — a fresh clone stays neutral.
+// A provider = { name, list(): Promise<[{ title, logo?, onOpen() }]> }.
+const liveProviders = [];
+window.registerLiveProvider = (p) => { liveProviders.push(p); if (browseTab === 'live' && !$('browse').hidden) renderBrowse(); };
+window.openLiveEmbed = (url) => open(url); // stable API for a provider to embed a stream in the webview
+
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ''; } };
 const sourceCategory = (url) => sources.find((s) => hostOf(s.url) === hostOf(url))?.category;
 const isLiveUrl = (url) => sourceCategory(url) === 'live';
@@ -536,19 +543,22 @@ async function renderBrowse() {
 
   if (browseTab === 'live') {
     const live = sources.filter((s) => s.category === 'live');
-    if (!live.length) {
+    if (!live.length && !liveProviders.length) {
       nodes.push(emptyMsg('Add a Live TV source to see it here.'));
     } else {
-      const grid = document.createElement('div');
-      grid.className = 'grid tiles';
-      grid.append(...live.map((s) => {
-        const el = document.createElement('div');
-        el.className = 'tile';
-        el.textContent = s.name;
-        el.onclick = () => { currentSource = s.url; open(s.url); };
-        return el;
-      }));
-      nodes.push(grid);
+      for (const p of liveProviders) nodes.push(liveProviderSection(p)); // catalogs from a local module, if any
+      if (live.length) {
+        const grid = document.createElement('div');
+        grid.className = 'grid tiles';
+        grid.append(...live.map((s) => {
+          const el = document.createElement('div');
+          el.className = 'tile';
+          el.textContent = s.name;
+          el.onclick = () => { currentSource = s.url; open(s.url); };
+          return el;
+        }));
+        nodes.push(grid);
+      }
     }
     $('browse').replaceChildren(...nodes);
     return;
@@ -584,6 +594,27 @@ async function renderBrowse() {
   grid.append(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(kind, r)));
   // keep focus in the search box while typing
   if (browseQuery) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
+}
+
+// Render one registered live provider's catalog: a titled section of tiles; click -> its onOpen().
+function liveProviderSection(p) {
+  const sec = document.createElement('div');
+  sec.className = 'live-provider';
+  const h = document.createElement('h3'); h.className = 'live-provider-name'; h.textContent = p.name;
+  const grid = document.createElement('div'); grid.className = 'grid tiles'; grid.textContent = 'Loading…';
+  sec.append(h, grid);
+  Promise.resolve().then(() => p.list()).then((items) => {
+    grid.textContent = '';
+    if (!items || !items.length) { grid.textContent = 'Nothing live right now.'; return; }
+    grid.append(...items.map((it) => {
+      const el = document.createElement('div'); el.className = 'tile';
+      if (it.logo) { const img = document.createElement('img'); img.className = 'tile-logo'; img.src = it.logo; img.onerror = () => img.remove(); el.append(img); }
+      const t = document.createElement('div'); t.textContent = it.title; el.append(t);
+      el.onclick = () => it.onOpen();
+      return el;
+    }));
+  }).catch((e) => { grid.textContent = 'Failed to load (' + (e && e.message || e) + ').'; });
+  return sec;
 }
 
 let browseQuery = '';
@@ -838,18 +869,110 @@ $('watch-later').onclick = async () => {
   setTimeout(() => { btn.textContent = '+ Watch Later'; }, 1500);
 };
 
-$('add-source').onsubmit = (e) => {
-  e.preventDefault();
-  let url = $('src-url').value.trim();
+// Add a player/source (shared by the wizard + tests). Auto-prefixes the URL scheme.
+function addSource({ name, url, category, template }) {
+  url = (url || '').trim();
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  const src = { name: $('src-name').value.trim(), url, category: $('src-cat').value };
-  const template = $('src-template').value.trim();
-  if (template) src.template = template;
+  const src = { name: (name || '').trim(), url, category: category || 'vod' };
+  if (template && template.trim()) src.template = template.trim();
   sources.push(src);
   store('sources', sources);
   renderSources();
-  e.target.reset();
-};
+  return src;
+}
+
+// Step-by-step "Add player / source" modal wizard, with a per-field hover example + live preview.
+function openAddWizard() {
+  const data = { name: '', category: 'vod', url: '', template: '' };
+  let i = 0;
+  const wiz = $('wizard');
+  const close = () => { wiz.hidden = true; wiz.replaceChildren(); };
+
+  const steps = () => {
+    const s = [
+      { key: 'name', title: 'Name it', label: 'What do you want to call this?', placeholder: 'e.g. My Player',
+        example: 'A short label shown in your list and the source picker. Example: “My Player”.',
+        valid: () => data.name.trim().length > 0 },
+      { key: 'category', title: 'Pick a type', label: 'What kind of source is this?',
+        example: 'Movies/TV & Anime play through an embed pattern. Live TV opens the site/stream directly.',
+        choices: [['vod', 'Movies / TV Shows'], ['anime', 'Anime'], ['live', 'Live TV']] },
+      { key: 'url', title: 'Paste the address', label: 'The player or site web address', placeholder: 'https://example-player.com',
+        example: 'The site that hosts the embed player. Example: https://example-player.com',
+        valid: () => /\./.test(data.url.trim()) },
+    ];
+    if (data.category !== 'live') s.push({
+      key: 'template', title: 'Watch-link pattern', label: 'How does it build a watch link? (optional)',
+      placeholder: '{origin}/embed/{type}/{id}/{season}/{episode}', preview: true,
+      example: 'Leave blank for the common /embed/ format. Tokens: {origin}=site · {type}=movie/tv · {id}=TMDB id · {season}/{episode} for TV (blank on movies).' });
+    return s;
+  };
+
+  const render = () => {
+    const S = steps();
+    if (i >= S.length) i = S.length - 1;
+    const step = S[i], total = S.length, isLast = i === total - 1;
+
+    const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+    const card = document.createElement('div'); card.className = 'wiz-card';
+
+    const head = document.createElement('div'); head.className = 'wiz-head';
+    const dots = document.createElement('div'); dots.className = 'wiz-dots';
+    for (let d = 0; d < total; d++) { const dot = document.createElement('span'); if (d === i) dot.className = 'on'; dots.append(dot); }
+    const count = document.createElement('span'); count.className = 'wiz-count'; count.textContent = `Step ${i + 1} of ${total}`;
+    const x = document.createElement('button'); x.className = 'wiz-x'; x.textContent = '✕'; x.onclick = close;
+    head.append(dots, count, x);
+    const h = document.createElement('h3'); h.textContent = step.title;
+    const label = document.createElement('div'); label.className = 'wiz-label'; label.textContent = step.label;
+    card.append(head, h, label);
+
+    // nav buttons created early so field handlers can toggle Next
+    const nav = document.createElement('div'); nav.className = 'wiz-nav';
+    const back = document.createElement('button'); back.className = 'wiz-back'; back.textContent = i === 0 ? 'Cancel' : 'Back';
+    back.onclick = () => { if (i === 0) close(); else { i--; render(); } };
+    const next = document.createElement('button'); next.className = 'wiz-next'; next.textContent = isLast ? 'Add' : 'Next';
+    const isValid = () => (step.valid ? step.valid() : true);
+    next.disabled = !isValid();
+    next.onclick = () => { if (!isValid()) return; if (isLast) { addSource(data); close(); } else { i++; render(); } };
+    nav.append(back, next);
+
+    const field = document.createElement('div'); field.className = 'wiz-field';
+    let prev;
+    function updatePreview() {
+      if (!prev) return;
+      const src = { url: data.url.trim() || 'https://example-player.com', template: data.template.trim() || undefined };
+      prev.textContent = `Preview ▸ Movie: ${buildUrl(src, 'movie', 27205)}  ·  TV S1E1: ${buildUrl(src, 'tv', 27205, 1, 1)}`;
+    }
+    if (step.choices) {
+      const row = document.createElement('div'); row.className = 'wiz-choices';
+      for (const [val, txt] of step.choices) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = txt;
+        b.className = data.category === val ? 'on' : '';
+        b.onclick = () => { data.category = val; render(); };
+        row.append(b);
+      }
+      field.append(row);
+    } else {
+      const inp = document.createElement('input'); inp.className = 'wiz-input';
+      inp.placeholder = step.placeholder || ''; inp.value = data[step.key] || '';
+      inp.oninput = () => { data[step.key] = inp.value; next.disabled = !isValid(); updatePreview(); };
+      inp.onkeydown = (e) => { if (e.key === 'Enter' && !next.disabled) next.click(); };
+      field.append(inp);
+      setTimeout(() => inp.focus(), 0);
+    }
+    const ex = document.createElement('div'); ex.className = 'wiz-example'; ex.textContent = step.example;
+    field.append(ex);
+    if (step.preview) { prev = document.createElement('div'); prev.className = 'wiz-preview'; field.append(prev); updatePreview(); }
+
+    card.append(field, nav);
+    overlay.append(card);
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    wiz.replaceChildren(overlay);
+    wiz.hidden = false;
+  };
+  render();
+}
+
+$('add-source-btn').onclick = openAddWizard;
 
 const tmdbKeyInput = $('tmdb-key');
 tmdbKeyInput.value = tmdbKey;
@@ -875,3 +998,6 @@ webview.addEventListener('leave-html-full-screen', () => webview.classList.remov
 
 renderSources();
 showBrowse(); // Browse is the landing page
+
+// Optionally load local-only live-TV providers (gitignored; absent on a fresh clone -> silent no-op).
+import('./live-providers.local.js').catch(() => {});

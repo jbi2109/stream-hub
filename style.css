@@ -233,6 +233,108 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 }
 #browse .tile:hover { transform: translateY(-3px); }
 
+.add-btn {
+  background: #2f6feb;
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  padding: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.add-btn:hover { background: #4c8dff; }
+
+/* ---- add-player wizard (modal) ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.wiz-card {
+  width: 460px;
+  max-width: calc(100vw - 40px);
+  background: #1c1f26;
+  border: 1px solid #3a4150;
+  border-radius: 12px;
+  padding: 20px 22px 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+}
+.wiz-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.wiz-dots { display: flex; gap: 6px; flex: 1; }
+.wiz-dots span { width: 9px; height: 9px; border-radius: 50%; background: #3a4150; }
+.wiz-dots span.on { background: #4c8dff; }
+.wiz-count { font-size: 11px; color: #8a919e; }
+.wiz-x { background: none; border: none; color: #8a919e; font-size: 14px; cursor: pointer; }
+.wiz-x:hover { color: #fff; }
+.wiz-card h3 { font-size: 20px; margin-bottom: 4px; }
+.wiz-label { color: #b6bcc7; font-size: 13px; margin-bottom: 14px; }
+.wiz-field { margin-bottom: 16px; }
+.wiz-input {
+  width: 100%;
+  background: #262a33;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  color: #e6e6e6;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.wiz-input:focus { outline: none; border-color: #4c8dff; }
+.wiz-choices { display: flex; flex-direction: column; gap: 8px; }
+.wiz-choices button {
+  text-align: left;
+  background: #262a33;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  color: #e6e6e6;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.wiz-choices button:hover { background: #2f3542; }
+.wiz-choices button.on { border-color: #4c8dff; background: #223055; }
+/* the hover/focus tutorial bubble (shown when you hover or focus the box) */
+.wiz-example {
+  display: none;
+  margin-top: 8px;
+  background: #14161a;
+  border-left: 3px solid #4c8dff;
+  border-radius: 0 6px 6px 0;
+  color: #b6bcc7;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+}
+.wiz-field:hover .wiz-example,
+.wiz-field:focus-within .wiz-example { display: block; }
+.wiz-preview {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: #8a919e;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.wiz-nav { display: flex; justify-content: space-between; gap: 10px; }
+.wiz-back {
+  background: #262a33; border: none; color: #e6e6e6;
+  border-radius: 8px; padding: 9px 18px; cursor: pointer; font-size: 14px;
+}
+.wiz-back:hover { background: #323847; }
+.wiz-next {
+  background: #2f6feb; border: none; color: #fff;
+  border-radius: 8px; padding: 9px 22px; cursor: pointer; font-size: 14px; font-weight: 600;
+}
+.wiz-next:hover { background: #4c8dff; }
+.wiz-next:disabled { background: #2a3140; color: #6b7280; cursor: not-allowed; }
+
+/* ---- live provider catalog (Live TV tab) ---- */
+.live-provider { margin-bottom: 20px; }
+.live-provider-name { font-size: 15px; margin-bottom: 10px; color: #cfd4dc; }
+.tile-logo { height: 34px; max-width: 80%; object-fit: contain; margin-bottom: 6px; }
+
 /* ---- native detail page ---- */
 .detail-back { padding: 14px 24px 0; }
 .detail-back button {
