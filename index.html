@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:">
+  <title>Stream Hub</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="sidebar">
+    <h1>Stream Hub</h1>
+
+    <h2>Sources</h2>
+    <div id="sources"></div>
+    <form id="add-source">
+      <input id="src-name" placeholder="Name" required>
+      <input id="src-url" placeholder="https://site.com" required>
+      <select id="src-cat">
+        <option value="vod">Movies / TV Shows</option>
+        <option value="live">Live TV</option>
+      </select>
+      <button type="submit">+ Add source</button>
+    </form>
+
+    <button id="home-btn">&#127968; Home</button>
+  </div>
+
+  <div id="content">
+    <div id="topbar">
+      <button id="back" title="Back">&#8592;</button>
+      <button id="forward" title="Forward">&#8594;</button>
+      <button id="src-home" title="Source home">&#8962;</button>
+      <span id="address"></span>
+      <button id="watch-later" title="Add this to Watch Later">+ Watch Later</button>
+    </div>
+    <div id="view">
+      <div id="home"></div>
+      <webview id="webview" allowpopups hidden></webview>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
