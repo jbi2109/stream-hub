@@ -475,6 +475,21 @@ async function main() {
   assert.ok(await page.eval(`document.getElementById('webview').src.includes('youtube.com')`), 'YouTube tab did not open youtube.com');
   ok('browse: YouTube tab opens youtube.com');
 
+  // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
+  await page.eval(`
+    document.getElementById('home').hidden = true;
+    document.getElementById('browse').hidden = true;
+    document.getElementById('webview').hidden = false;
+    document.getElementById('webview').src = '${SITE}/webauthn-check';
+  `);
+  const waTarget = await until(async () =>
+    (await targets()).find((t) => t.url === `${SITE}/webauthn-check` && t.webSocketDebuggerUrl), 'webauthn guest target');
+  const waGuest = await CDP.connect(waTarget.webSocketDebuggerUrl);
+  const pk = await until(() => waGuest.eval(`typeof window.PublicKeyCredential`), 'guest webauthn evaluated', 8000);
+  assert.strictEqual(pk, 'undefined', 'WebAuthn not neutered in guest');
+  waGuest.close();
+  ok('webauthn: passkey API neutered in guest pages');
+
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);
 }

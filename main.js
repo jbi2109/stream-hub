@@ -11,6 +11,12 @@ if (process.argv.includes('--test-profile')) {
 
 // Some streaming sites / Cloudflare block the Electron user agent
 app.userAgentFallback = app.userAgentFallback.replace(/(Electron|stream-hub)\/\S+\s?/g, '');
+const DEFAULT_UA = app.userAgentFallback;
+
+// Kill the "Choose a passkey" (WebAuthn/Windows Hello) prompt Google auto-triggers on its
+// login page — it spams and derails password login. This media app needs no passkeys.
+app.commandLine.appendSwitch('disable-features',
+  'WebAuthenticationConditionalUI,WebAuthentication,WebAuthenticationRemoteDesktopSupport');
 
 // Login popups allowed for these hosts only; everything else cross-host is an ad
 const AUTH_HOSTS = ['accounts.google.com', 'appleid.apple.com', 'www.facebook.com',
@@ -21,6 +27,7 @@ const AUTH_HOSTS = ['accounts.google.com', 'appleid.apple.com', 'www.facebook.co
 const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0';
 const GOOGLE_LOGIN_HOSTS = ['accounts.google.com', 'accounts.youtube.com'];
 if (process.env.SH_TEST_UA_HOST) GOOGLE_LOGIN_HOSTS.push(process.env.SH_TEST_UA_HOST);
+const isGoogleLoginHost = (url) => { try { return GOOGLE_LOGIN_HOSTS.includes(new URL(url).host); } catch { return false; } };
 
 // Read playback position from the player, walking into cross-origin subframes.
 // WebFrameMain.executeJavaScript runs from the privileged main process, so it is
@@ -53,6 +60,11 @@ app.on('web-contents-created', (_e, contents) => {
     if (v) contents.hostWebContents?.send('video-progress', v);
   }, 5000);
   contents.on('destroyed', () => clearInterval(timer));
+  // Google's client JS checks navigator.userAgent (not just the header) — present Firefox
+  // on its login hosts so it doesn't block the embedded browser; restore default elsewhere.
+  contents.on('did-start-navigation', (_ev, url, _inPage, isMainFrame) => {
+    if (isMainFrame) contents.setUserAgent(isGoogleLoginHost(url) ? FIREFOX_UA : DEFAULT_UA);
+  });
   // every window we allow is a login popup — make its JS environment report Firefox too
   contents.on('did-create-window', (win) => win.webContents.setUserAgent(FIREFOX_UA));
   contents.setWindowOpenHandler(({ url }) => {
@@ -115,6 +127,11 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
+  });
+  // Give every guest <webview> a preload that neuters WebAuthn in its main world.
+  win.webContents.on('will-attach-webview', (_e, webPreferences) => {
+    webPreferences.preload = path.join(__dirname, 'webview-preload.js');
+    webPreferences.contextIsolation = false; // so the preload runs in the page's world
   });
   win.loadFile(path.join(__dirname, 'index.html'));
 }
