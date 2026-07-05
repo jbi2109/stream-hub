@@ -62,11 +62,31 @@ const uaEcho = http.createServer((req, res) => {
   res.end(req.headers['user-agent'] || '');
 });
 
-// Stands in for TMDB (SH_TEST_TMDB_BASE points the main process here). Any /3/* path
-// returns one canned result so browse grids render deterministically.
+// Stands in for TMDB (SH_TEST_TMDB_BASE points the main process here). Path-aware:
+// detail objects for /movie|tv/{id}, episode lists for /season/{n}, else a results list.
 const tmdb = http.createServer((req, res) => {
   res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
+  const p = req.url.split('?')[0];
+  if (/\/season\/\d+$/.test(p)) {
+    res.end(JSON.stringify({ episodes: [
+      { episode_number: 1, season_number: 1, name: 'Ep One', overview: 'first', still_path: '/s1.jpg' },
+      { episode_number: 2, season_number: 1, name: 'Ep Two', overview: 'second', still_path: '/s2.jpg' },
+    ] }));
+  } else if (/\/3\/(movie|tv)\/\d+$/.test(p)) {
+    res.end(JSON.stringify({
+      id: 42, title: 'Fixture Title', name: 'Fixture Title', overview: 'A fixture overview.',
+      poster_path: '/x.jpg', backdrop_path: '/b.jpg', vote_average: 7.9, tagline: 'Twist.',
+      release_date: '2026-01-01', first_air_date: '2026-01-01', runtime: 70,
+      number_of_seasons: 1, number_of_episodes: 6, genres: [{ id: 18, name: 'Drama' }],
+      seasons: [{ season_number: 1, name: 'Season 1' }],
+      credits: { cast: [{ id: 1, name: 'Actor One', character: 'Hero', profile_path: '/a.jpg' }] },
+      videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abc123' }] },
+      external_ids: { imdb_id: 'tt123' },
+      'watch/providers': { results: { US: { flatrate: [{ provider_name: 'Netflix', logo_path: '/n.jpg' }] } } },
+    }));
+  } else {
+    res.end(JSON.stringify({ results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
+  }
 });
 
 // ---- minimal CDP client ----
@@ -456,10 +476,41 @@ async function main() {
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse movie grid');
   ok('browse: TMDB grid renders poster cards');
 
-  // 24. clicking a browse card opens the title on a vod source (/movie/42)
+  // 24. clicking a Movies poster opens the native detail page; Watch loads the source embed URL
   await page.eval(`document.querySelector('#browse .grid .card').click()`);
-  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/movie/42')`), 'browse card opened title url');
-  ok('browse: click opens the title on a source');
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail h1')`), 'movie detail page');
+  assert.ok(await page.eval(`document.querySelector('#detail h1').textContent.length > 0`), 'detail title missing');
+  assert.ok(await page.eval(`!!document.querySelector('#detail .detail-section p')`), 'detail overview missing');
+  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/movie/42')`), 'watch opened embed url');
+  ok('detail: movie poster -> detail page -> Watch loads source embed player');
+
+  // 24b. TV detail shows season select + episode cards; Watch deep-links the episode; Trailer -> youtube embed
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'tv').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'tv grid');
+  await page.eval(`document.querySelector('#browse .grid .card').click()`);
+  await until(() => page.eval(`!!document.querySelector('#detail .season-select') && document.querySelectorAll('#detail .episode').length >= 1`), 'tv detail episodes');
+  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`); // Watch S1E1
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/tv/42/1/1')`), 'tv watch deep-links episode');
+  // Trailer
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'tv grid again');
+  await page.eval(`document.querySelector('#browse .grid .card').click()`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-actions')`), 'detail actions');
+  await page.eval(`[...document.querySelectorAll('#detail .detail-actions button')].find(b => b.textContent.includes('Trailer')).click()`);
+  assert.ok(await page.eval(`document.getElementById('webview').src.includes('youtube.com/embed/abc123')`), 'trailer did not open youtube embed');
+  ok('detail: TV episode picker + deep-link Watch + trailer');
+
+  // 24c. Watch Later from the detail page adds an entry
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'tv grid for watch-later');
+  await page.eval(`document.querySelector('#browse .grid .card').click()`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-actions')`), 'detail for watch-later');
+  const wlBefore = (await page.eval(`JSON.parse(localStorage.getItem('watchlater') || '[]')`)).length;
+  await page.eval(`[...document.querySelectorAll('#detail .detail-actions button')].find(b => b.textContent.includes('Watch Later')).click()`);
+  assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, wlBefore + 1, 'detail Watch Later did not add');
+  ok('detail: + Watch Later adds an entry');
 
   // 25. Anime tab uses TMDB discover; Live tab shows tiles of live sources
   await page.eval(`document.getElementById('browse-btn').click()`);

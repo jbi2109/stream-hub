@@ -13,9 +13,11 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 ## Features
 
 - **Browse home (TMDB)** — the app's own landing page: discover Movies, TV, and Anime
-  from [TMDB](https://www.themoviedb.org/), search, and click a title to play it on one of
-  your sources (the streaming sites key their URLs on TMDB ids). Also a **Live TV** tab
-  (tiles of your live sources) and a built-in **YouTube** tab. Needs a free TMDB API key.
+  from [TMDB](https://www.themoviedb.org/), search, and open a title's **native detail page**
+  (overview, genres, rating, cast, seasons + episode picker with stills, in-app trailer,
+  "where to watch"). The **Watch** button loads the source's own embed player, deep-linked to
+  the exact episode. Also a **Live TV** tab (tiles of your live sources) and a built-in
+  **YouTube** tab. Needs a free TMDB API key.
 - **Bring-your-own sources** — add any streaming site by name + URL. Tag each as
   **Movies / TV Shows**, **Anime**, or **Live TV**; the sidebar groups them accordingly.
   An optional per-source URL pattern controls how Browse builds each site's watch link.
