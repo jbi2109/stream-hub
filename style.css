@@ -331,6 +331,8 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 .wiz-next:disabled { background: #2a3140; color: #6b7280; cursor: not-allowed; }
 
 /* ---- live provider catalog (Live TV tab) ---- */
+.live-controls { margin-bottom: 14px; }
+.live-controls .browse-search { margin-bottom: 0; }
 .live-provider { margin-bottom: 20px; }
 .live-provider-name { font-size: 15px; margin-bottom: 10px; color: #cfd4dc; }
 .tile-logo { height: 34px; max-width: 80%; object-fit: contain; margin-bottom: 6px; }

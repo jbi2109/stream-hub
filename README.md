@@ -17,8 +17,9 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   (overview, genres, rating, cast, seasons + episode picker with stills, in-app trailer,
   "where to watch"). Pick which **source** to play on (defaults to your last-used), and the
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
-  a top-bar switcher to swap sources mid-watch. Also a **Live TV** tab (tiles of your live
-  sources) and a built-in **YouTube** tab. Needs a free TMDB API key.
+  a top-bar switcher to swap sources mid-watch. A **Live TV** tab shows your live sources as
+  tiles, or — when a live-catalog provider is configured — a **searchable catalog** with an
+  **All / Live-now** toggle. Plus a built-in **YouTube** tab. Needs a free TMDB API key.
 - **Bring-your-own players & sources** — manage everything in one **Settings** list: add any
   embed player or site by name + URL, tag each as **Movies / TV Shows**, **Anime**, or **Live TV**,
   and pick a **default player**. Each entry has an optional, editable **embed pattern** (tokens
@@ -94,7 +95,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 44-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 45-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, the add-player wizard, the tabbed library, categorisation, and persistence.

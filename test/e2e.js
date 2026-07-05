@@ -603,14 +603,44 @@ async function main() {
   assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${SITE}/'); return !!(r && r.body && r.body.includes('Widow')); })()`), 'sh.httpGet should return the fetched body');
   ok('ipc: sh.httpGet returns fetched body (for local live providers)');
 
-  // 32e. live-provider registry: a stub provider's catalog renders in the Live tab; click embeds it
-  await page.eval(`registerLiveProvider({ name: 'FixtureLive', list: async () => [{ title: 'Chan 1', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') }] })`);
+  // register a stub live adapter (keeps the committed suite free of real providers)
+  await page.eval(`registerLiveProvider({
+    key: 'stub', name: 'FixtureLive',
+    list: async () => [{ title: 'Alpha Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') }, { title: 'Beta Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/8') }],
+    listLive: async () => [{ title: 'Alpha Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') }],
+  })`);
+
+  // 32e. wizard can add a provider-backed live source (the "add through the widget" path)
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`document.getElementById('add-source-btn').click()`);
+  await until(() => page.eval(`!!document.querySelector('.wiz-card')`), 'wizard for live provider');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'StreamedLike'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> type
+  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('Live')).click()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> live-source choice
+  await until(() => page.eval(`[...document.querySelectorAll('.wiz-choices button')].some(b => b.textContent.includes('FixtureLive'))`), 'wizard offers the registered adapter');
+  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('FixtureLive')).click()`); // pick adapter -> last step
+  assert.strictEqual(await page.eval(`document.querySelector('.wiz-next').textContent`), 'Add', 'picking an adapter should finish the wizard');
+  await page.eval(`document.querySelector('.wiz-next').click()`);
+  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'wizard closed');
+  assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'StreamedLike'); return s && s.category === 'live' && s.provider === 'stub' && !s.url; })()`), 'provider-backed live source not added via wizard');
+  ok('wizard: adds a provider-backed live source through the widget');
+
+  // 32f. Live tab: catalog renders, search filters, All/Live-now toggle, click embeds
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Chan 1'))`), 'live provider catalog tile');
-  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Chan 1')).click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha Match'))`), 'catalog tile renders');
+  // search filters to Beta
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = 'Beta'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Beta Match')) && ts.every(x => !x.includes('Alpha Match')); })()`), 'search filters the catalog');
+  // clear + toggle to Live now -> only Alpha
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = ''; s.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent.includes('Live now')).click()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Alpha Match')) && ts.every(x => !x.includes('Beta Match')); })()`), 'Live now shows only live items');
+  // click a tile -> embeds the stream
+  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha Match')).click()`);
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/7'`), 'live tile embeds the stream');
-  ok('live: registered provider catalog renders + click embeds the stream');
+  ok('live: adapter catalog with search + All/Live-now toggle + embed');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
