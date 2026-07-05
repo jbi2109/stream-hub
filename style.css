@@ -141,6 +141,17 @@ body {
   font-size: 12px;
 }
 
+#default-player-row { display: flex; flex-direction: column; gap: 4px; }
+#default-player-row label { font-size: 11px; color: #8a919e; }
+#default-source {
+  background: #262a33;
+  border: 1px solid #3a4150;
+  border-radius: 5px;
+  color: #e6e6e6;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
 #view { flex: 1; position: relative; }
 webview { width: 100%; height: 100%; }
 webview.fullscreen { position: fixed; inset: 0; z-index: 999; }

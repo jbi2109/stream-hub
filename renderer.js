@@ -13,7 +13,10 @@ let tmdbKey = load('tmdbKey', '');   // user's free TMDB API key (for Browse)
 let currentSource = null;            // home URL for the topbar home button
 let activeKey = null;                // continue entry the player position attaches to
 let playing = null;                  // {kind,type,id,season,episode} of the open embed (for source switching)
-let lastSourceUrl = load('lastSource', null); // last source the user watched on (default in pickers)
+let lastSourceUrl = load('lastSource', null); // last source the user watched on
+let defaultSource = load('defaultSource', null); // preferred player URL for Movies/TV/Anime
+
+const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ''; } };
 const sourceCategory = (url) => sources.find((s) => hostOf(s.url) === hostOf(url))?.category;
@@ -179,7 +182,10 @@ function sourceItem(src) {
   const t = document.createElement('div');
   t.className = 'title';
   t.textContent = src.name;
-  grow.append(t);
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = CAT_LABEL[src.category || 'vod'];
+  grow.append(t, meta);
   const edit = document.createElement('button');
   edit.textContent = '✎';
   edit.title = 'Edit play-URL pattern'; // tokens: {origin} {type} {id} {season} {episode}
@@ -217,22 +223,36 @@ function sourceItem(src) {
   return li;
 }
 
-function sourceGroup(label, cat) {
-  const list = sources.filter((s) => (s.category || 'vod') === cat);
-  if (!list.length) return [];
-  const h = document.createElement('h2');
-  h.textContent = label;
-  const ul = document.createElement('ul');
-  ul.className = 'source-list';
-  ul.append(...list.map(sourceItem));
-  return [h, ul];
+// One unified list of players/sources (managed under Settings); also refresh the default picker.
+function renderSources() {
+  const box = $('sources');
+  if (!sources.length) {
+    box.replaceChildren(emptyMsg('No players yet — add one below.'));
+  } else {
+    const ul = document.createElement('ul');
+    ul.className = 'source-list';
+    ul.append(...sources.map(sourceItem));
+    box.replaceChildren(ul);
+  }
+  renderDefaultPicker();
 }
 
-function renderSources() {
-  $('sources').replaceChildren(
-    ...sourceGroup('Movies & TV', 'vod'),
-    ...sourceGroup('Live TV', 'live'),
-  );
+// Populate the "Default player" selector with the Movies/TV/Anime players (Live TV excluded).
+function renderDefaultPicker() {
+  const sel = $('default-source');
+  const players = sources.filter((s) => (s.category || 'vod') !== 'live');
+  $('default-player-row').hidden = players.length === 0;
+  if (!players.length) { sel.replaceChildren(); return; }
+  if (!players.some((s) => s.url === defaultSource)) { // keep the stored default valid
+    defaultSource = players[0].url;
+    store('defaultSource', defaultSource);
+  }
+  sel.replaceChildren(...players.map((s) => {
+    const o = document.createElement('option');
+    o.value = s.url; o.textContent = s.name;
+    if (s.url === defaultSource) o.selected = true;
+    return o;
+  }));
 }
 
 function seLabel(item) {
@@ -473,6 +493,7 @@ function playOn(kind, type, id, season, episode) {
   if (srcs.length === 0) { alert('Add a ' + (kind === 'anime' ? 'Anime' : 'Movies/TV') + ' source first.'); return; }
   const sel = document.querySelector('.detail-source');
   const chosen = (sel && srcs.find((s) => s.url === sel.value)) // match within this kind (URLs can collide across categories)
+    || srcs.find((s) => s.url === defaultSource)
     || srcs.find((s) => s.url === lastSourceUrl)
     || srcs[0];
   openOn(chosen, kind, type, id, season, episode);
@@ -672,7 +693,7 @@ function renderDetail(kind, type, id, d) {
     srcSel.append(...playSrcs.map((s) => {
       const o = document.createElement('option');
       o.value = s.url; o.textContent = s.name;
-      if (s.url === lastSourceUrl) o.selected = true;
+      if (s.url === (defaultSource || lastSourceUrl)) o.selected = true;
       return o;
     }));
     actions.append(srcSel);
@@ -844,6 +865,7 @@ $('src-switch').onchange = () => {
   const src = sourcesFor(playing.kind).find((s) => s.url === $('src-switch').value);
   if (src) openOn(src, playing.kind, playing.type, playing.id, playing.season, playing.episode);
 };
+$('default-source').onchange = () => { defaultSource = $('default-source').value; store('defaultSource', defaultSource); };
 
 webview.addEventListener('did-navigate', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });
 webview.addEventListener('did-navigate-in-page', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });

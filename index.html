@@ -15,22 +15,26 @@
       <button id="home-btn">&#127909; Library</button>
     </div>
 
-    <h2>Sources</h2>
+    <h2>Settings</h2>
+    <input id="tmdb-key" placeholder="TMDB API key (for Browse)">
+    <div id="default-player-row" hidden>
+      <label for="default-source">Default player</label>
+      <select id="default-source"></select>
+    </div>
+
+    <h2>Players &amp; Sources</h2>
     <div id="sources"></div>
     <form id="add-source">
-      <input id="src-name" placeholder="Name" required>
-      <input id="src-url" placeholder="https://site.com" required>
-      <input id="src-template" title="Paste the site's own embed URL using {id} {season} {episode} tokens; movies auto-trim season/episode" placeholder="Embed pattern (optional): {origin}/embed/{type}/{id}/{season}/{episode}">
+      <input id="src-name" placeholder="Name (e.g. Vidking)" required>
+      <input id="src-url" placeholder="https://player-site.com" required>
+      <input id="src-template" title="Paste the site's own embed URL using {id} {season} {episode} tokens; movies auto-trim season/episode. Blank = {origin}/embed/{type}/{id}/{season}/{episode}" placeholder="Embed pattern (optional): {origin}/embed/{type}/{id}/{season}/{episode}">
       <select id="src-cat">
         <option value="vod">Movies / TV Shows</option>
         <option value="anime">Anime</option>
         <option value="live">Live TV</option>
       </select>
-      <button type="submit">+ Add source</button>
+      <button type="submit">+ Add player / source</button>
     </form>
-
-    <h2>Settings</h2>
-    <input id="tmdb-key" placeholder="TMDB API key (for Browse)">
   </div>
 
   <div id="content">

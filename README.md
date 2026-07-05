@@ -19,10 +19,11 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
   a top-bar switcher to swap sources mid-watch. Also a **Live TV** tab (tiles of your live
   sources) and a built-in **YouTube** tab. Needs a free TMDB API key.
-- **Bring-your-own sources** — add any streaming site by name + URL. Tag each as
-  **Movies / TV Shows**, **Anime**, or **Live TV**; the sidebar groups them accordingly.
-  An optional, editable per-source **embed pattern** (tokens `{origin} {type} {id} {season}
-  {episode}`) controls how Browse builds each site's watch link; movies auto-trim season/episode.
+- **Bring-your-own players & sources** — manage everything in one **Settings** list: add any
+  embed player or site by name + URL, tag each as **Movies / TV Shows**, **Anime**, or **Live TV**,
+  and pick a **default player**. Each entry has an optional, editable **embed pattern** (tokens
+  `{origin} {type} {id} {season} {episode}`) controlling how Browse builds its watch link; movies
+  auto-trim season/episode. Ships empty — you add your own.
 - **Continue Watching (automatic)** — as you browse a show, the app reads the title,
   poster, and season/episode from the page and builds a poster-card entry. No "save" button.
 - **Real playback progress** — the main process reads the video's position from inside the
@@ -63,10 +64,11 @@ On Windows you can also double-click **`launch.bat`**.
 
 1. Paste a free **TMDB API key** into the Settings field (themoviedb.org → Settings → API →
    API Key v3) to power the Browse home.
-2. Click **+ Add source**, enter a name and URL, and pick a category (Movies/TV Shows, Anime,
-   or Live TV). Optionally set a watch-URL pattern for that site.
-3. **Browse** (the landing page) to discover Movies / TV / Anime and click a title to play it
-   on a source; the **Live TV** and **YouTube** tabs launch those directly.
+2. Under **Settings**, click **+ Add player / source**, enter a name and URL, and pick a category
+   (Movies/TV Shows, Anime, or Live TV). Optionally set a watch-URL pattern; pick a **default player**.
+3. **Browse** (the landing page) to discover Movies / TV / Anime and click a title; on the detail
+   page choose a source and hit **Watch** (swap sources mid-watch from the top bar). The **Live TV**
+   and **YouTube** tabs launch those directly.
 4. Shows appear under **Continue Watching** automatically as you watch; hit **+ Watch Later**
    to bookmark. Click **📽 Library** to see your Continue Watching / Watch Later, filter by
    type, and per-card ✎ (note), ✕ (remove), or category dropdown.

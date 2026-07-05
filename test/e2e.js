@@ -366,7 +366,8 @@ async function main() {
   assert.ok(cAfter[0].url.includes('/tv/286360'), 'the tv entry should remain');
   ok('remove card: ✕ deletes the targeted card from Continue Watching');
 
-  // 16. add a Live TV source via the category select; sidebar splits into groups
+  // 16. add a Live TV source via the category select; unified list shows it with a category label,
+  //     and the Default-player picker lists only Movies/TV/Anime players (not Live TV).
   await page.eval(`
     document.getElementById('src-name').value = 'LiveFix';
     document.getElementById('src-url').value = '${PLAYER}';
@@ -375,10 +376,9 @@ async function main() {
   `);
   const srcs = await page.eval(`JSON.parse(localStorage.getItem('sources'))`);
   assert.ok(srcs.some((s) => s.name === 'LiveFix' && s.category === 'live'), 'live source not stored with category');
-  assert.strictEqual(
-    await page.eval(`[...document.querySelectorAll('#sources h2')].map((h) => h.textContent).join('|')`),
-    'Movies & TV|Live TV', 'sidebar not grouped into Movies & TV / Live TV');
-  ok('sources: add-source category select + grouped sidebar');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#sources li')].some((li) => li.textContent.includes('LiveFix') && li.textContent.includes('Live TV'))`), 'live source not shown with a category label in the unified list');
+  assert.ok(!(await page.eval(`[...document.querySelectorAll('#default-source option')].some((o) => o.value === '${PLAYER}' && o.textContent === 'LiveFix')`)), 'Live TV should not appear in the Default player picker');
+  ok('sources: add-source category select + unified list + default picker');
 
   // 17. Live TV source does NOT enter Continue Watching, but Watch Later works
   const contBefore = (await page.eval(`JSON.parse(localStorage.getItem('continue'))`)).length;
