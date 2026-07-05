@@ -603,12 +603,17 @@ async function main() {
   assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${SITE}/'); return !!(r && r.body && r.body.includes('Widow')); })()`), 'sh.httpGet should return the fetched body');
   ok('ipc: sh.httpGet returns fetched body (for local live providers)');
 
-  // register a stub live adapter (keeps the committed suite free of real providers)
-  await page.eval(`registerLiveProvider({
-    key: 'stub', name: 'FixtureLive',
-    list: async () => [{ title: 'Alpha Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') }, { title: 'Beta Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/8') }],
-    listLive: async () => [{ title: 'Alpha Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') }],
-  })`);
+  // register a stub live adapter with view filters (keeps the committed suite free of real providers)
+  await page.eval(`(() => {
+    const alpha = { title: 'Alpha Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') };
+    const beta = { title: 'Beta Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/8') };
+    const gamma = { title: 'Gamma Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/9') };
+    registerLiveProvider({ key: 'stub', name: 'FixtureLive', views: [
+      { key: 'all', label: 'All', fetch: async () => [alpha, beta] },
+      { key: 'today', label: 'Today', fetch: async () => [gamma] },
+      { key: 'live', label: 'Live now', fetch: async () => [alpha] },
+    ] });
+  })()`);
 
   // 32e. wizard can add a provider-backed live source (the "add through the widget" path)
   await page.eval(`document.getElementById('home-btn').click()`);
@@ -626,21 +631,26 @@ async function main() {
   assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'StreamedLike'); return s && s.category === 'live' && s.provider === 'stub' && !s.url; })()`), 'provider-backed live source not added via wizard');
   ok('wizard: adds a provider-backed live source through the widget');
 
-  // 32f. Live tab: catalog renders, search filters, All/Live-now toggle, click embeds
+  // 32f. Live tab: catalog renders, search filters, view toggle (All/Today/Live now), click embeds
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha Match'))`), 'catalog tile renders');
+  // the adapter's views appear as filter tabs
+  assert.ok(await page.eval(`['All','Today','Live now'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'view filter tabs (All/Today/Live now) missing');
   // search filters to Beta
   await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = 'Beta'; s.dispatchEvent(new Event('input')); })()`);
   await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Beta Match')) && ts.every(x => !x.includes('Alpha Match')); })()`), 'search filters the catalog');
-  // clear + toggle to Live now -> only Alpha
+  // clear + Today view -> only Gamma
   await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = ''; s.dispatchEvent(new Event('input')); })()`);
-  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent.includes('Live now')).click()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Alpha Match')) && ts.every(x => !x.includes('Beta Match')); })()`), 'Live now shows only live items');
+  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Today').click()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Gamma Match')) && ts.every(x => !x.includes('Alpha Match') && !x.includes('Beta Match')); })()`), 'Today view shows only today items');
+  // Live now view -> only Alpha
+  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Live now').click()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Alpha Match')) && ts.every(x => !x.includes('Beta Match') && !x.includes('Gamma Match')); })()`), 'Live now shows only live items');
   // click a tile -> embeds the stream
   await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha Match')).click()`);
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/7'`), 'live tile embeds the stream');
-  ok('live: adapter catalog with search + All/Live-now toggle + embed');
+  ok('live: adapter catalog with search + view filter (All/Today/Live now) + embed');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`

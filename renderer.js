@@ -588,8 +588,17 @@ function liveTile(item) {
   return el;
 }
 
-// Live TV tab: provider-backed catalogs (All / Live-now toggle + one search box, filtered client-side)
-// plus plain site tiles for bring-your-own live sources. Search does not refetch; toggle does.
+// The filter views an adapter offers. Adapters may declare `views: [{key,label,fetch}]`;
+// otherwise we synthesise All (+ Live now if it has listLive) from the legacy list()/listLive().
+function adapterViews(a) {
+  if (a.views && a.views.length) return a.views;
+  const v = [{ key: 'all', label: 'All', fetch: () => a.list() }];
+  if (a.listLive) v.push({ key: 'live', label: 'Live now', fetch: () => a.listLive() });
+  return v;
+}
+
+// Live TV tab: provider-backed catalogs (adapter-declared view filter + one search box, filtered
+// client-side) plus plain site tiles for bring-your-own live sources. Search doesn't refetch; view does.
 function renderLiveTab(container) {
   const live = sources.filter((s) => s.category === 'live');
   const provSrcs = live.filter((s) => s.provider && liveAdapters[s.provider]);
@@ -602,12 +611,16 @@ function renderLiveTab(container) {
     return;
   }
 
+  // union of views across provider adapters (dedup by key, first label/order wins)
+  const viewOrder = []; const seen = new Set();
+  for (const s of provSrcs) for (const v of adapterViews(liveAdapters[s.provider])) if (!seen.has(v.key)) { seen.add(v.key); viewOrder.push([v.key, v.label]); }
+  if (viewOrder.length && !seen.has(liveMode)) liveMode = viewOrder[0][0];
+
   const refilters = [];
   let searchInput;
   if (provSrcs.length) {
     const controls = document.createElement('div'); controls.className = 'live-controls';
-    controls.append(tabBar([['all', 'All matches'], ['live', 'Live now']], liveMode,
-      (m) => { liveMode = m; renderLiveTab(container); }, 'subtabs'));
+    if (viewOrder.length > 1) controls.append(tabBar(viewOrder, liveMode, (m) => { liveMode = m; renderLiveTab(container); }, 'subtabs'));
     searchInput = document.createElement('input');
     searchInput.className = 'browse-search'; searchInput.placeholder = 'Search live…'; searchInput.value = liveQuery;
     searchInput.oninput = () => { liveQuery = searchInput.value; refilters.forEach((f) => f()); };
@@ -617,6 +630,8 @@ function renderLiveTab(container) {
 
   for (const s of provSrcs) {
     const adapter = liveAdapters[s.provider];
+    const views = adapterViews(adapter);
+    const view = views.find((v) => v.key === liveMode) || views[0];
     const sec = document.createElement('div'); sec.className = 'live-provider';
     if (provSrcs.length > 1) { const h = document.createElement('h3'); h.className = 'live-provider-name'; h.textContent = s.name || adapter.name; sec.append(h); }
     const grid = document.createElement('div'); grid.className = 'grid tiles'; grid.textContent = 'Loading…';
@@ -629,8 +644,7 @@ function renderLiveTab(container) {
       grid.replaceChildren(...items.slice(0, 300).map(liveTile));
     };
     refilters.push(refilter);
-    const fetcher = (liveMode === 'live' && adapter.listLive) ? adapter.listLive() : adapter.list();
-    Promise.resolve(fetcher).then((items) => { all = items || []; refilter(); }).catch((e) => { grid.textContent = 'Failed to load (' + (e && e.message || e) + ').'; });
+    Promise.resolve(view.fetch()).then((items) => { all = items || []; refilter(); }).catch((e) => { grid.textContent = 'Failed to load (' + (e && e.message || e) + ').'; });
   }
 
   if (siteSrcs.length) {
