@@ -13,6 +13,7 @@ const SITE = 'http://127.0.0.1:9310';
 const UA_ECHO_HOST = '127.0.0.1:9311';
 const UA_ECHO = `http://${UA_ECHO_HOST}`;
 const PLAYER = 'http://127.0.0.1:9312';
+const CATALOG = 'http://127.0.0.1:9314';
 const PROFILE = path.join(os.tmpdir(), 'stream-hub-test-profile');
 
 let electronProc = null;
@@ -89,6 +90,16 @@ const tmdb = http.createServer((req, res) => {
   }
 });
 
+// Stands in for a StreamFree-style live-catalog JSON API (fetched via sh.httpGet -> main).
+const catalog = http.createServer((req, res) => {
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ count: 3, streams: [
+    { name: 'Alpha Match', category: 'soccer', embed_url: `${PLAYER}/live/7`, thumbnail_url: '' },
+    { name: 'Beta Match', category: 'soccer', embed_url: `${PLAYER}/live/8` },
+    { name: 'Gamma Match', category: 'tennis', embed_url: `${PLAYER}/live/9` },
+  ] }));
+});
+
 // ---- minimal CDP client ----
 class CDP {
   static async connect(wsUrl) {
@@ -157,6 +168,7 @@ async function main() {
   uaEcho.listen(9311);
   player.listen(9312);
   tmdb.listen(9313);
+  catalog.listen(9314);
 
   // ---------- boot ----------
   let pageTarget = await launchApp();
@@ -584,73 +596,63 @@ async function main() {
   assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'WizPlayer'); return s && s.category === 'vod' && s.template === '{origin}/player/{id}/{season}/{episode}'; })()`), 'wizard did not add player with custom pattern');
   ok('wizard: guided add (Movies) with live preview + hover example');
 
-  // 32c. wizard Live TV branch: 3 steps (no pattern), adds a live source
+  // 32c. wizard Live TV "website" branch: 4 steps (name, type, live-source, url), adds a site source
   await page.eval(`document.getElementById('add-source-btn').click()`);
   await until(() => page.eval(`!!document.querySelector('.wiz-card')`), 'wizard reopened');
   await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'WizLive'; i.dispatchEvent(new Event('input')); })()`);
-  await page.eval(`document.querySelector('.wiz-next').click()`);
-  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('Live')).click()`);
-  assert.strictEqual(await page.eval(`document.querySelectorAll('.wiz-dots span').length`), 3, 'Live TV wizard should be 3 steps');
-  await page.eval(`document.querySelector('.wiz-next').click()`); // -> url (last)
-  assert.strictEqual(await page.eval(`document.querySelector('.wiz-next').textContent`), 'Add', 'URL is the last step for Live TV');
-  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'https://livesite.example'; i.dispatchEvent(new Event('input')); })()`);
-  await page.eval(`document.querySelector('.wiz-next').click()`);
-  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'live wizard closes');
-  assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'WizLive'); return s && s.category === 'live' && !s.template; })()`), 'wizard Live TV entry wrong');
-  ok('wizard: Live TV branch is 3 steps + adds a live source');
-
-  // 32d. sh.httpGet fetches a (loopback) URL body via main — the hook local live providers use
-  assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${SITE}/'); return !!(r && r.body && r.body.includes('Widow')); })()`), 'sh.httpGet should return the fetched body');
-  ok('ipc: sh.httpGet returns fetched body (for local live providers)');
-
-  // register a stub live adapter with view filters (keeps the committed suite free of real providers)
-  await page.eval(`(() => {
-    const alpha = { title: 'Alpha Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/7') };
-    const beta = { title: 'Beta Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/8') };
-    const gamma = { title: 'Gamma Match', onOpen: () => window.openLiveEmbed('${PLAYER}/live/9') };
-    registerLiveProvider({ key: 'stub', name: 'FixtureLive', views: [
-      { key: 'all', label: 'All', fetch: async () => [alpha, beta] },
-      { key: 'today', label: 'Today', fetch: async () => [gamma] },
-      { key: 'live', label: 'Live now', fetch: async () => [alpha] },
-    ] });
-  })()`);
-
-  // 32e. wizard can add a provider-backed live source (the "add through the widget" path)
-  await page.eval(`document.getElementById('home-btn').click()`);
-  await page.eval(`document.getElementById('add-source-btn').click()`);
-  await until(() => page.eval(`!!document.querySelector('.wiz-card')`), 'wizard for live provider');
-  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'StreamedLike'; i.dispatchEvent(new Event('input')); })()`);
   await page.eval(`document.querySelector('.wiz-next').click()`); // -> type
   await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('Live')).click()`);
   await page.eval(`document.querySelector('.wiz-next').click()`); // -> live-source choice
-  await until(() => page.eval(`[...document.querySelectorAll('.wiz-choices button')].some(b => b.textContent.includes('FixtureLive'))`), 'wizard offers the registered adapter');
-  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('FixtureLive')).click()`); // pick adapter -> last step
-  assert.strictEqual(await page.eval(`document.querySelector('.wiz-next').textContent`), 'Add', 'picking an adapter should finish the wizard');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('.wiz-dots span').length`), 4, 'Live TV wizard should be 4 steps');
+  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('website')).click()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> url (last)
+  assert.strictEqual(await page.eval(`document.querySelector('.wiz-next').textContent`), 'Add', 'URL is the last step for a website live source');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'https://livesite.example'; i.dispatchEvent(new Event('input')); })()`);
   await page.eval(`document.querySelector('.wiz-next').click()`);
-  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'wizard closed');
-  assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'StreamedLike'); return s && s.category === 'live' && s.provider === 'stub' && !s.url; })()`), 'provider-backed live source not added via wizard');
-  ok('wizard: adds a provider-backed live source through the widget');
+  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'live wizard closes');
+  assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'WizLive'); return s && s.category === 'live' && s.url && !s.catalogUrl; })()`), 'wizard Live TV website entry wrong');
+  ok('wizard: Live TV website branch (4 steps) adds a site source');
 
-  // 32f. Live tab: catalog renders, search filters, view toggle (All/Today/Live now), click embeds
+  // 32d. sh.httpGet fetches a (loopback) URL body via main — used by the live-catalog fetch
+  assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${SITE}/'); return !!(r && r.body && r.body.includes('Widow')); })()`), 'sh.httpGet should return the fetched body');
+  ok('ipc: sh.httpGet returns fetched body (for live-catalog fetches)');
+
+  // 32e. wizard adds a Live catalog (JSON API) source through the widget
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`document.getElementById('add-source-btn').click()`);
+  await until(() => page.eval(`!!document.querySelector('.wiz-card')`), 'wizard for live catalog');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'FixtureCatalog'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> type
+  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('Live')).click()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> live-source choice
+  await page.eval(`[...document.querySelectorAll('.wiz-choices button')].find(b => b.textContent.includes('Live catalog')).click()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // -> catalog URL (last)
+  assert.strictEqual(await page.eval(`document.querySelector('.wiz-next').textContent`), 'Add', 'catalog URL is the last step');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = '${CATALOG}/api/streams'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`);
+  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'catalog wizard closed');
+  assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'FixtureCatalog'); return s && s.category === 'live' && s.catalogUrl === '${CATALOG}/api/streams' && !s.url; })()`), 'catalog live source not added via wizard');
+  ok('wizard: adds a Live catalog (JSON API) source through the widget');
+
+  // 32f. Live tab: catalog fetched from the API renders tiles, with a category filter + search; click embeds
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha Match'))`), 'catalog tile renders');
-  // the adapter's views appear as filter tabs
-  assert.ok(await page.eval(`['All','Today','Live now'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'view filter tabs (All/Today/Live now) missing');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha Match'))`), 'catalog tiles render from the API');
+  // category filter tabs derived from the data
+  assert.ok(await page.eval(`['All','Soccer','Tennis'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'category filter tabs (All/Soccer/Tennis) missing');
   // search filters to Beta
   await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = 'Beta'; s.dispatchEvent(new Event('input')); })()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Beta Match')) && ts.every(x => !x.includes('Alpha Match')); })()`), 'search filters the catalog');
-  // clear + Today view -> only Gamma
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Beta')) && ts.every(x => !x.includes('Alpha') && !x.includes('Gamma')); })()`), 'search filters the catalog');
+  // clear + Tennis category -> only Gamma
   await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = ''; s.dispatchEvent(new Event('input')); })()`);
-  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Today').click()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Gamma Match')) && ts.every(x => !x.includes('Alpha Match') && !x.includes('Beta Match')); })()`), 'Today view shows only today items');
-  // Live now view -> only Alpha
-  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Live now').click()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Alpha Match')) && ts.every(x => !x.includes('Beta Match') && !x.includes('Gamma Match')); })()`), 'Live now shows only live items');
-  // click a tile -> embeds the stream
-  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha Match')).click()`);
-  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/7'`), 'live tile embeds the stream');
-  ok('live: adapter catalog with search + view filter (All/Today/Live now) + embed');
+  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Tennis').click()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Gamma')) && ts.every(x => !x.includes('Alpha') && !x.includes('Beta')); })()`), 'category filter shows only Tennis');
+  // Soccer category -> Alpha present; click it -> embeds the stream
+  await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Soccer').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha'))`), 'Soccer shows Alpha');
+  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha')).click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/7'`), 'catalog tile embeds the stream');
+  ok('live: JSON catalog renders with category filter + search + embed');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
@@ -679,5 +681,6 @@ main()
     uaEcho.close();
     player.close();
     tmdb.close();
+    catalog.close();
     process.exit(process.exitCode ?? 0); // open CDP sockets would otherwise keep the loop alive
   });

@@ -18,8 +18,9 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   "where to watch"). Pick which **source** to play on (defaults to your last-used), and the
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
   a top-bar switcher to swap sources mid-watch. A **Live TV** tab shows your live sources as
-  tiles, or — when a live-catalog provider is configured — a **searchable catalog** with an
-  **All / Live-now** toggle. Plus a built-in **YouTube** tab. Needs a free TMDB API key.
+  tiles, or — for a **live catalog** source (a JSON API of live streams you add by URL) — a
+  **searchable catalog** with a **category filter**, each stream clickable to embed. Plus a
+  built-in **YouTube** tab. Needs a free TMDB API key.
 - **Bring-your-own players & sources** — manage everything in one **Settings** list: add any
   embed player or site by name + URL, tag each as **Movies / TV Shows**, **Anime**, or **Live TV**,
   and pick a **default player**. Each entry has an optional, editable **embed pattern** (tokens

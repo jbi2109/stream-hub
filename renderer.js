@@ -18,16 +18,6 @@ let defaultSource = load('defaultSource', null); // preferred player URL for Mov
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
-// Optional live-TV adapters, registered at runtime by a local, gitignored module
-// (live-providers.local.js). The committed app ships none — a fresh clone stays neutral.
-// An adapter = { key, name, list(): Promise<[{title,logo?,onOpen()}]>, listLive?(): same }.
-// The user adds one as a Live TV "source" (category:'live', provider:key) via the add-source wizard.
-const liveAdapters = {};
-window.registerLiveProvider = (a) => { liveAdapters[a.key] = a; if (browseTab === 'live' && !$('browse').hidden) renderBrowse(); };
-window.openLiveEmbed = (url) => open(url); // stable API for an adapter to embed a stream in the webview
-let liveMode = 'all'; // Live tab: 'all' matches | 'live' now
-let liveQuery = '';   // Live tab search text
-
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ''; } };
 const sourceCategory = (url) => sources.find((s) => hostOf(s.url) === hostOf(url))?.category;
 const isLiveUrl = (url) => sourceCategory(url) === 'live';
@@ -230,7 +220,7 @@ function sourceItem(src) {
   };
   li.append(grow, edit, del);
   li.onclick = () => {
-    if (src.provider) { browseTab = 'live'; showBrowse(); }      // adapter-backed live source -> Live tab
+    if (src.catalogUrl) { browseTab = 'live'; showBrowse(); }     // catalog live source -> Live tab
     else if (src.url) { currentSource = src.url; open(src.url); }
   };
   return li;
@@ -580,29 +570,30 @@ async function renderBrowse() {
   if (browseQuery) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
 }
 
-function liveTile(item) {
-  const el = document.createElement('div'); el.className = 'tile';
-  if (item.logo) { const img = document.createElement('img'); img.className = 'tile-logo'; img.src = item.logo; img.onerror = () => img.remove(); el.append(img); }
-  const t = document.createElement('div'); t.textContent = item.title; el.append(t);
-  el.onclick = () => item.onOpen();
-  return el;
+// Fetch a live-catalog JSON API (via the main-process httpGet, past CSP) and map it to tiles.
+// Generic field fallbacks so a plain URL works for StreamFree-style shapes with no provider code.
+async function fetchCatalog(url) {
+  const r = await window.sh.httpGet(url);
+  if (!r || r.error) throw new Error(r && r.error || 'request failed');
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const data = JSON.parse(r.body);
+  let arr = Array.isArray(data) ? data
+    : data.streams || data.data || data.results || data.items
+    || Object.values(data).find((v) => Array.isArray(v)) || [];
+  return arr.map((s) => ({
+    title: s.name || s.title || s.stream_key || 'Stream',
+    category: String(s.category || s.sport || s.group || '').toLowerCase(),
+    logo: s.thumbnail_url || s.thumbnail || s.poster || s.logo || s.image,
+    embed: s.embed_url || s.embedUrl || s.url || s.stream_url,
+  })).filter((it) => it.embed);
 }
 
-// The filter views an adapter offers. Adapters may declare `views: [{key,label,fetch}]`;
-// otherwise we synthesise All (+ Live now if it has listLive) from the legacy list()/listLive().
-function adapterViews(a) {
-  if (a.views && a.views.length) return a.views;
-  const v = [{ key: 'all', label: 'All', fetch: () => a.list() }];
-  if (a.listLive) v.push({ key: 'live', label: 'Live now', fetch: () => a.listLive() });
-  return v;
-}
-
-// Live TV tab: provider-backed catalogs (adapter-declared view filter + one search box, filtered
-// client-side) plus plain site tiles for bring-your-own live sources. Search doesn't refetch; view does.
+// Live TV tab: catalog sources (fetch JSON -> tiles + category filter + search) + plain site tiles.
+// Search filters client-side (no refetch); the category filter is built from the fetched data.
 function renderLiveTab(container) {
   const live = sources.filter((s) => s.category === 'live');
-  const provSrcs = live.filter((s) => s.provider && liveAdapters[s.provider]);
-  const siteSrcs = live.filter((s) => !s.provider && s.url);
+  const catalogSrcs = live.filter((s) => s.catalogUrl);
+  const siteSrcs = live.filter((s) => !s.catalogUrl && s.url);
   const nodes = [browseTabBar()];
 
   if (!live.length) {
@@ -611,41 +602,7 @@ function renderLiveTab(container) {
     return;
   }
 
-  // union of views across provider adapters (dedup by key, first label/order wins)
-  const viewOrder = []; const seen = new Set();
-  for (const s of provSrcs) for (const v of adapterViews(liveAdapters[s.provider])) if (!seen.has(v.key)) { seen.add(v.key); viewOrder.push([v.key, v.label]); }
-  if (viewOrder.length && !seen.has(liveMode)) liveMode = viewOrder[0][0];
-
-  const refilters = [];
-  let searchInput;
-  if (provSrcs.length) {
-    const controls = document.createElement('div'); controls.className = 'live-controls';
-    if (viewOrder.length > 1) controls.append(tabBar(viewOrder, liveMode, (m) => { liveMode = m; renderLiveTab(container); }, 'subtabs'));
-    searchInput = document.createElement('input');
-    searchInput.className = 'browse-search'; searchInput.placeholder = 'Search live…'; searchInput.value = liveQuery;
-    searchInput.oninput = () => { liveQuery = searchInput.value; refilters.forEach((f) => f()); };
-    controls.append(searchInput);
-    nodes.push(controls);
-  }
-
-  for (const s of provSrcs) {
-    const adapter = liveAdapters[s.provider];
-    const views = adapterViews(adapter);
-    const view = views.find((v) => v.key === liveMode) || views[0];
-    const sec = document.createElement('div'); sec.className = 'live-provider';
-    if (provSrcs.length > 1) { const h = document.createElement('h3'); h.className = 'live-provider-name'; h.textContent = s.name || adapter.name; sec.append(h); }
-    const grid = document.createElement('div'); grid.className = 'grid tiles'; grid.textContent = 'Loading…';
-    sec.append(grid); nodes.push(sec);
-    let all = [];
-    const refilter = () => {
-      const q = liveQuery.trim().toLowerCase();
-      const items = q ? all.filter((it) => (it.title || '').toLowerCase().includes(q)) : all;
-      if (!items.length) { grid.textContent = all.length ? `No matches for “${liveQuery}”.` : 'Nothing here right now.'; return; }
-      grid.replaceChildren(...items.slice(0, 300).map(liveTile));
-    };
-    refilters.push(refilter);
-    Promise.resolve(view.fetch()).then((items) => { all = items || []; refilter(); }).catch((e) => { grid.textContent = 'Failed to load (' + (e && e.message || e) + ').'; });
-  }
+  for (const s of catalogSrcs) nodes.push(liveCatalogSection(s));
 
   if (siteSrcs.length) {
     const grid = document.createElement('div'); grid.className = 'grid tiles';
@@ -658,7 +615,52 @@ function renderLiveTab(container) {
   }
 
   container.replaceChildren(...nodes);
-  if (liveQuery && searchInput) { searchInput.focus(); searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length); }
+}
+
+// One catalog source: a titled section with a category filter + search box + tile grid.
+function liveCatalogSection(src) {
+  const sec = document.createElement('div'); sec.className = 'live-provider';
+  const h = document.createElement('h3'); h.className = 'live-provider-name'; h.textContent = src.name;
+  const controls = document.createElement('div'); controls.className = 'live-controls';
+  const catBar = document.createElement('div'); catBar.className = 'subtabs';
+  const search = document.createElement('input');
+  search.className = 'browse-search'; search.placeholder = 'Search live…';
+  controls.append(catBar, search);
+  const grid = document.createElement('div'); grid.className = 'grid tiles'; grid.textContent = 'Loading…';
+  sec.append(h, controls, grid);
+
+  let all = [], cat = 'all';
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    let items = cat === 'all' ? all : all.filter((it) => it.category === cat);
+    if (q) items = items.filter((it) => (it.title || '').toLowerCase().includes(q));
+    if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
+    grid.replaceChildren(...items.slice(0, 300).map((it) => {
+      const el = document.createElement('div'); el.className = 'tile';
+      if (it.logo) { const img = document.createElement('img'); img.className = 'tile-logo'; img.src = it.logo; img.onerror = () => img.remove(); el.append(img); }
+      const t = document.createElement('div'); t.textContent = it.title; el.append(t);
+      el.onclick = () => open(it.embed);
+      return el;
+    }));
+  };
+  search.oninput = draw;
+
+  fetchCatalog(src.catalogUrl).then((items) => {
+    all = items;
+    const cats = ['all', ...[...new Set(items.map((it) => it.category).filter(Boolean))].sort()];
+    if (cats.length > 2) {
+      catBar.append(...cats.map((c) => {
+        const b = document.createElement('button');
+        b.className = 'tab' + (c === cat ? ' active' : '');
+        b.textContent = c === 'all' ? 'All' : c[0].toUpperCase() + c.slice(1);
+        b.onclick = () => { cat = c; [...catBar.children].forEach((x) => x.classList.toggle('active', x === b)); draw(); };
+        return b;
+      }));
+    }
+    draw();
+  }).catch((e) => { grid.textContent = 'Failed to load (' + (e && e.message || e) + ').'; });
+
+  return sec;
 }
 
 let browseQuery = '';
@@ -914,16 +916,13 @@ $('watch-later').onclick = async () => {
 };
 
 // Add a player/source (shared by the wizard + tests). Auto-prefixes the URL scheme.
-// A Live TV source may instead reference a registered adapter (provider) and carry no URL.
-function addSource({ name, url, category, template, provider }) {
+// A Live TV source may instead be a catalog (catalogUrl: a JSON API of live streams, no site URL).
+function addSource({ name, url, category, template, catalogUrl }) {
   category = category || 'vod';
   const src = { name: (name || '').trim(), category };
-  if (provider && category === 'live') src.provider = provider;
-  if (url && url.trim()) {
-    url = url.trim();
-    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-    src.url = url;
-  }
+  const prefix = (u) => (/^https?:\/\//i.test(u) ? u : 'https://' + u);
+  if (category === 'live' && catalogUrl && catalogUrl.trim()) src.catalogUrl = prefix(catalogUrl.trim());
+  if (url && url.trim()) src.url = prefix(url.trim());
   if (template && template.trim()) src.template = template.trim();
   sources.push(src);
   store('sources', sources);
@@ -933,7 +932,7 @@ function addSource({ name, url, category, template, provider }) {
 
 // Step-by-step "Add player / source" modal wizard, with a per-field hover example + live preview.
 function openAddWizard() {
-  const data = { name: '', category: 'vod', url: '', template: '' };
+  const data = { name: '', category: 'vod', url: '', template: '', catalogUrl: '' };
   let i = 0;
   const wiz = $('wizard');
   const close = () => { wiz.hidden = true; wiz.replaceChildren(); };
@@ -952,12 +951,15 @@ function openAddWizard() {
         choices: [['vod', 'Movies / TV Shows'], ['anime', 'Anime'], ['live', 'Live TV']] },
     ];
     if (data.category === 'live') {
-      const keys = Object.keys(liveAdapters);
-      if (keys.length) s.push({
-        key: 'provider', title: 'Live source', label: 'Where do the channels come from?',
-        example: 'Pick a built-in catalog (searchable, with an All / Live-now view), or “A website” to just open a site.',
-        choices: [['', 'A website (opens the site)'], ...keys.map((k) => [k, liveAdapters[k].name])] });
-      if (!data.provider) s.push(urlStep); // website path still needs a URL
+      s.push({
+        key: 'liveKind', title: 'Live source', label: 'How do you want to add this live source?',
+        example: '“Live catalog” reads a JSON API of live streams (paste its URL) and lists them to click. “A website” just opens the site.',
+        choices: [['site', 'A website (opens the site)'], ['catalog', 'Live catalog (JSON API)']] });
+      s.push(data.liveKind === 'catalog'
+        ? { key: 'catalogUrl', title: 'Catalog API URL', label: 'The JSON endpoint that lists live streams', placeholder: 'https://example.com/api/streams',
+            example: 'Returns a list of streams, each with an embed URL. Example shape: { streams: [ { name, category, embed_url, thumbnail_url } ] }.',
+            valid: () => /\./.test(data.catalogUrl.trim()) }
+        : urlStep);
     } else {
       s.push(urlStep, {
         key: 'template', title: 'Watch-link pattern', label: 'How does it build a watch link? (optional)',
@@ -1058,7 +1060,3 @@ webview.addEventListener('leave-html-full-screen', () => webview.classList.remov
 
 renderSources();
 showBrowse(); // Browse is the landing page
-
-// Optionally load local-only live-TV providers (gitignored; absent on a fresh clone -> silent no-op).
-// Skipped under e2e so the committed suite stays deterministic (registers its own stub adapter).
-if (!(window.sh && window.sh.testMode)) import('./live-providers.local.js').catch(() => {});
