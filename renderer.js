@@ -12,6 +12,8 @@ let later = load('watchlater', []);  // button-added, deduped by key
 let tmdbKey = load('tmdbKey', '');   // user's free TMDB API key (for Browse)
 let currentSource = null;            // home URL for the topbar home button
 let activeKey = null;                // continue entry the player position attaches to
+let playing = null;                  // {kind,type,id,season,episode} of the open embed (for source switching)
+let lastSourceUrl = load('lastSource', null); // last source the user watched on (default in pickers)
 
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ''; } };
 const sourceCategory = (url) => sources.find((s) => hostOf(s.url) === hostOf(url))?.category;
@@ -146,6 +148,8 @@ function hideAll() {
   $('browse').hidden = true;
   $('detail').hidden = true;
   webview.hidden = true;
+  playing = null;              // leaving the embed: forget what's playing
+  $('src-switch').hidden = true;
 }
 
 function open(url) {
@@ -176,6 +180,29 @@ function sourceItem(src) {
   t.className = 'title';
   t.textContent = src.name;
   grow.append(t);
+  const edit = document.createElement('button');
+  edit.textContent = '✎';
+  edit.title = 'Edit play-URL pattern'; // tokens: {origin} {type} {id} {season} {episode}
+  edit.onclick = (e) => {
+    e.stopPropagation();
+    const inp = document.createElement('input');
+    inp.value = src.template || '';
+    inp.placeholder = '{origin}/embed/{type}/{id}/{season}/{episode}';
+    inp.title = 'Play-URL pattern — tokens {origin} {type} {id} {season} {episode}; blank = default';
+    inp.onclick = (ev) => ev.stopPropagation(); // don't open the source while editing
+    const commit = () => {
+      if (inp.value.trim()) src.template = inp.value.trim(); else delete src.template;
+      store('sources', sources);
+      renderSources();
+    };
+    inp.onkeydown = (ev) => {
+      if (ev.key === 'Enter') { inp.onblur = null; commit(); }
+      if (ev.key === 'Escape') { inp.onblur = null; renderSources(); }
+    };
+    inp.onblur = commit;
+    li.replaceChildren(inp);
+    inp.focus();
+  };
   const del = document.createElement('button');
   del.textContent = '✕';
   del.title = 'Remove source';
@@ -185,7 +212,7 @@ function sourceItem(src) {
     store('sources', sources);
     renderSources();
   };
-  li.append(grow, del);
+  li.append(grow, edit, del);
   li.onclick = () => { currentSource = src.url; open(src.url); };
   return li;
 }
@@ -376,15 +403,27 @@ let browseTab = 'movie'; // 'movie' | 'tv' | 'anime' | 'live' | 'youtube'
 function buildUrl(src, type, id, season, episode) {
   let origin = src.url;
   try { origin = new URL(src.url).origin; } catch {}
+  let u;
   if (src.template) {
-    return src.template
+    u = src.template
       .replaceAll('{origin}', origin).replaceAll('{type}', type).replaceAll('{id}', id)
       .replaceAll('{season}', season ?? '').replaceAll('{episode}', episode ?? '');
+  } else {
+    u = `${origin}/embed/${type}/${id}`;
+    if (type === 'tv' && season != null && episode != null) u += `/${season}/${episode}`;
   }
-  let u = `${origin}/embed/${type}/${id}`;
-  if (type === 'tv' && season != null && episode != null) u += `/${season}/${episode}`;
-  return u;
+  // Movies leave {season}/{episode} blank -> trailing `//`; trim empty path segments so one
+  // template serves movie AND tv (e.g. cinemaos `/player/{id}/{season}/{episode}`).
+  return u.replace(/([^:]\/)\/+/g, '$1').replace(/\/+(\?|#|$)/g, '$1');
 }
+
+// ponytail: self-check the empty-segment trim; fires on load, no-op if correct.
+(function () {
+  const cine = { url: 'https://cinemaos.tech', template: 'https://cinemaos.tech/player/{id}/{season}/{episode}' };
+  console.assert(buildUrl(cine, 'movie', 42) === 'https://cinemaos.tech/player/42', 'buildUrl movie trim');
+  console.assert(buildUrl(cine, 'tv', 42, 1, 3) === 'https://cinemaos.tech/player/42/1/3', 'buildUrl tv fill');
+  console.assert(buildUrl({ url: 'https://ex.com' }, 'movie', 42) === 'https://ex.com/embed/movie/42', 'buildUrl default');
+})();
 
 // Sources that can play a given browse kind (with a sensible fallback to vod).
 function sourcesFor(kind) {
@@ -404,25 +443,39 @@ async function tmdbGet(path, params) {
   return window.sh.tmdb(path, { api_key: tmdbKey, ...params });
 }
 
-// Load the source's embed player for a title/episode: one source auto-opens; several -> picker.
+// Load a source's embed player for a title/episode and remember it so the topbar can switch source.
+function openOn(src, kind, type, id, season, episode) {
+  currentSource = src.url;
+  lastSourceUrl = src.url;
+  store('lastSource', lastSourceUrl);
+  open(buildUrl(src, type, id, season, episode)); // open()->hideAll() clears `playing`; re-set after
+  playing = { kind, type, id, season, episode };
+  renderSourceSwitch();
+}
+
+// Populate + show the topbar source switcher for whatever is playing (only if >1 source to switch to).
+function renderSourceSwitch() {
+  const sel = $('src-switch');
+  const srcs = playing ? sourcesFor(playing.kind) : [];
+  if (srcs.length < 2) { sel.hidden = true; return; }
+  sel.replaceChildren(...srcs.map((s) => {
+    const o = document.createElement('option');
+    o.value = s.url; o.textContent = s.name;
+    if (s.url === lastSourceUrl) o.selected = true;
+    return o;
+  }));
+  sel.hidden = false;
+}
+
+// Play a title on the chosen source: the detail-page selector, else last-used, else the first source.
 function playOn(kind, type, id, season, episode) {
   const srcs = sourcesFor(kind);
   if (srcs.length === 0) { alert('Add a ' + (kind === 'anime' ? 'Anime' : 'Movies/TV') + ' source first.'); return; }
-  const go = (s) => { currentSource = s.url; open(buildUrl(s, type, id, season, episode)); };
-  if (srcs.length === 1) { go(srcs[0]); return; }
-  const pick = document.createElement('div');
-  pick.className = 'source-picker';
-  pick.append(...srcs.map((s) => {
-    const b = document.createElement('button');
-    b.textContent = s.name;
-    b.onclick = () => go(s);
-    return b;
-  }));
-  const cancel = document.createElement('button');
-  cancel.textContent = '✕';
-  cancel.onclick = () => pick.remove();
-  pick.append(cancel);
-  document.body.append(pick);
+  const sel = document.querySelector('.detail-source');
+  const chosen = (sel && srcs.find((s) => s.url === sel.value)) // match within this kind (URLs can collide across categories)
+    || srcs.find((s) => s.url === lastSourceUrl)
+    || srcs[0];
+  openOn(chosen, kind, type, id, season, episode);
 }
 
 function posterCard(kind, item) {
@@ -611,6 +664,19 @@ function renderDetail(kind, type, id, d) {
 
   const actions = document.createElement('div');
   actions.className = 'detail-actions';
+  const playSrcs = sourcesFor(kind);
+  if (playSrcs.length > 1) {
+    const srcSel = document.createElement('select');
+    srcSel.className = 'detail-source';
+    srcSel.title = 'Source';
+    srcSel.append(...playSrcs.map((s) => {
+      const o = document.createElement('option');
+      o.value = s.url; o.textContent = s.name;
+      if (s.url === lastSourceUrl) o.selected = true;
+      return o;
+    }));
+    actions.append(srcSel);
+  }
   const watchBtn = document.createElement('button');
   watchBtn.className = 'btn-primary';
   const setWatchLabel = () => { watchBtn.textContent = type === 'tv' ? `▶ Watch S${curSeason}E${curEpisode}` : '▶ Watch'; };
@@ -773,6 +839,11 @@ $('home-btn').onclick = showHome;
 $('back').onclick = () => webview.goBack();
 $('forward').onclick = () => webview.goForward();
 $('src-home').onclick = () => currentSource && open(currentSource);
+$('src-switch').onchange = () => {
+  if (!playing) return;
+  const src = sourcesFor(playing.kind).find((s) => s.url === $('src-switch').value);
+  if (src) openOn(src, playing.kind, playing.type, playing.id, playing.season, playing.episode);
+};
 
 webview.addEventListener('did-navigate', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });
 webview.addEventListener('did-navigate-in-page', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });

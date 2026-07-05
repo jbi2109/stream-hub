@@ -438,7 +438,7 @@ async function main() {
 
   // 21. remove a source (target by name; sidebar is grouped now)
   const beforeCount = await page.eval(`document.querySelectorAll('#sources li').length`);
-  await page.eval(`[...document.querySelectorAll('#sources li')].find((li) => li.textContent.includes('LocalTest')).querySelector('button').click()`);
+  await page.eval(`[...document.querySelectorAll('#sources li')].find((li) => li.textContent.includes('LocalTest')).querySelector('button[title="Remove source"]').click()`);
   assert.strictEqual(await page.eval(`document.querySelectorAll('#sources li').length`), beforeCount - 1, 'source not removed');
   assert.ok(!(await page.eval(`JSON.parse(localStorage.getItem('sources'))`)).some((s) => s.name === 'LocalTest'), 'LocalTest still in storage');
   ok('sources: remove works, storage matches');
@@ -525,6 +525,64 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'youtube').click()`);
   assert.ok(await page.eval(`document.getElementById('webview').src.includes('youtube.com')`), 'YouTube tab did not open youtube.com');
   ok('browse: YouTube tab opens youtube.com');
+
+  // 27. buildUrl: a cinemaos-style template trims empty season/episode for movies, fills for tv;
+  //     the default /embed/ pattern is unchanged (vidking/vidsrc still work).
+  assert.strictEqual(
+    await page.eval(`buildUrl({url:'${PLAYER}',template:'${PLAYER}/player/{id}/{season}/{episode}'},'movie',42)`),
+    `${PLAYER}/player/42`, 'movie template should trim empty season/episode');
+  assert.strictEqual(
+    await page.eval(`buildUrl({url:'${PLAYER}',template:'${PLAYER}/player/{id}/{season}/{episode}'},'tv',42,1,3)`),
+    `${PLAYER}/player/42/1/3`, 'tv template should fill season/episode');
+  assert.strictEqual(
+    await page.eval(`buildUrl({url:'${SITE}'},'movie',42)`),
+    `${SITE}/embed/movie/42`, 'default movie url should be unchanged');
+  ok('buildUrl: template trims movie / fills tv; default unchanged');
+
+  // 28. edit a source's play-URL pattern via the inline ✎ editor; it persists
+  await page.eval(`document.getElementById('home-btn').click()`); // leave any embed
+  await page.eval(`
+    document.getElementById('src-name').value = 'CineTest';
+    document.getElementById('src-url').value = '${PLAYER}';
+    document.getElementById('src-cat').value = 'vod';
+    document.getElementById('add-source').requestSubmit();
+  `);
+  await page.eval(`[...document.querySelectorAll('#sources li')].find(li => li.textContent.includes('CineTest')).querySelector('button[title^="Edit"]').click()`);
+  await page.eval(`(() => {
+    const inp = document.querySelector('#sources li input');
+    inp.value = '${PLAYER}/player/{id}/{season}/{episode}';
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  })()`);
+  assert.strictEqual(
+    await page.eval(`(JSON.parse(localStorage.getItem('sources')).find(s => s.name === 'CineTest')||{}).template`),
+    `${PLAYER}/player/{id}/{season}/{episode}`, 'edited template did not persist');
+  ok('sources: inline ✎ sets a play-URL pattern that persists');
+
+  // 29. detail-page source selector routes Watch to the chosen source + its pattern
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'movie').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'movie grid for source select');
+  await page.eval(`document.querySelector('#browse .grid .card').click()`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-source')`), 'detail source selector present');
+  await page.eval(`document.querySelector('#detail .detail-source').value = '${PLAYER}'`); // choose CineTest
+  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/player/42'`), 'watch used the chosen source pattern');
+  ok('detail: source selector routes Watch to the chosen source pattern');
+
+  // 30. topbar source switcher swaps the SAME title onto another source while watching
+  assert.strictEqual(await page.eval(`document.getElementById('src-switch').hidden`), false, 'src-switch should show while watching with multiple sources');
+  await page.eval(`(() => {
+    const sw = document.getElementById('src-switch');
+    sw.value = '${SITE}';
+    sw.dispatchEvent(new Event('change'));
+  })()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE}/embed/movie/42'`), 'switch reloaded same movie on new source');
+  ok('topbar: switch source reloads the same title on the new source');
+
+  // 31. the switcher hides once you leave the embed
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  assert.strictEqual(await page.eval(`document.getElementById('src-switch').hidden`), true, 'src-switch should hide off the embed');
+  ok('topbar: switch source hidden when not watching');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
