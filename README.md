@@ -12,8 +12,13 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 
 ## Features
 
+- **Browse home (TMDB)** — the app's own landing page: discover Movies, TV, and Anime
+  from [TMDB](https://www.themoviedb.org/), search, and click a title to play it on one of
+  your sources (the streaming sites key their URLs on TMDB ids). Also a **Live TV** tab
+  (tiles of your live sources) and a built-in **YouTube** tab. Needs a free TMDB API key.
 - **Bring-your-own sources** — add any streaming site by name + URL. Tag each as
-  **Movies / TV Shows** or **Live TV**; the sidebar groups them accordingly.
+  **Movies / TV Shows**, **Anime**, or **Live TV**; the sidebar groups them accordingly.
+  An optional per-source URL pattern controls how Browse builds each site's watch link.
 - **Continue Watching (automatic)** — as you browse a show, the app reads the title,
   poster, and season/episode from the page and builds a poster-card entry. No "save" button.
 - **Real playback progress** — the main process reads the video's position from inside the
@@ -24,8 +29,10 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 - **Tabs & categories** — a tabbed home (Continue Watching / Watch Later), each filterable by
   **All / Movies / TV Shows** (Watch Later also has **Live TV**). A per-card dropdown lets you
   fix a wrong auto-classification. Live TV is never added to Continue Watching.
-- **Ad-blocking** — network-level blocking via the [Ghostery](https://github.com/ghostery/adblocker)
-  engine + EasyList, cached locally after first launch.
+- **Ad-blocking** — the [Ghostery](https://github.com/ghostery/adblocker) engine with full
+  uBlock-style lists (network + cosmetic + scriptlets), cached locally and refreshed daily.
+  Best-effort YouTube ad-blocking included (never as bulletproof as uBlock Origin in a real
+  browser — YouTube actively fights blockers).
 - **Popup blocking** — ad pop-unders are denied; same-site `_blank` links open in place;
   real login pop-ups (Google, Apple, Discord, GitHub, Microsoft, Facebook) are allowed so you
   can sign into sites that offer accounts (Google logins get a Firefox user-agent so its
@@ -50,12 +57,15 @@ On Windows you can also double-click **`launch.bat`**.
 
 ## Usage
 
-1. Click **+ Add source**, enter a name and URL, and pick a category (Movies/TV Shows or Live TV).
-2. Click a source in the sidebar to open it in the built-in browser.
-3. Browse and play as normal. Shows appear under **Continue Watching** automatically; hit
-   **+ Watch Later** to bookmark something for later.
-4. Click **🏠 Home** to return to your library. Use the tabs to switch views and the pills to
-   filter by type. Each card has ✎ (note), ✕ (remove), and a category dropdown.
+1. Paste a free **TMDB API key** into the Settings field (themoviedb.org → Settings → API →
+   API Key v3) to power the Browse home.
+2. Click **+ Add source**, enter a name and URL, and pick a category (Movies/TV Shows, Anime,
+   or Live TV). Optionally set a watch-URL pattern for that site.
+3. **Browse** (the landing page) to discover Movies / TV / Anime and click a title to play it
+   on a source; the **Live TV** and **YouTube** tabs launch those directly.
+4. Shows appear under **Continue Watching** automatically as you watch; hit **+ Watch Later**
+   to bookmark. Click **📽 Library** to see your Continue Watching / Watch Later, filter by
+   type, and per-card ✎ (note), ✕ (remove), or category dropdown.
 
 ## How it works
 
@@ -77,9 +87,9 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs an end-to-end suite covering
-navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress reading,
-the tabbed library, categorisation, and persistence.
+Launches the real app under the Chrome DevTools Protocol and runs a 32-test end-to-end suite
+covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
+reading, the TMDB browse home, the tabbed library, categorisation, and persistence.
 
 ## Disclaimer
 

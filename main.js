@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session } = require('electron');
+const { app, BrowserWindow, session, ipcMain } = require('electron');
 const { ElectronBlocker } = require('@ghostery/adblocker-electron');
 const path = require('path');
 const os = require('os');
@@ -73,22 +73,31 @@ app.on('web-contents-created', (_e, contents) => {
   });
 });
 
-// Network-level ad/tracker blocking (EasyList via Ghostery engine).
-// Cancels ad requests before they load — kills popups' sources and fake-update ads.
+// Network + cosmetic + scriptlet ad-blocking (Ghostery engine, uBlock-style full lists).
+// Full lists (not just network rules) are what block YouTube ads, which are served from
+// the video domain and need cosmetic/scriptlet injection.
 async function enableAdblock() {
   let blocker;
   if (process.env.SH_TEST_BLOCK_PATTERN) {
     blocker = ElectronBlocker.parse(process.env.SH_TEST_BLOCK_PATTERN); // deterministic e2e rule
   } else {
+    const cachePath = path.join(app.getPath('userData'), 'adblock-full.bin');
+    // ponytail: 24h refresh; YouTube fights blockers so stale lists rot
+    let fresh = false;
+    try { fresh = (Date.now() - fs.statSync(cachePath).mtimeMs) < 24 * 3600 * 1000; } catch {}
+    const cache = fresh
+      ? { path: cachePath, read: fs.promises.readFile, write: fs.promises.writeFile }
+      : { path: cachePath, write: fs.promises.writeFile }; // missing/stale -> fetch latest lists
     try {
-      blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
-        path: path.join(app.getPath('userData'), 'adblock-engine.bin'), // cache: no refetch each launch
-        read: fs.promises.readFile,
-        write: fs.promises.writeFile,
-      });
+      blocker = await ElectronBlocker.fromPrebuiltFull(fetch, cache);
     } catch (e) {
-      console.error('adblock list unavailable, continuing without:', e.message);
-      return;
+      console.error('full adblock list unavailable, trying ads-only:', e.message);
+      try {
+        blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch);
+      } catch (e2) {
+        console.error('adblock unavailable, continuing without:', e2.message);
+        return;
+      }
     }
   }
   blocker.enableBlockingInSession(session.defaultSession); // webview shares default session
@@ -120,6 +129,20 @@ app.whenReady().then(() => {
     cb({ requestHeaders: details.requestHeaders });
   });
   enableAdblock().catch((e) => console.error('adblock init failed:', e.message));
+
+  // TMDB catalog fetch (runs here to avoid the renderer CSP). Renderer passes api_key.
+  const TMDB_BASE = process.env.SH_TEST_TMDB_BASE || 'https://api.themoviedb.org';
+  ipcMain.handle('tmdb', async (_e, { path: p, params }) => {
+    const qs = new URLSearchParams(params || {}).toString();
+    try {
+      const r = await fetch(`${TMDB_BASE}/3${p}${qs ? '?' + qs : ''}`);
+      if (!r.ok) return { error: `HTTP ${r.status}`, results: [] };
+      return await r.json();
+    } catch (e) {
+      return { error: e.message, results: [] };
+    }
+  });
+
   createWindow();
 });
 app.on('window-all-closed', () => app.quit());

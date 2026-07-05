@@ -10,19 +10,27 @@
   <div id="sidebar">
     <h1>Stream Hub</h1>
 
+    <div class="nav">
+      <button id="browse-btn">&#128269; Browse</button>
+      <button id="home-btn">&#127909; Library</button>
+    </div>
+
     <h2>Sources</h2>
     <div id="sources"></div>
     <form id="add-source">
       <input id="src-name" placeholder="Name" required>
       <input id="src-url" placeholder="https://site.com" required>
+      <input id="src-template" placeholder="Play URL pattern (optional): {origin}/{type}/{id}">
       <select id="src-cat">
         <option value="vod">Movies / TV Shows</option>
+        <option value="anime">Anime</option>
         <option value="live">Live TV</option>
       </select>
       <button type="submit">+ Add source</button>
     </form>
 
-    <button id="home-btn">&#127968; Home</button>
+    <h2>Settings</h2>
+    <input id="tmdb-key" placeholder="TMDB API key (for Browse)">
   </div>
 
   <div id="content">
@@ -34,7 +42,8 @@
       <button id="watch-later" title="Add this to Watch Later">+ Watch Later</button>
     </div>
     <div id="view">
-      <div id="home"></div>
+      <div id="browse"></div>
+      <div id="home" hidden></div>
       <webview id="webview" allowpopups hidden></webview>
     </div>
   </div>

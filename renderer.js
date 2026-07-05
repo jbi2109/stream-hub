@@ -9,6 +9,7 @@ const store = (key, val) => localStorage.setItem(key, JSON.stringify(val));
 let sources = load('sources', []);
 let cont = load('continue', []);     // auto-tracked, keyed, sorted by updatedAt desc
 let later = load('watchlater', []);  // button-added, deduped by key
+let tmdbKey = load('tmdbKey', '');   // user's free TMDB API key (for Browse)
 let currentSource = null;            // home URL for the topbar home button
 let activeKey = null;                // continue entry the player position attaches to
 
@@ -142,14 +143,23 @@ window.sh?.onVideoProgress(({ position, duration }) => {
 
 function open(url) {
   $('home').hidden = true;
+  $('browse').hidden = true;
   webview.hidden = false;
   webview.src = url;
 }
 
 function showHome() {
   webview.hidden = true;
+  $('browse').hidden = true;
   $('home').hidden = false;
   renderHome();
+}
+
+function showBrowse() {
+  webview.hidden = true;
+  $('home').hidden = true;
+  $('browse').hidden = false;
+  renderBrowse();
 }
 
 // ---------- rendering ----------
@@ -315,7 +325,7 @@ function tabBar(tabs, current, onPick, cls) {
     btn.className = 'tab' + (id === current ? ' active' : '');
     btn.textContent = label;
     btn.dataset.tab = id;
-    btn.onclick = () => { onPick(id); renderHome(); };
+    btn.onclick = () => onPick(id); // onPick is responsible for re-rendering
     bar.append(btn);
   }
   return bar;
@@ -332,8 +342,8 @@ function renderHome() {
 
   const nodes = [
     tabBar([['continue', 'Continue Watching'], ['later', 'Watch Later']], topTab,
-      (id) => { topTab = id; }, 'tabs'),
-    tabBar(subs, subTab, (id) => { subTab = id; }, 'subtabs'),
+      (id) => { topTab = id; renderHome(); }, 'tabs'),
+    tabBar(subs, subTab, (id) => { subTab = id; renderHome(); }, 'subtabs'),
   ];
 
   if (list.length === 0) {
@@ -350,6 +360,168 @@ function renderHome() {
     nodes.push(grid);
   }
   $('home').replaceChildren(...nodes);
+}
+
+// ---------- browse (TMDB catalog) ----------
+
+let browseTab = 'movie'; // 'movie' | 'tv' | 'anime' | 'live' | 'youtube'
+
+// Build a source's watch URL for a TMDB title. `type` is 'movie' or 'tv' (anime -> tv).
+function buildUrl(src, type, id) {
+  if (src.template) {
+    let origin = src.url;
+    try { origin = new URL(src.url).origin; } catch {}
+    return src.template.replace('{origin}', origin).replace('{type}', type).replace('{id}', id);
+  }
+  const origin = new URL(src.url).origin;
+  return `${origin}/${type}/${id}`;
+}
+
+// Sources that can play a given browse kind (with a sensible fallback to vod).
+function sourcesFor(kind) {
+  if (kind === 'live') return sources.filter((s) => s.category === 'live');
+  const want = kind === 'anime' ? 'anime' : 'vod';
+  const exact = sources.filter((s) => s.category === want);
+  return exact.length ? exact : sources.filter((s) => s.category === 'vod' || s.category === 'anime');
+}
+
+async function tmdbFetch(path, params) {
+  const res = await window.sh.tmdb(path, { api_key: tmdbKey, ...params });
+  return res && res.results ? res.results : [];
+}
+
+// Open a TMDB title: pick a source (auto if one, small picker if several), then navigate.
+function playTitle(kind, item) {
+  const type = kind === 'movie' ? 'movie' : 'tv'; // anime & tv both use /tv/
+  const id = item.id;
+  const srcs = sourcesFor(kind);
+  if (srcs.length === 0) return; // handled by caller (hint shown)
+  if (srcs.length === 1) { currentSource = srcs[0].url; open(buildUrl(srcs[0], type, id)); return; }
+  // several sources -> tiny picker overlay
+  const pick = document.createElement('div');
+  pick.className = 'source-picker';
+  pick.append(...srcs.map((s) => {
+    const b = document.createElement('button');
+    b.textContent = s.name;
+    b.onclick = () => { currentSource = s.url; open(buildUrl(s, type, id)); };
+    return b;
+  }));
+  const cancel = document.createElement('button');
+  cancel.textContent = '✕';
+  cancel.onclick = () => pick.remove();
+  pick.append(cancel);
+  $('browse').append(pick);
+}
+
+function posterCard(kind, item) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  const wrap = document.createElement('div');
+  wrap.className = 'poster-wrap';
+  if (item.poster_path) {
+    const img = document.createElement('img');
+    img.className = 'poster';
+    img.src = `https://image.tmdb.org/t/p/w342${item.poster_path}`;
+    img.onerror = () => { img.remove(); wrap.classList.add('noposter'); };
+    wrap.append(img);
+  } else {
+    wrap.classList.add('noposter');
+  }
+  const title = document.createElement('div');
+  title.className = 'card-title';
+  title.textContent = item.title || item.name || 'Untitled';
+  el.append(wrap, title);
+  el.onclick = () => playTitle(kind, item);
+  return el;
+}
+
+function browseTabBar() {
+  const tabs = [['movie', 'Movies'], ['tv', 'TV'], ['anime', 'Anime'], ['live', 'Live TV'], ['youtube', 'YouTube']];
+  return tabBar(tabs, browseTab, (id) => {
+    if (id === 'youtube') { open('https://www.youtube.com'); return; }
+    browseTab = id;
+    browseQuery = '';
+    renderBrowse();
+  }, 'tabs');
+}
+
+async function renderBrowse() {
+  const nodes = [browseTabBar()];
+
+  if (browseTab === 'live') {
+    const live = sources.filter((s) => s.category === 'live');
+    if (!live.length) {
+      nodes.push(emptyMsg('Add a Live TV source to see it here.'));
+    } else {
+      const grid = document.createElement('div');
+      grid.className = 'grid tiles';
+      grid.append(...live.map((s) => {
+        const el = document.createElement('div');
+        el.className = 'tile';
+        el.textContent = s.name;
+        el.onclick = () => { currentSource = s.url; open(s.url); };
+        return el;
+      }));
+      nodes.push(grid);
+    }
+    $('browse').replaceChildren(...nodes);
+    return;
+  }
+
+  // Movies / TV / Anime need a TMDB key
+  if (!tmdbKey) {
+    nodes.push(emptyMsg('Add your free TMDB API key in Settings (left) to browse. Get one at themoviedb.org → Settings → API.'));
+    $('browse').replaceChildren(...nodes);
+    return;
+  }
+
+  // search box
+  const search = document.createElement('input');
+  search.className = 'browse-search';
+  search.placeholder = `Search ${browseTab === 'anime' ? 'anime' : browseTab === 'movie' ? 'movies' : 'TV'}...`;
+  search.value = browseQuery;
+  search.oninput = () => { browseQuery = search.value; debouncedBrowse(); };
+  nodes.push(search);
+
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  grid.textContent = 'Loading…';
+  nodes.push(grid);
+  const tabAtRender = browseTab;
+  $('browse').replaceChildren(...nodes);
+
+  const results = await fetchBrowse(browseTab, browseQuery);
+  if (browseTab !== tabAtRender) return; // user switched tabs mid-fetch
+  grid.textContent = '';
+  if (!results.length) { grid.textContent = 'No results (check your TMDB key).'; return; }
+  const kind = browseTab;
+  grid.append(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(kind, r)));
+  // keep focus in the search box while typing
+  if (browseQuery) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
+}
+
+let browseQuery = '';
+let browseTimer = null;
+const debouncedBrowse = () => { clearTimeout(browseTimer); browseTimer = setTimeout(renderBrowse, 350); };
+
+function emptyMsg(text) {
+  const d = document.createElement('div');
+  d.className = 'empty';
+  d.textContent = text;
+  return d;
+}
+
+async function fetchBrowse(tab, query) {
+  if (query) {
+    const mediaType = tab === 'movie' ? 'movie' : 'tv';
+    return tmdbFetch(`/search/${mediaType}`, { query });
+  }
+  if (tab === 'movie') return tmdbFetch('/trending/movie/week', {});
+  if (tab === 'tv') return tmdbFetch('/trending/tv/week', {});
+  // anime: Japanese-origin animation
+  return tmdbFetch('/discover/tv', {
+    with_genres: 16, with_original_language: 'ja', sort_by: 'popularity.desc',
+  });
 }
 
 // ---------- actions ----------
@@ -372,12 +544,20 @@ $('add-source').onsubmit = (e) => {
   e.preventDefault();
   let url = $('src-url').value.trim();
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  sources.push({ name: $('src-name').value.trim(), url, category: $('src-cat').value });
+  const src = { name: $('src-name').value.trim(), url, category: $('src-cat').value };
+  const template = $('src-template').value.trim();
+  if (template) src.template = template;
+  sources.push(src);
   store('sources', sources);
   renderSources();
   e.target.reset();
 };
 
+const tmdbKeyInput = $('tmdb-key');
+tmdbKeyInput.value = tmdbKey;
+tmdbKeyInput.onchange = () => { tmdbKey = tmdbKeyInput.value.trim(); store('tmdbKey', tmdbKey); if (!$('browse').hidden) renderBrowse(); };
+
+$('browse-btn').onclick = showBrowse;
 $('home-btn').onclick = showHome;
 $('back').onclick = () => webview.goBack();
 $('forward').onclick = () => webview.goForward();
@@ -390,4 +570,4 @@ webview.addEventListener('enter-html-full-screen', () => webview.classList.add('
 webview.addEventListener('leave-html-full-screen', () => webview.classList.remove('fullscreen'));
 
 renderSources();
-renderHome();
+showBrowse(); // Browse is the landing page

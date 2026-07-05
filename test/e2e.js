@@ -62,6 +62,13 @@ const uaEcho = http.createServer((req, res) => {
   res.end(req.headers['user-agent'] || '');
 });
 
+// Stands in for TMDB (SH_TEST_TMDB_BASE points the main process here). Any /3/* path
+// returns one canned result so browse grids render deterministically.
+const tmdb = http.createServer((req, res) => {
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
+});
+
 // ---- minimal CDP client ----
 class CDP {
   static async connect(wsUrl) {
@@ -103,7 +110,8 @@ async function launchApp() {
   const electronPath = require(path.join(ROOT, 'node_modules', 'electron'));
   electronProc = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, '--test-profile'],
     { cwd: ROOT, stdio: 'ignore', env: {
-      ...process.env, SH_TEST_UA_HOST: UA_ECHO_HOST, SH_TEST_BLOCK_PATTERN: 'ads-test-marker' } });
+      ...process.env, SH_TEST_UA_HOST: UA_ECHO_HOST, SH_TEST_BLOCK_PATTERN: 'ads-test-marker',
+      SH_TEST_TMDB_BASE: 'http://127.0.0.1:9313' } });
   return until(async () => {
     const list = await targets();
     return list.find((t) => t.url.includes('index.html') && t.webSocketDebuggerUrl);
@@ -128,17 +136,20 @@ async function main() {
   site.listen(9310);
   uaEcho.listen(9311);
   player.listen(9312);
+  tmdb.listen(9313);
 
   // ---------- boot ----------
   let pageTarget = await launchApp();
   let page = await CDP.connect(pageTarget.webSocketDebuggerUrl);
-  await until(() => page.eval(`document.querySelectorAll('#home .tabs .tab').length`), 'home rendered');
+  await until(() => page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 'browse rendered');
 
-  // 1. UI boots (ships with no default sources)
+  // 1. UI boots on Browse (ships with no default sources; no TMDB key -> prompt)
   assert.strictEqual(await page.eval(`document.querySelectorAll('#sources li').length`), 0, 'expected no seeded sources');
-  assert.strictEqual(await page.eval(`document.getElementById('home').hidden`), false, 'home grid should be visible at boot');
-  assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), true, 'webview should be hidden at boot');
-  ok('UI boots: no default sources, home grid visible, webview hidden');
+  assert.strictEqual(await page.eval(`document.getElementById('browse').hidden`), false, 'browse should be the landing view');
+  assert.strictEqual(await page.eval(`document.getElementById('home').hidden`), true, 'library should be hidden at boot');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 5, 'expected 5 browse tabs');
+  assert.ok(await page.eval(`(document.querySelector('#browse .empty')||{}).textContent?.includes('TMDB')`), 'no-key prompt should mention TMDB');
+  ok('UI boots on Browse: 5 tabs, no-key prompt, no default sources');
 
   // 2. add local test source + click it -> interaction regression check
   await page.eval(`
@@ -148,7 +159,8 @@ async function main() {
   `);
   assert.strictEqual(await page.eval(`document.querySelectorAll('#sources li').length`), 1, 'source not added');
   await page.eval(`[...document.querySelectorAll('#sources li')].find((li) => li.textContent.includes('LocalTest')).click()`);
-  assert.strictEqual(await page.eval(`document.getElementById('home').hidden`), true, 'home must hide after choosing a source');
+  assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), false, 'webview must show after choosing a source');
+  assert.strictEqual(await page.eval(`document.getElementById('browse').hidden`), true, 'browse must hide after choosing a source');
   const hit = await page.eval(`(() => {
     const r = document.getElementById('view').getBoundingClientRect();
     const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -416,7 +428,8 @@ async function main() {
   await quitApp();
   pageTarget = await launchApp();
   page = await CDP.connect(pageTarget.webSocketDebuggerUrl);
-  await until(() => page.eval(`document.querySelectorAll('#sources li').length`), 'sources rendered after restart');
+  await until(() => page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 'app rendered after restart');
+  await page.eval(`document.getElementById('home-btn').click()`); // Browse is now the landing; open Library
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('sources'))`)).length, 1, 'sources lost after restart');
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('continue'))`)).length, 1, 'continue lost after restart');
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, 2, 'watchlater lost after restart');
@@ -426,6 +439,41 @@ async function main() {
   await clickTop('Watch Later');
   assert.strictEqual(await page.eval(`document.querySelectorAll('#home .grid .card').length`), 2, 'watch later cards not rendered after restart');
   ok('persistence: sources + continue + watch later (incl. live) survive restart');
+
+  // 23. Browse: TMDB grid renders (add a vod source + TMDB key first)
+  await page.eval(`
+    document.getElementById('src-name').value = 'BrowseSrc';
+    document.getElementById('src-url').value = '${SITE}';
+    document.getElementById('src-cat').value = 'vod';
+    document.getElementById('add-source').requestSubmit();
+  `);
+  await page.eval(`(() => {
+    const k = document.getElementById('tmdb-key');
+    k.value = 'testkey';
+    k.dispatchEvent(new Event('change'));
+  })()`);
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse movie grid');
+  ok('browse: TMDB grid renders poster cards');
+
+  // 24. clicking a browse card opens the title on a vod source (/movie/42)
+  await page.eval(`document.querySelector('#browse .grid .card').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/movie/42')`), 'browse card opened title url');
+  ok('browse: click opens the title on a source');
+
+  // 25. Anime tab uses TMDB discover; Live tab shows tiles of live sources
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'anime').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'anime grid');
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  assert.ok(await page.eval(`document.querySelectorAll('#browse .tiles .tile').length >= 1`), 'live tiles missing');
+  ok('browse: Anime grid + Live TV tiles render');
+
+  // 26. YouTube tab opens youtube.com in the webview
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'youtube').click()`);
+  assert.ok(await page.eval(`document.getElementById('webview').src.includes('youtube.com')`), 'YouTube tab did not open youtube.com');
+  ok('browse: YouTube tab opens youtube.com');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);
@@ -438,5 +486,6 @@ main()
     site.close();
     uaEcho.close();
     player.close();
+    tmdb.close();
     process.exit(process.exitCode ?? 0); // open CDP sockets would otherwise keep the loop alive
   });
