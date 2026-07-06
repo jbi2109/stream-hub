@@ -97,7 +97,7 @@ async function fetchBrowse(tab, query) {
 }
 
 // Fetch a live-catalog JSON API (via the main-process httpGet, past CSP) and map it to tiles.
-// Generic field fallbacks so a plain URL works for StreamFree-style shapes with no provider code.
+// Generic field fallbacks so a plain URL works for common live-catalog shapes with no provider code.
 async function fetchCatalog(url) {
   const r = await window.sh.httpGet(url);
   if (!r || r.error) throw new Error(r && r.error || 'request failed');

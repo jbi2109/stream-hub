@@ -90,7 +90,7 @@ const tmdb = http.createServer((req, res) => {
   }
 });
 
-// Stands in for a StreamFree-style live-catalog JSON API (fetched via sh.httpGet -> main).
+// Stands in for a generic live-catalog JSON API (fetched via sh.httpGet -> main).
 const catalog = http.createServer((req, res) => {
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ count: 3, streams: [
@@ -524,8 +524,8 @@ async function main() {
   assert.ok(await page.eval(`document.getElementById('webview').src.includes('youtube.com')`), 'YouTube tab did not open youtube.com');
   ok('browse: YouTube tab opens youtube.com');
 
-  // 27. buildUrl: a cinemaos-style template trims empty season/episode for movies, fills for tv;
-  //     the default /embed/ pattern is unchanged (vidking/vidsrc still work).
+  // 27. buildUrl: an alternate-domain `/player/` template trims empty season/episode for movies,
+  //     fills for tv; the default /embed/ pattern is unchanged.
   assert.strictEqual(
     await page.eval(`buildUrl({url:'${PLAYER}',template:'${PLAYER}/player/{id}/{season}/{episode}'},'movie',42)`),
     `${PLAYER}/player/42`, 'movie template should trim empty season/episode');

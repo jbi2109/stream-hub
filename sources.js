@@ -92,7 +92,7 @@ function addSource({ name, url, category, template, catalogUrl }) {
 }
 
 // Build a source's embed-player URL for a TMDB title. `type` is 'movie' or 'tv' (anime -> tv).
-// Default assumes the common /embed/{type}/{id}[/{season}/{episode}] pattern (vidsrc, vidking, …);
+// Default assumes the common /embed/{type}/{id}[/{season}/{episode}] pattern most embed players use;
 // a source can override with a `template` using {origin} {type} {id} {season} {episode} tokens.
 function buildUrl(src, type, id, season, episode) {
   let origin = src.url;
@@ -107,15 +107,15 @@ function buildUrl(src, type, id, season, episode) {
     if (type === 'tv' && season != null && episode != null) u += `/${season}/${episode}`;
   }
   // Movies leave {season}/{episode} blank -> trailing `//`; trim empty path segments so one
-  // template serves movie AND tv (e.g. cinemaos `/player/{id}/{season}/{episode}`).
+  // template serves movie AND tv (e.g. a `/player/{id}/{season}/{episode}` layout).
   return u.replace(/([^:]\/)\/+/g, '$1').replace(/\/+(\?|#|$)/g, '$1');
 }
 
 // ponytail: self-check the empty-segment trim; fires on load, no-op if correct.
 (function () {
-  const cine = { url: 'https://cinemaos.tech', template: 'https://cinemaos.tech/player/{id}/{season}/{episode}' };
-  console.assert(buildUrl(cine, 'movie', 42) === 'https://cinemaos.tech/player/42', 'buildUrl movie trim');
-  console.assert(buildUrl(cine, 'tv', 42, 1, 3) === 'https://cinemaos.tech/player/42/1/3', 'buildUrl tv fill');
+  const ex = { url: 'https://play.example', template: 'https://play.example/player/{id}/{season}/{episode}' };
+  console.assert(buildUrl(ex, 'movie', 42) === 'https://play.example/player/42', 'buildUrl movie trim');
+  console.assert(buildUrl(ex, 'tv', 42, 1, 3) === 'https://play.example/player/42/1/3', 'buildUrl tv fill');
   console.assert(buildUrl({ url: 'https://ex.com' }, 'movie', 42) === 'https://ex.com/embed/movie/42', 'buildUrl default');
 })();
 
