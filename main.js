@@ -135,6 +135,21 @@ async function enableAdblock() {
       }
     }
   }
+  // YouTube: skip cosmetic/scriptlet injection (network blocking stays). uBlock's YouTube scriptlets
+  // (json-prune ytInitialPlayerResponse, set-constant …) mangle the player's init data and leave a
+  // black, silent player. Ghostery calls blocker.onInjectCosmeticFilters(event,url,msg) fresh per frame,
+  // so wrapping it here scopes the skip to YouTube while every other site keeps full blocking.
+  const YT_HOSTS = /(^|\.)(youtube\.com|youtube-nocookie\.com|googlevideo\.com|youtu\.be)$/i;
+  const ytTestHost = process.env.SH_TEST_YT_HOST; // e2e hook: treat a fixture host as "YouTube"
+  const origInject = blocker.onInjectCosmeticFilters;
+  blocker.onInjectCosmeticFilters = async (event, url, msg) => {
+    try {
+      const host = new URL(url).hostname;
+      if (YT_HOSTS.test(host) || (ytTestHost && url.includes(ytTestHost))) return;
+    } catch {}
+    return origInject(event, url, msg);
+  };
+
   blocker.enableBlockingInSession(session.defaultSession); // webview shares default session
 }
 

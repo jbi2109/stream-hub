@@ -14,6 +14,8 @@ const UA_ECHO_HOST = '127.0.0.1:9311';
 const UA_ECHO = `http://${UA_ECHO_HOST}`;
 const PLAYER = 'http://127.0.0.1:9312';
 const CATALOG = 'http://127.0.0.1:9314';
+const YT_FIX_HOST = '127.0.0.1:9315';
+const YT_FIX = 'http://' + YT_FIX_HOST;
 const PROFILE = path.join(os.tmpdir(), 'stream-hub-test-profile');
 
 let electronProc = null;
@@ -42,6 +44,7 @@ const site = http.createServer((req, res) => {
     <meta property="og:image" content="${SITE}/poster.png">
     <title>Widow's Bay</title></head><body>
     <h1>Fixture</h1>
+    <div id="sh-cosmetic">ad</div>
     <iframe src="${PLAYER}/player" style="width:320px;height:180px"></iframe>
     </body></html>`);
 });
@@ -105,6 +108,12 @@ const catalog = http.createServer((req, res) => {
   ] }));
 });
 
+// Stands in for a "YouTube" host in the ad-block cosmetic-skip test (SH_TEST_YT_HOST points here).
+const ytFix = http.createServer((req, res) => {
+  res.setHeader('content-type', 'text/html');
+  res.end('<!doctype html><body><div id="sh-cosmetic">ad</div></body>');
+});
+
 // ---- minimal CDP client ----
 class CDP {
   static async connect(wsUrl) {
@@ -146,8 +155,8 @@ async function launchApp() {
   const electronPath = require(path.join(ROOT, 'node_modules', 'electron'));
   electronProc = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, '--test-profile'],
     { cwd: ROOT, stdio: 'ignore', env: {
-      ...process.env, SH_TEST_UA_HOST: UA_ECHO_HOST, SH_TEST_BLOCK_PATTERN: 'ads-test-marker',
-      SH_TEST_TMDB_BASE: 'http://127.0.0.1:9313' } });
+      ...process.env, SH_TEST_UA_HOST: UA_ECHO_HOST, SH_TEST_BLOCK_PATTERN: 'ads-test-marker\n###sh-cosmetic',
+      SH_TEST_YT_HOST: YT_FIX_HOST, SH_TEST_TMDB_BASE: 'http://127.0.0.1:9313' } });
   return until(async () => {
     const list = await targets();
     return list.find((t) => t.url.includes('index.html') && t.webSocketDebuggerUrl);
@@ -174,6 +183,7 @@ async function main() {
   player.listen(9312);
   tmdb.listen(9313);
   catalog.listen(9314);
+  ytFix.listen(9315);
 
   // ---------- boot ----------
   let pageTarget = await launchApp();
@@ -895,6 +905,24 @@ async function main() {
   await closeTarget(loginWin.id);
   ok('login: in-page nav to a google-login host opens a standalone window, not the webview');
 
+  // 32z. v0.2.2: ad-block cosmetic/scriptlet injection is applied on normal hosts but SKIPPED on YouTube
+  //       hosts (keeps the player alive). The '###sh-cosmetic' rule hides #sh-cosmetic everywhere but YT.
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/cosmetic-check'`);
+  const ccTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(`${SITE}/cosmetic-check`) && t.webSocketDebuggerUrl), 'guest for cosmetic-check');
+  const ccGuest = await CDP.connect(ccTarget.webSocketDebuggerUrl);
+  await until(() => ccGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display === 'none'`), 'cosmetic hidden on a normal host');
+  ccGuest.close();
+  await page.eval(`document.getElementById('webview').src = '${YT_FIX}/'`);
+  const ytTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(YT_FIX) && t.webSocketDebuggerUrl), 'guest for yt-fix host');
+  const ytGuest = await CDP.connect(ytTarget.webSocketDebuggerUrl);
+  await sleep(1500); // past cosmetic-injection time — it must NOT have been applied here
+  assert.strictEqual(await ytGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display`), 'block',
+    'cosmetic/scriptlet injection must be skipped on YouTube hosts (would break the player)');
+  ytGuest.close();
+  ok('adblock: cosmetic/scriptlet injection skipped on YouTube hosts, applied elsewhere');
+
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
     document.getElementById('home').hidden = true;
@@ -923,5 +951,6 @@ main()
     player.close();
     tmdb.close();
     catalog.close();
+    ytFix.close();
     process.exit(process.exitCode ?? 0); // open CDP sockets would otherwise keep the loop alive
   });
