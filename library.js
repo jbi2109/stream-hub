@@ -90,14 +90,50 @@ function card(item, isCont) {
   sub.className = 'card-sub';
   sub.textContent = isCont ? (item.note || se || 'Watching') : (se || 'Movie');
 
-  el.append(wrap, title, sub);
+  el.append(wrap, title, sourceControl(item, isCont), sub);
   el.onclick = (e) => {
-    if (e.target.closest('.card-actions')) return; // a click on the ✕ / category dropdown must never open the show
+    // clicks on a control (✕ / category dropdown / source dropdown) must never open the show
+    if (e.target.closest('.card-actions') || e.target.closest('.card-source')) return;
     activeKey = item.key;
     open(item.url);
     intendedMedia = { title: item.title, poster: item.poster, live: item.type === 'live' || undefined };
   };
   return el;
+}
+
+// Per-card source control: a dropdown to switch (and persist) which source this show continues on,
+// or a read-only "source" label when it can't be rebuilt (live entries, or no TMDB id in the URL).
+function sourceControl(item, isCont) {
+  const id = tmdbIdOf(item.url);
+  const kind = item.type === 'live' ? 'live' : item.type === 'movie' ? 'movie' : 'tv';
+  const srcs = sourcesFor(kind);
+  const curSrc = sources.find((s) => hostOf(s.url) === hostOf(item.url));
+  if (item.type !== 'live' && id && srcs.length) {
+    const sel = document.createElement('select');
+    sel.className = 'card-source';
+    sel.title = 'Continue on which source';
+    sel.onclick = (e) => e.stopPropagation();
+    if (!curSrc) { // saved source no longer in the list — keep its host visible as the current value
+      const o = document.createElement('option'); o.textContent = hostOf(item.url) || 'source'; o.selected = true; o.disabled = true; sel.append(o);
+    }
+    for (const s of srcs) {
+      const o = document.createElement('option'); o.value = s.url; o.textContent = s.name;
+      if (curSrc && s.url === curSrc.url) o.selected = true;
+      sel.append(o);
+    }
+    sel.onchange = (e) => {
+      e.stopPropagation();
+      const src = srcs.find((s) => s.url === sel.value);
+      if (!src) return;
+      item.url = buildUrl(src, item.type === 'movie' ? 'movie' : 'tv', id, item.season, item.episode);
+      store(isCont ? 'continue' : 'watchlater', isCont ? cont : later); // persist; next click continues here
+    };
+    return sel;
+  }
+  const lbl = document.createElement('div');
+  lbl.className = 'card-source-label';
+  lbl.textContent = curSrc ? curSrc.name : (hostOf(item.url) || '');
+  return lbl;
 }
 
 function editNote(item, sub) {

@@ -366,7 +366,7 @@ async function main() {
   ok('top tabs: switch Continue Watching / Watch Later');
 
   // 15. remove card (the movie), keep the tv entry
-  const movieKey = '127.0.0.1:9310#999888'; // mediaKey(host + '#' + tmdb id)
+  const movieKey = 'movie#999888'; // mediaKey is now host-independent: type#tmdbId
   const clicked = await page.eval(
     `!!document.querySelector('.card[data-key="${movieKey}"] .card-actions button:last-child')?.click() || true`);
   assert.ok(clicked, 'movie card not found in grid');
@@ -415,7 +415,7 @@ async function main() {
   // 19. re-categorise a Continue card (tv -> movie) via the type dropdown
   await clickTab('.tabs', 'Continue Watching');
   await clickTab('.subtabs', 'All');
-  const tvKey = '127.0.0.1:9310#286360';
+  const tvKey = 'tv#286360'; // host-independent key: type#tmdbId
   await page.eval(`(() => {
     const sel = document.querySelector('.card[data-key="${tvKey}"] .type-select');
     sel.value = 'movie';
@@ -761,6 +761,53 @@ async function main() {
   await until(() => page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).title === 'Fixture Title'`), 'continue entry healed');
   assert.strictEqual(await page.eval(`(JSON.parse(localStorage.getItem('watchlater'))[0] || {}).title`), 'Fixture Title', 'watch later entry not healed');
   ok('heal: old library entries re-titled from TMDB by URL id');
+
+  // 32p. v0.1.4: per-card source dropdown switches + persists which source a show continues on
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`
+    sources.length = 0; cont.length = 0; later.length = 0;
+    addSource({ name: 'SrcA', url: '${SITE}', category: 'vod' });
+    addSource({ name: 'SrcB', url: '${PLAYER}', category: 'vod' });
+    cont.push({ key: 'tv#94997', title: 'Some Show', url: '${SITE}/embed/tv/94997/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now(), position: null, duration: null, note: '' });
+    store('sources', sources); store('continue', cont);
+    topTab = 'continue'; subTab = 'all'; showHome();
+  `);
+  await until(() => page.eval(`!!document.querySelector('#home .grid .card .card-source')`), 'card source dropdown present');
+  assert.strictEqual(await page.eval(`(() => { const s = document.querySelector('#home .grid .card .card-source'); return s.options[s.selectedIndex].textContent; })()`), 'SrcA', 'default source should be the one it was saved from');
+  await page.eval(`(() => { const s = document.querySelector('#home .grid .card .card-source'); s.value = '${PLAYER}'; s.dispatchEvent(new Event('change')); })()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue'))[0].url`), `${PLAYER}/embed/tv/94997/1/1`, 'switching source should rebuild + persist the entry url');
+  await page.eval(`document.querySelector('#home .grid .card').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/embed/tv/94997/1/1'`), 'card opens the switched source');
+  ok('card: source dropdown switches + persists which source a show continues on');
+
+  // 32q. v0.1.4: rekeyLibrary merges duplicate cards (same show, different source) into one
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`
+    cont.length = 0;
+    cont.push({ key: 'siteA#555', title: 'Dup Show', url: '${SITE}/embed/tv/555/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: 100, position: null, duration: null, note: '' });
+    cont.push({ key: 'playerB#555', title: 'Dup Show', url: '${PLAYER}/embed/tv/555/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: 200, position: null, duration: null, note: '' });
+    store('continue', cont);
+  `);
+  await page.eval(`rekeyLibrary()`);
+  const merged = await page.eval(`JSON.parse(localStorage.getItem('continue'))`);
+  assert.strictEqual(merged.length, 1, 'duplicate cards for the same show should merge into one');
+  assert.strictEqual(merged[0].key, 'tv#555', 'merged entry should use the host-independent key');
+  assert.ok(merged[0].url.includes('127.0.0.1:9312'), 'merge should keep the most-recently-updated (PLAYER, updatedAt 200)');
+  ok('migration: rekeyLibrary merges duplicate cards for the same show');
+
+  // 32r. v0.1.4: live / non-rebuildable entries show a read-only source label, not a dropdown
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`
+    sources.length = 0; cont.length = 0; later.length = 0;
+    addSource({ name: 'MyLive', url: '${PLAYER}', category: 'live' });
+    later.push({ key: 'live#1', title: 'Live Game', url: '${PLAYER}/live/xyz', poster: '', season: null, episode: null, type: 'live', addedAt: Date.now() });
+    store('sources', sources); store('watchlater', later);
+    topTab = 'later'; subTab = 'all'; showHome();
+  `);
+  await until(() => page.eval(`!!document.querySelector('#home .grid .card')`), 'live watch later card');
+  assert.strictEqual(await page.eval(`!!document.querySelector('#home .grid .card .card-source')`), false, 'live entry should NOT have a source dropdown');
+  assert.ok(await page.eval(`document.querySelector('#home .grid .card .card-source-label').textContent === 'MyLive'`), 'live entry should show a read-only source label');
+  ok('card: live / non-rebuildable entries show a read-only source label');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`

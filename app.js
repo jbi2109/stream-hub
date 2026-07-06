@@ -103,6 +103,7 @@ $('import-file').onchange = (e) => {
   e.target.value = '';
 };
 
+rekeyLibrary();  // host-independent keys + merge duplicate cards (must run before capture/heal)
 renderSources();
 showBrowse(); // Browse is the landing page
 healLibrary(); // one-time: re-title old entries from TMDB (no-op once done / without a key)

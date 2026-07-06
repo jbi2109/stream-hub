@@ -5,12 +5,35 @@ function mediaKey(url) {
   try {
     const u = new URL(url);
     const id = u.pathname.match(/\/(\d{3,})/);
-    return u.host + (id ? '#' + id[1] : u.pathname);
+    // Key by type#tmdbId (host-independent) so the same show across sources is ONE entry and
+    // switching a card's source can't fork a duplicate. Fall back to host+path when there's no id.
+    if (id) return mediaType(url) + '#' + id[1];
+    return u.host + u.pathname;
   } catch { return url; }
 }
 
-// TMDB id from an embed URL (first 3+ digit path run — the same id mediaKey keys on).
-const tmdbIdOf = (url) => String(url).match(/\/(\d{3,})/)?.[1] || null;
+// TMDB id from an embed URL (first 3+ digit path run — the same id mediaKey keys on). Matches the
+// PATHNAME, not the whole URL, so a host containing digits (127.0.0.1, 123movies) can't be mistaken.
+const tmdbIdOf = (url) => {
+  try { return new URL(url).pathname.match(/\/(\d{3,})/)?.[1] || null; }
+  catch { return String(url).match(/\/(\d{3,})/)?.[1] || null; }
+};
+
+// Migration: re-key Continue/Watch-Later by the host-independent key and merge duplicates that
+// collapse to the same show (keep the most-recently-touched). Idempotent; run at startup.
+function rekeyLibrary() {
+  for (const [name, list] of [['continue', cont], ['watchlater', later]]) {
+    for (const item of list) item.key = mediaKey(item.url);
+    const byKey = new Map();
+    for (const item of list) {
+      const prev = byKey.get(item.key);
+      const t = (x) => x.updatedAt || x.addedAt || 0;
+      if (!prev || t(item) > t(prev)) byKey.set(item.key, item);
+    }
+    if (byKey.size !== list.length) { const kept = [...byKey.values()]; list.length = 0; list.push(...kept); }
+    store(name, list);
+  }
+}
 
 function parseSeasonEpisode(url, title) {
   try {

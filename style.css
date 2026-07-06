@@ -523,6 +523,25 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.card .card-source {
+  width: 100%;
+  margin-top: 4px;
+  background: #262a33;
+  border: 1px solid #3a4150;
+  border-radius: 4px;
+  color: #b9c0cc;
+  font-size: 11px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.card .card-source-label {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b727e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .card .card-sub, .card .note-edit {
   font-size: 12px;
   color: #8a919e;
