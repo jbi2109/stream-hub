@@ -43,6 +43,19 @@ body {
 #sidebar li .meta { font-size: 11px; color: #8a919e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sidebar li.active { outline: 1px solid #4c8dff; }
 
+#app-footer {
+  margin-top: auto;              /* sidebar is a flex column -> pin to the bottom-left */
+  padding-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #6b727e;
+}
+#app-footer #version { cursor: pointer; }
+#app-footer #version:hover { color: #e6e6e6; }
+#app-footer #update-status { color: #4c8dff; }
+
 #sidebar li button, #topbar button {
   background: none;
   border: none;

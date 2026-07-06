@@ -731,6 +731,12 @@ async function main() {
   await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/movie/99')`), 'a normal card-body click should still open the show');
   ok('card: clicks on the ✕/dropdown area do not open the show; the card body still does');
 
+  // 32m. sidebar footer: shows the app version, and clicking it runs a manual update check
+  await until(() => page.eval(`/^v\\d/.test(document.getElementById('version').textContent)`), 'version footer populated');
+  await page.eval(`document.getElementById('version').click()`);
+  await until(() => page.eval(`document.getElementById('update-status').textContent === 'dev build'`), 'manual check reports status (dev)');
+  ok('footer: shows the app version and a manual update check reports status');
+
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
     document.getElementById('home').hidden = true;

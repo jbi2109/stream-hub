@@ -159,9 +159,13 @@ function initUpdater() {
   if (!app.isPackaged || process.argv.includes('--test-profile')) return;
   autoUpdater.autoInstallOnAppQuit = true;
   const send = (ch, data) => { try { mainWindow && mainWindow.webContents.send(ch, data); } catch {} };
+  const status = (state, extra) => send('update-status', { state, ...extra });
+  autoUpdater.on('checking-for-update', () => status('checking'));
+  autoUpdater.on('update-available', (info) => status('available', { version: info && info.version }));
+  autoUpdater.on('update-not-available', () => status('none'));
   autoUpdater.on('download-progress', (p) => send('update-progress', { percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => send('update-ready', { version: info.version }));
-  autoUpdater.on('error', (e) => console.error('updater:', e && e.message)); // offline / no release yet -> ignore
+  autoUpdater.on('error', (e) => { console.error('updater:', e && e.message); status('error'); }); // offline / no release yet
   autoUpdater.checkForUpdates().catch(() => {});
 }
 
@@ -190,6 +194,14 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('install-update', () => { if (app.isPackaged) autoUpdater.quitAndInstall(); });
+
+  // Version string for the sidebar footer, and a manual "check for updates" trigger.
+  ipcMain.handle('app-version', () => app.getVersion());
+  ipcMain.handle('check-update', async () => {
+    if (!app.isPackaged) return { state: 'dev' };
+    try { await autoUpdater.checkForUpdates(); return { ok: true }; }
+    catch (e) { return { error: e && e.message }; }
+  });
 
   // Generic https GET (runs here to sidestep the renderer CSP). Used by live-catalog fetches
   // to reach their JSON APIs. https only (loopback http allowed for tests); no provider logic here.

@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('sh', {
   onUpdate: (cb) => {
     ipcRenderer.on('update-progress', (_e, d) => cb({ type: 'progress', percent: d.percent }));
     ipcRenderer.on('update-ready', (_e, d) => cb({ type: 'ready', version: d.version }));
+    ipcRenderer.on('update-status', (_e, d) => cb({ type: 'status', ...d }));
   },
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  getVersion: () => ipcRenderer.invoke('app-version'),
+  checkForUpdates: () => ipcRenderer.invoke('check-update'),
 });

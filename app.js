@@ -44,12 +44,18 @@ webview.addEventListener('did-stop-loading', scheduleCapture);
 webview.addEventListener('enter-html-full-screen', () => webview.classList.add('fullscreen'));
 webview.addEventListener('leave-html-full-screen', () => webview.classList.remove('fullscreen'));
 
-// ---- auto-update banner (packaged builds; events never fire in dev) ----
+// ---- auto-update: bottom-right banner + a status line in the sidebar footer ----
+const UPDATE_STATUS_TEXT = { checking: 'Checking for updates…', available: 'Downloading update…', none: 'Up to date', error: 'Update check failed' };
+function setUpdateStatus(text) { const s = $('update-status'); if (s) s.textContent = text || ''; }
+
 function showUpdate(state) {
   const el = $('update-banner');
-  if (state.type === 'progress') {
+  if (state.type === 'status') {
+    setUpdateStatus(UPDATE_STATUS_TEXT[state.state] || '');
+  } else if (state.type === 'progress') {
     el.textContent = `Downloading update… ${state.percent}%`;
     el.hidden = false;
+    setUpdateStatus(`Downloading ${state.percent}%`);
   } else if (state.type === 'ready') {
     const msg = document.createElement('span');
     msg.textContent = `Update ${state.version ? 'v' + state.version + ' ' : ''}ready`;
@@ -58,10 +64,22 @@ function showUpdate(state) {
     btn.onclick = () => requestInstall();
     el.replaceChildren(msg, btn);
     el.hidden = false;
+    setUpdateStatus('Update ready');
   }
 }
 function requestInstall() { window.sh.installUpdate(); } // indirection so e2e can stub it safely
 if (window.sh && window.sh.onUpdate) window.sh.onUpdate(showUpdate);
+
+// sidebar footer: show the version; clicking it triggers a manual update check
+if (window.sh && window.sh.getVersion) {
+  window.sh.getVersion().then((v) => { $('version').textContent = 'v' + v; }).catch(() => {});
+  $('version').onclick = async () => {
+    setUpdateStatus('Checking…');
+    const r = await window.sh.checkForUpdates().catch(() => ({ error: 'failed' }));
+    if (r && r.state === 'dev') setUpdateStatus('dev build');
+    else if (r && r.error) setUpdateStatus('Check failed'); // else the update-status events set the text
+  };
+}
 
 // ---- settings export / import (all localStorage: sources, tmdbKey, library, defaults) ----
 function exportSettings() { return Object.fromEntries(Object.entries(localStorage)); }
