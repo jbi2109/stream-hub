@@ -148,3 +148,20 @@ function renderHome() {
   }
   $('home').replaceChildren(...nodes);
 }
+
+// One-time heal: re-title/re-poster old library entries from TMDB (using the id in each URL), fixing
+// junk captured before id-first titling. No-op once done, or until a TMDB key is set. Live entries and
+// entries with no resolvable id are left as-is (the user removes them; watching heals the rest).
+async function healLibrary() {
+  if (localStorage.getItem('libraryHealed') || !tmdbKey) return;
+  let changed = false;
+  for (const list of [cont, later]) {
+    for (const item of list) {
+      if (item.type === 'live') continue;
+      const meta = await tmdbMeta(tmdbIdOf(item.url), item.type || mediaType(item.url, item.season));
+      if (meta) { item.title = meta.title; if (meta.poster) item.poster = meta.poster; changed = true; }
+    }
+  }
+  if (changed) { store('continue', cont); store('watchlater', later); if (!$('home').hidden) renderHome(); }
+  localStorage.setItem('libraryHealed', '1');
+}

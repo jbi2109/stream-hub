@@ -737,6 +737,31 @@ async function main() {
   await until(() => page.eval(`document.getElementById('update-status').textContent === 'dev build'`), 'manual check reports status (dev)');
   ok('footer: shows the app version and a manual update check reports status');
 
+  // 32n. v15.3: with a TMDB id in the URL, capture prefers the TMDB title over the scraped og:title
+  //       even with no intendedMedia (direct navigation). The site fixture's og:title is "Widow's Bay";
+  //       tmdb fixture returns "Fixture Title" — so id-first titling must win.
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`(() => { const k = document.getElementById('tmdb-key'); k.value = 'testkey'; k.dispatchEvent(new Event('change')); })()`);
+  await page.eval(`cont.length = 0; store('continue', cont); open('${SITE}/tv/428');`); // open() clears intendedMedia
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/tv/428')`), 'direct nav to id-bearing url');
+  const capById = await until(() => page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).title`), 'continue captured by id');
+  assert.strictEqual(capById, 'Fixture Title', 'capture should use the TMDB title (by id), not the scraped og:title');
+  ok('capture: prefers the TMDB title (by URL id) over the embed page og:title');
+
+  // 32o. v15.3: healLibrary re-titles old junk entries from TMDB using the id in each URL
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`
+    localStorage.removeItem('libraryHealed');
+    cont.length = 0; later.length = 0;
+    cont.push({ key: 'x#513', title: 'https://vidsrc.to/embed/tv/513/1/1', url: '${PLAYER}/embed/tv/513/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now(), position: null, duration: null, note: '' });
+    later.push({ key: 'y#620', title: 'Vidking Player - Embedded Video', url: '${PLAYER}/embed/movie/620', poster: '', season: null, episode: null, type: 'movie', addedAt: Date.now() });
+    store('continue', cont); store('watchlater', later);
+  `);
+  await page.eval(`healLibrary()`);
+  await until(() => page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).title === 'Fixture Title'`), 'continue entry healed');
+  assert.strictEqual(await page.eval(`(JSON.parse(localStorage.getItem('watchlater'))[0] || {}).title`), 'Fixture Title', 'watch later entry not healed');
+  ok('heal: old library entries re-titled from TMDB by URL id');
+
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
     document.getElementById('home').hidden = true;

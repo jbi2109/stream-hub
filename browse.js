@@ -15,6 +15,25 @@ async function tmdbGet(path, params) {
   return window.sh.tmdb(path, { api_key: tmdbKey, ...params });
 }
 
+// Cached title+poster for a TMDB id (or null). Used to title Continue/Watch-Later entries from the
+// id in the embed URL instead of the provider's own og:title — correct + provider-agnostic. Caching
+// bounds the API calls (capture fires repeatedly; the library heal touches every entry).
+const tmdbMetaCache = new Map(); // `${type}:${id}` -> { title, poster } | null
+async function tmdbMeta(id, type) {
+  if (!id || !tmdbKey) return null;
+  const t = type === 'movie' ? 'movie' : 'tv';
+  const ck = t + ':' + id;
+  if (tmdbMetaCache.has(ck)) return tmdbMetaCache.get(ck);
+  let meta = null;
+  try {
+    const d = await tmdbGet(`/${t}/${id}`, {});
+    const name = d && (d.title || d.name);
+    if (name) meta = { title: name, poster: IMG(d.poster_path, 'w342') };
+  } catch {}
+  tmdbMetaCache.set(ck, meta);
+  return meta;
+}
+
 function posterCard(kind, item) {
   const el = document.createElement('div');
   el.className = 'card';

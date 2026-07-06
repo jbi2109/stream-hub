@@ -7,11 +7,12 @@ $('watch-later').onclick = async () => {
   const url = webview.getURL();
   const page = await parsePage();
   const key = mediaKey(url);
-  // Prefer the title/poster we already know (provider-agnostic) over scraping the embed page.
-  const title = intendedMedia?.title || page.title || url;
-  const poster = intendedMedia?.poster || page.poster;
-  const { season, episode } = parseSeasonEpisode(url, title);
+  const { season, episode } = parseSeasonEpisode(url, page.title);
   const type = intendedMedia?.live ? 'live' : classify(url, season);
+  // Precedence: known -> TMDB looked up by the URL's id -> scrape -> url (provider-agnostic).
+  const tmdb = intendedMedia?.live ? null : await tmdbMeta(tmdbIdOf(url), type);
+  const title = intendedMedia?.title || tmdb?.title || page.title || url;
+  const poster = intendedMedia?.poster || tmdb?.poster || page.poster;
   later = later.filter((c) => c.key !== key); // dedupe
   later.unshift({ key, title, url, poster, season, episode, type, addedAt: Date.now() });
   store('watchlater', later);
@@ -104,3 +105,4 @@ $('import-file').onchange = (e) => {
 
 renderSources();
 showBrowse(); // Browse is the landing page
+healLibrary(); // one-time: re-title old entries from TMDB (no-op once done / without a key)

@@ -9,6 +9,9 @@ function mediaKey(url) {
   } catch { return url; }
 }
 
+// TMDB id from an embed URL (first 3+ digit path run — the same id mediaKey keys on).
+const tmdbIdOf = (url) => String(url).match(/\/(\d{3,})/)?.[1] || null;
+
 function parseSeasonEpisode(url, title) {
   try {
     const u = new URL(url);
@@ -74,16 +77,18 @@ async function captureCurrent() {
   if (isLiveUrl(url) || intendedMedia?.live) return;
   const key = mediaKey(url);
   const existing = cont.find((c) => c.key === key);
-  const page = await parsePage();
-  // Prefer a title/poster we already know (set by whatever started playback — detail Watch, live
-  // tile, card reopen), then the existing entry, then the scraped embed page. Provider-agnostic:
-  // never inspects the URL host, so any source's bare embed page (no og:title) still gets a title.
-  const known = intendedMedia && (!intendedMedia.id || String(url).includes(String(intendedMedia.id))) ? intendedMedia : null;
-  const title = known?.title || existing?.title || page.title;
-  if (!title) return;
-  const poster = known?.poster || page.poster || existing?.poster || '';
-  const { season, episode } = parseSeasonEpisode(url, title);
+  const { season, episode } = parseSeasonEpisode(url, '');
   const type = mediaType(url, season);
+  // Title/poster precedence (id-first): what we were told (detail Watch / live tile / card reopen),
+  // then TMDB looked up by the id in the URL, then the existing entry, then the scraped embed page.
+  // TMDB-by-id means even direct navigation is correct and the provider's own og:title is never used
+  // when the show is identifiable — a stale bad `existing.title` gets healed on the next watch.
+  const known = intendedMedia && (!intendedMedia.id || String(url).includes(String(intendedMedia.id))) ? intendedMedia : null;
+  const tmdb = known ? null : await tmdbMeta(tmdbIdOf(url), type);
+  const page = await parsePage();
+  const title = known?.title || tmdb?.title || existing?.title || page.title;
+  if (!title) return;
+  const poster = known?.poster || tmdb?.poster || page.poster || existing?.poster || '';
   activeKey = key;
   const base = { key, title, url, poster, season, episode, type, updatedAt: Date.now() };
   if (existing) {
@@ -94,10 +99,13 @@ async function captureCurrent() {
   cont.sort((a, b) => b.updatedAt - a.updatedAt);
   store('continue', cont);
 
-  // Watch Later tracks the show too: advance its episode/url as you watch (keep its add-time title)
+  // Watch Later tracks the show as you watch. Only overwrite its title from an authoritative source
+  // (what we were told, or TMDB) — never clobber it with a scrape.
   const wl = later.find((w) => w.key === key);
   if (wl) {
-    Object.assign(wl, { season, episode, url, type, poster: poster || wl.poster });
+    const patch = { season, episode, url, type, poster: poster || wl.poster };
+    if (known || tmdb) patch.title = title;
+    Object.assign(wl, patch);
     store('watchlater', later);
   }
 }
