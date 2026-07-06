@@ -502,6 +502,24 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 }
 #live-sources:hover { background: var(--panel-3); }
 
+/* floating "Sources" button over the player, revealed on hover (for live matches) */
+#sources-overlay {
+  position: absolute;
+  top: 12px; right: 12px;
+  z-index: 1000;
+  background: rgba(0, 0, 0, .72);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+#view:hover #sources-overlay { opacity: 1; }
+#sources-overlay:hover { background: rgba(0, 0, 0, .92); }
+
 .episode.selected { outline: 2px solid var(--accent); }
 
 /* ---- native detail page ---- */

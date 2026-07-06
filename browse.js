@@ -247,7 +247,7 @@ function liveMatchGroups(match) {
     name,
     rows: list.sort((a, b) => rank(a) - rank(b)).map((s) => ({
       label: s.label, language: s.language, quality: parseQuality(s.label),
-      onPick: () => { open(s.embed); intendedMedia = { title: match.title, poster: match.logo, live: true }; currentLiveMatch = match; $('live-sources').hidden = false; },
+      onPick: () => { open(s.embed); intendedMedia = { title: match.title, poster: match.logo, live: true }; currentLiveMatch = match; $('live-sources').hidden = false; $('sources-overlay').hidden = false; },
     })),
   }));
 }
@@ -277,10 +277,9 @@ function matchCard(m) {
   else thumb.classList.add('noimg');
   const t = document.createElement('div'); t.className = 'match-title'; t.textContent = m.title;
   el.append(thumb, t);
-  el.onclick = () => {
-    if (m.sources.length === 1) { open(m.sources[0].embed); intendedMedia = { title: m.title, poster: m.logo, live: true }; currentLiveMatch = m; $('live-sources').hidden = false; }
-    else showLivePicker(m);
-  };
+  // Always open the source page (never auto-jump a single source) — the same show often has sources in
+  // other catalogs that stream in a moment later; landing on the page lets the user reach them.
+  el.onclick = () => showLivePicker(m);
   return el;
 }
 
@@ -318,7 +317,7 @@ function renderLiveTab(container) {
   nodes.push(controls, grid);
   container.replaceChildren(...nodes);
 
-  let all = [], cat = 'all';
+  let all = [], cat = 'all', allRows = [];
   const draw = () => {
     const q = search.value.trim().toLowerCase();
     let items = cat === 'all' ? all : all.filter((it) => it.category === cat);
@@ -326,22 +325,26 @@ function renderLiveTab(container) {
     if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
     grid.replaceChildren(...items.slice(0, 400).map(matchCard));
   };
+  const renderCatBar = () => {
+    const cats = ['all', ...[...new Set(all.map((it) => it.category).filter(Boolean))].sort()];
+    catBar.replaceChildren();
+    if (cats.length > 2) {
+      for (const c of cats) {
+        const b = document.createElement('button'); b.className = 'tab' + (c === cat ? ' active' : '');
+        b.textContent = c === 'all' ? 'All' : c[0].toUpperCase() + c.slice(1);
+        b.onclick = () => { cat = c; renderCatBar(); draw(); };
+        catBar.append(b);
+      }
+    }
+  };
+  const rebuild = () => { all = groupMatches(allRows); renderCatBar(); draw(); };
   search.oninput = draw;
 
-  // fetch every catalog in parallel; tag each row with its catalog; tolerate a failing/slow one
-  Promise.allSettled(catalogSrcs.map((s) => fetchCatalog(s.catalogUrl).then((rows) => rows.map((r) => ({ ...r, catalog: s.name })))))
-    .then((results) => {
-      const rows = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-      all = groupMatches(rows);
-      const cats = ['all', ...[...new Set(all.map((it) => it.category).filter(Boolean))].sort()];
-      if (cats.length > 2) {
-        catBar.append(...cats.map((c) => {
-          const b = document.createElement('button'); b.className = 'tab' + (c === cat ? ' active' : '');
-          b.textContent = c === 'all' ? 'All' : c[0].toUpperCase() + c.slice(1);
-          b.onclick = () => { cat = c; [...catBar.children].forEach((x) => x.classList.toggle('active', x === b)); draw(); };
-          return b;
-        }));
-      }
-      draw();
-    });
+  // Incremental: each catalog renders into the grid as it resolves — fast ones appear in seconds, slow
+  // ones stream in without blocking. A dead catalog is aborted by the httpGet timeout (main.js) and skipped.
+  for (const s of catalogSrcs) {
+    fetchCatalog(s.catalogUrl)
+      .then((rows) => { allRows.push(...rows.map((r) => ({ ...r, catalog: s.name }))); rebuild(); })
+      .catch(() => {});
+  }
 }

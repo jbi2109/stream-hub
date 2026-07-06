@@ -701,12 +701,14 @@ async function main() {
   await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = ''; s.dispatchEvent(new Event('input')); })()`);
   await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Tennis').click()`);
   await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .match-grid .match-card')].map(t => t.textContent); return ts.some(x => x.includes('Gamma')) && ts.every(x => !x.includes('Alpha') && !x.includes('Beta')); })()`), 'category filter shows only Tennis');
-  // Soccer category -> Alpha present; click it -> single source embeds directly
+  // Soccer category -> Alpha present; click it -> source page (even for a single source), pick -> embed
   await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Soccer').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha'))`), 'Soccer shows Alpha');
   await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Alpha')).click()`);
-  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'single-source match embeds the stream');
-  ok('live: unified match grid with category filter + search + embed');
+  await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelectorAll('#detail .src-row').length === 1`), 'single-source match still opens the source page');
+  await page.eval(`document.querySelector('#detail .src-row').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'picking the source embeds the stream');
+  ok('live: unified match grid with category filter + search; single source routes through the page');
 
   // 32g. auto-update banner: hidden at boot; showUpdate drives it; Restart calls install (stubbed)
   assert.strictEqual(await page.eval(`document.getElementById('update-banner').hidden`), true, 'update banner should be hidden at boot');
@@ -761,6 +763,8 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha'))`), 'match cards (live capture)');
   await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Alpha')).click()`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length === 1`), 'source page for live capture');
+  await page.eval(`document.querySelector('#detail .src-row').click()`);
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'live match opened');
   await sleep(900); // let any capture attempt run (600ms debounce); /live/700 passes isMediaUrl, so the live flag is what must skip it
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 0, 'a live stream must not enter Continue Watching');
@@ -971,6 +975,39 @@ async function main() {
   assert.ok(await page.eval(`(() => { const n = [...document.querySelectorAll('#detail .src-group-name')].map(g => g.textContent); return n.includes('NestedCat') && n.includes('BCat'); })()`), 'both catalog groups present on the source page');
   await page.eval(`document.getElementById('home-btn').click()`); // leave the source page clean for the next tests
   ok('live: cross-catalog team-order merge pools sources under both catalogs');
+
+  // 32w6. v0.2.7: the "Sources" overlay appears while a live match plays and reopens the source page
+  await page.eval(`document.getElementById('home-btn').click(); sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); renderSources();`);
+  await page.eval(`document.getElementById('browse-btn').click(); [...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Team A'))`), 'live grid for overlay test');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Team A')).click()`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length === 2`), 'source page for overlay test');
+  await page.eval(`document.querySelector('#detail .src-row').click()`); // play -> currentLiveMatch set, overlay shown
+  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/ch')`), 'live embed playing');
+  assert.strictEqual(await page.eval(`document.getElementById('sources-overlay').hidden`), false, 'the Sources overlay should show while a live match plays');
+  await page.eval(`document.getElementById('sources-overlay').click()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelectorAll('#detail .src-row').length === 2`), 'overlay reopens the source page');
+  ok('live: Sources overlay appears on the player and reopens the source page');
+
+  // 32w7. v0.2.7: leaving a view cancels a pending capture (fixes the live/leave-race leak)
+  await page.eval(`document.getElementById('home-btn').click(); cont.length = 0; store('continue', cont);`);
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/tv/778899';`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/tv/778899')`), 'webview on a vod url');
+  await page.eval(`intendedMedia = null; scheduleCapture();`);   // arm a capture, then immediately leave
+  await page.eval(`showBrowse()`);                                // hideAll cancels the pending capture timer
+  await sleep(1200);                                              // past the capture debounce
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 0, 'leaving a view should cancel the pending capture');
+  // contrast: a capture that runs while still on the embed IS stored
+  await page.eval(`(async () => { document.getElementById('webview').hidden = false; await captureCurrent(); })()`);
+  assert.ok(await page.eval(`JSON.parse(localStorage.getItem('continue')).length >= 1`), 'a vod url still captured when not left (contrast)');
+  ok('capture: leaving a view cancels a pending capture (fixes the live/leave leak)');
+
+  // 32w8. v0.2.7: a YouTube-host Continue entry is purged on load (clears the leaked junk)
+  await page.eval(`(() => { const c = JSON.parse(localStorage.getItem('continue') || '[]'); c.push({ key: 'yt#1', title: 'Some Video', url: 'https://www.youtube.com/watch?v=abc123', type: 'movie', season: null, episode: null, updatedAt: Date.now(), position: null, duration: null, note: '' }); localStorage.setItem('continue', JSON.stringify(c)); })()`);
+  await page.eval(`location.reload()`);
+  await until(() => page.eval(`!!document.querySelector('#browse .tabs .tab')`), 'reloaded after seeding a youtube entry');
+  assert.ok(!(await page.eval(`JSON.parse(localStorage.getItem('continue'))`)).some((c) => c.url.includes('youtube.com')), 'youtube-host entry purged from Continue Watching on load');
+  ok('migration: youtube entries purged from Continue Watching on load');
 
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)

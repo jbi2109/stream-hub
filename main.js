@@ -276,8 +276,9 @@ app.whenReady().then(() => {
       const u = String(url);
       const okScheme = /^https:\/\//i.test(u) || /^http:\/\/(127\.0\.0\.1|localhost)(:|\/)/i.test(u);
       if (!okScheme) return { error: 'https only' };
-      // Send a browser User-Agent — many live-catalog APIs 403 the default Node/undici UA.
-      const r = await fetch(u, { headers: { 'User-Agent': DEFAULT_UA, 'Accept': 'application/json,text/plain,*/*' } });
+      // Send a browser User-Agent — many live-catalog APIs 403 the default Node/undici UA. Abort after
+      // 60s so a dead/hanging catalog is skipped (the live grid renders the others incrementally).
+      const r = await fetch(u, { headers: { 'User-Agent': DEFAULT_UA, 'Accept': 'application/json,text/plain,*/*' }, signal: AbortSignal.timeout(60000) });
       return { ok: r.ok, status: r.status, body: await r.text() };
     } catch (e) {
       return { error: e.message };

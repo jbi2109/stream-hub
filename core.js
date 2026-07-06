@@ -49,7 +49,12 @@ const isLiveUrl = (url) => sourceCategory(url) === 'live';
   });
   if (changed) store('sources', sources);
   const before = cont.length;
-  cont = cont.filter((c) => !isLiveUrl(c.url)); // Live TV never belongs in Continue Watching
+  // Live TV and YouTube never belong in Continue Watching (clears entries leaked before the capture fix).
+  cont = cont.filter((c) => {
+    if (isLiveUrl(c.url)) return false;
+    try { if (/(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i.test(new URL(c.url).host)) return false; } catch {}
+    return true;
+  });
   if (cont.length !== before) store('continue', cont);
 })();
 
@@ -84,8 +89,10 @@ function hideAll() {
   playing = null;              // leaving the embed: forget what's playing
   intendedMedia = null;        // and forget any known title/poster; producers re-set it after open()
   currentLiveMatch = null;
+  clearTimeout(captureTimer);  // cancel any pending capture so a late timer can't grab the stale (live) URL
   $('src-switch').hidden = true;
   $('live-sources').hidden = true;
+  $('sources-overlay').hidden = true;
 }
 
 function open(url) {

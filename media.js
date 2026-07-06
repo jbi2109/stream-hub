@@ -95,6 +95,8 @@ function scheduleCapture() {
 async function captureCurrent() {
   const url = webview.getURL();
   if (!url || !/^https?:/.test(url) || !isMediaUrl(url)) return;
+  // YouTube is the built-in tab, not a tracked show (and /watch trips isMediaUrl) — never capture it.
+  try { if (/(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i.test(new URL(url).host)) return; } catch {}
   // Live TV never enters Continue Watching. Catalog embeds live on an arbitrary host that isLiveUrl
   // can't recognise, so also trust the `live` flag set when a live stream was opened/reopened.
   if (isLiveUrl(url) || intendedMedia?.live) return;

@@ -36,6 +36,7 @@ $('src-switch').onchange = () => {
   if (src) openOn(src, playing.kind, playing.type, playing.id, playing.season, playing.episode, playing.title, playing.poster);
 };
 $('live-sources').onclick = () => { if (currentLiveMatch) showLivePicker(currentLiveMatch); }; // reopen the live source page
+$('sources-overlay').onclick = () => { if (currentLiveMatch) showLivePicker(currentLiveMatch); }; // same, from the player overlay
 
 // Wire the controls settings.js builds. A named function so it can re-run after a settings Reset
 // rebuilds those DOM nodes (which would otherwise drop their handlers).
