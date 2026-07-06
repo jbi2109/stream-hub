@@ -31,6 +31,7 @@ let intendedMedia = null;            // {title,poster,id?} known title/poster fo
                                      // so capture/Watch-Later never depend on a provider's embed-page og:title
 let lastSourceUrl = load('lastSource', null); // last source the user watched on
 let defaultSource = load('defaultSource', null); // preferred player URL for Movies/TV/Anime
+let currentLiveMatch = null;         // the live match being watched (for the topbar "Sources" reopen)
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
@@ -82,7 +83,9 @@ function hideAll() {
   webview.hidden = true;
   playing = null;              // leaving the embed: forget what's playing
   intendedMedia = null;        // and forget any known title/poster; producers re-set it after open()
+  currentLiveMatch = null;
   $('src-switch').hidden = true;
+  $('live-sources').hidden = true;
 }
 
 function open(url) {

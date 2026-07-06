@@ -72,27 +72,9 @@ function renderDetail(kind, type, id, d) {
   let curSeason = type === 'tv' ? ((d.seasons || []).find((s) => s.season_number > 0)?.season_number ?? 1) : null;
   let curEpisode = type === 'tv' ? 1 : null;
 
+  const playSrcs = sourcesFor(kind);
   const actions = document.createElement('div');
   actions.className = 'detail-actions';
-  const playSrcs = sourcesFor(kind);
-  if (playSrcs.length > 1) {
-    const srcSel = document.createElement('select');
-    srcSel.className = 'detail-source';
-    srcSel.title = 'Source';
-    srcSel.append(...playSrcs.map((s) => {
-      const o = document.createElement('option');
-      o.value = s.url; o.textContent = s.name;
-      if (s.url === (defaultSource || lastSourceUrl)) o.selected = true;
-      return o;
-    }));
-    actions.append(srcSel);
-  }
-  const watchBtn = document.createElement('button');
-  watchBtn.className = 'btn-primary';
-  const setWatchLabel = () => { watchBtn.textContent = type === 'tv' ? `▶ Watch S${curSeason}E${curEpisode}` : '▶ Watch'; };
-  setWatchLabel();
-  watchBtn.onclick = () => playOn(kind, type, id, curSeason, curEpisode, title, posterUrl);
-  actions.append(watchBtn);
   if (trailer) {
     const tb = document.createElement('button');
     tb.textContent = '🎬 Trailer';
@@ -116,6 +98,15 @@ function renderDetail(kind, type, id, d) {
 
   hero.append(poster, info);
   el.replaceChildren(detailHeaderBar(), hero);
+
+  // "Watch on" source list (replaces the source dropdown): pick a player to watch the current title/episode.
+  const watchSec = document.createElement('div'); watchSec.className = 'detail-section';
+  const wh = document.createElement('h2'); wh.textContent = 'Watch on'; watchSec.append(wh);
+  watchSec.append(sourceList([{ name: '', rows: playSrcs.map((s) => ({
+    label: s.name,
+    onPick: () => openOn(s, kind, type, id, curSeason, curEpisode, title, posterUrl),
+  })) }]));
+  el.append(watchSec);
 
   // overview
   if (d.overview) {
@@ -153,7 +144,7 @@ function renderDetail(kind, type, id, d) {
       epGrid.replaceChildren(emptyMsg('Loading…'));
       let s;
       try { s = await tmdbGet(`/tv/${id}/season/${n}`, {}); } catch { s = null; }
-      epGrid.replaceChildren(...(s?.episodes || []).map((ep) => episodeCard(kind, type, id, ep, () => { curEpisode = ep.episode_number; setWatchLabel(); }, title, posterUrl)));
+      epGrid.replaceChildren(...(s?.episodes || []).map((ep) => episodeCard(kind, type, id, ep, () => { curSeason = ep.season_number; curEpisode = ep.episode_number; }, title, posterUrl)));
     };
     sel.onchange = () => loadSeason(sel.value);
     loadSeason(curSeason);
@@ -208,6 +199,11 @@ function episodeCard(kind, type, id, ep, onPick, title, poster) {
   const ov = document.createElement('div'); ov.className = 'episode-ov'; ov.textContent = ep.overview || '';
   body.append(t, ov);
   el.append(still, body);
-  el.onclick = () => { onPick(); playOn(kind, type, id, ep.season_number, ep.episode_number, title, poster); };
+  // Select the episode (highlight) — the "Watch on" source list then plays the selected episode.
+  el.onclick = () => {
+    [...el.parentElement.children].forEach((c) => c.classList.remove('selected'));
+    el.classList.add('selected');
+    onPick();
+  };
   return el;
 }

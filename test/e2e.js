@@ -17,6 +17,7 @@ const CATALOG = 'http://127.0.0.1:9314';
 const YT_FIX_HOST = '127.0.0.1:9315';
 const YT_FIX = 'http://' + YT_FIX_HOST;
 const CATALOG2 = 'http://127.0.0.1:9316';
+const CATALOG_B = 'http://127.0.0.1:9317';
 const PROFILE = path.join(os.tmpdir(), 'stream-hub-test-profile');
 
 let electronProc = null;
@@ -128,6 +129,13 @@ const catalogNested = http.createServer((req, res) => {
   } }));
 });
 
+// A second flat catalog with the SAME match titled in REVERSE order — exercises the team-order-aware,
+// cross-catalog merge (should collapse with catalogNested's "Team A vs Team B" into one card).
+const catalogB = http.createServer((req, res) => {
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ streams: [{ name: 'Team B vs Team A', category: 'soccer', embed_url: `${PLAYER}/live/reverse` }] }));
+});
+
 // ---- minimal CDP client ----
 class CDP {
   static async connect(wsUrl) {
@@ -199,6 +207,7 @@ async function main() {
   catalog.listen(9314);
   ytFix.listen(9315);
   catalogNested.listen(9316);
+  catalogB.listen(9317);
 
   // ---------- boot ----------
   let pageTarget = await launchApp();
@@ -516,9 +525,9 @@ async function main() {
   await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail h1')`), 'movie detail page');
   assert.ok(await page.eval(`document.querySelector('#detail h1').textContent.length > 0`), 'detail title missing');
   assert.ok(await page.eval(`!!document.querySelector('#detail .detail-section p')`), 'detail overview missing');
-  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`);
+  await page.eval(`document.querySelector('#detail .src-row').click()`); // Watch on the first source
   await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/movie/42')`), 'watch opened embed url');
-  ok('detail: movie poster -> detail page -> Watch loads source embed player');
+  ok('detail: movie poster -> detail page -> pick source loads the embed player');
 
   // 24b. TV detail shows season select + episode cards; Watch deep-links the episode; Trailer -> youtube embed
   await page.eval(`document.getElementById('browse-btn').click()`);
@@ -526,7 +535,7 @@ async function main() {
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'tv grid');
   await page.eval(`document.querySelector('#browse .grid .card').click()`);
   await until(() => page.eval(`!!document.querySelector('#detail .season-select') && document.querySelectorAll('#detail .episode').length >= 1`), 'tv detail episodes');
-  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`); // Watch S1E1
+  await page.eval(`document.querySelector('#detail .src-row').click()`); // Watch S1E1 (default) on the first source
   await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/tv/42/1/1')`), 'tv watch deep-links episode');
   // Trailer
   await page.eval(`document.getElementById('browse-btn').click()`);
@@ -593,16 +602,15 @@ async function main() {
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('sources'))`)).length, srcCountBeforeEdit, 'edit must update in place, not add a duplicate');
   ok('sources: ✎ opens the wizard in edit mode; changes save in place');
 
-  // 29. detail-page source selector routes Watch to the chosen source + its pattern
+  // 29. detail-page source list routes Watch to the chosen source + its pattern
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'movie').click()`);
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'movie grid for source select');
   await page.eval(`document.querySelector('#browse .grid .card').click()`);
-  await until(() => page.eval(`!!document.querySelector('#detail .detail-source')`), 'detail source selector present');
-  await page.eval(`document.querySelector('#detail .detail-source').value = '${PLAYER}'`); // choose CineTest
-  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length >= 2`), 'detail source list present');
+  await page.eval(`[...document.querySelectorAll('#detail .src-row')].find(r => r.textContent.includes('CineTest')).click()`); // pick CineTest -> its pattern
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/player/42'`), 'watch used the chosen source pattern');
-  ok('detail: source selector routes Watch to the chosen source pattern');
+  ok('detail: source list routes Watch to the chosen source pattern');
 
   // 30. topbar source switcher swaps the SAME title onto another source while watching
   assert.strictEqual(await page.eval(`document.getElementById('src-switch').hidden`), false, 'src-switch should show while watching with multiple sources');
@@ -680,25 +688,25 @@ async function main() {
   assert.ok(await page.eval(`(() => { const s = JSON.parse(localStorage.sources).find(x => x.name === 'FixtureCatalog'); return s && s.category === 'live' && s.catalogUrl === '${CATALOG}/api/streams' && !s.url; })()`), 'catalog live source not added via wizard');
   ok('wizard: adds a Live catalog (JSON API) source through the widget');
 
-  // 32f. Live tab: catalog fetched from the API renders tiles, with a category filter + search; click embeds
+  // 32f. Live tab: unified match grid from the catalog API, with a category filter + search; click embeds
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha Match'))`), 'catalog tiles render from the API');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha Match'))`), 'match cards render from the API');
   // category filter tabs derived from the data
   assert.ok(await page.eval(`['All','Soccer','Tennis'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'category filter tabs (All/Soccer/Tennis) missing');
   // search filters to Beta
   await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = 'Beta'; s.dispatchEvent(new Event('input')); })()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Beta')) && ts.every(x => !x.includes('Alpha') && !x.includes('Gamma')); })()`), 'search filters the catalog');
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .match-grid .match-card')].map(t => t.textContent); return ts.some(x => x.includes('Beta')) && ts.every(x => !x.includes('Alpha') && !x.includes('Gamma')); })()`), 'search filters the grid');
   // clear + Tennis category -> only Gamma
   await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = ''; s.dispatchEvent(new Event('input')); })()`);
   await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Tennis').click()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .live-provider .tile')].map(t => t.textContent); return ts.some(x => x.includes('Gamma')) && ts.every(x => !x.includes('Alpha') && !x.includes('Beta')); })()`), 'category filter shows only Tennis');
-  // Soccer category -> Alpha present; click it -> embeds the stream
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .match-grid .match-card')].map(t => t.textContent); return ts.some(x => x.includes('Gamma')) && ts.every(x => !x.includes('Alpha') && !x.includes('Beta')); })()`), 'category filter shows only Tennis');
+  // Soccer category -> Alpha present; click it -> single source embeds directly
   await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Soccer').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha'))`), 'Soccer shows Alpha');
-  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha')).click()`);
-  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'catalog tile embeds the stream');
-  ok('live: JSON catalog renders with category filter + search + embed');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha'))`), 'Soccer shows Alpha');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Alpha')).click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'single-source match embeds the stream');
+  ok('live: unified match grid with category filter + search + embed');
 
   // 32g. auto-update banner: hidden at boot; showUpdate drives it; Restart calls install (stubbed)
   assert.strictEqual(await page.eval(`document.getElementById('update-banner').hidden`), true, 'update banner should be hidden at boot');
@@ -731,8 +739,8 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'movie').click()`);
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'movie grid (no-title capture)');
   await page.eval(`document.querySelector('#browse .grid .card').click()`);
-  await until(() => page.eval(`!!document.querySelector('#detail .detail-actions .btn-primary')`), 'detail (no-title capture)');
-  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`); // Watch -> PLAYER embed (no og:title)
+  await until(() => page.eval(`!!document.querySelector('#detail .src-row')`), 'detail (no-title capture)');
+  await page.eval(`document.querySelector('#detail .src-row').click()`); // Watch -> PLAYER embed (no og:title)
   await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/movie/42')`), 'watch opened no-title embed');
   const capTitle = await until(() => page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).title`), 'continue captured from no-title embed');
   assert.strictEqual(capTitle, 'Fixture Title', 'Continue Watching should use the TMDB title, not the empty/URL embed-page title');
@@ -751,9 +759,9 @@ async function main() {
   await page.eval(`addSource({ name: 'CatSrc', category: 'live', catalogUrl: '${CATALOG}/api/streams' })`);
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha'))`), 'catalog tiles (live capture)');
-  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha')).click()`);
-  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'live tile opened');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha'))`), 'match cards (live capture)');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Alpha')).click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'live match opened');
   await sleep(900); // let any capture attempt run (600ms debounce); /live/700 passes isMediaUrl, so the live flag is what must skip it
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 0, 'a live stream must not enter Continue Watching');
   await page.eval(`document.getElementById('watch-later').click()`);
@@ -885,7 +893,7 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Autoplay trailers')).querySelector('input[type=checkbox]').click()`);
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).autoplayTrailers`), false, 'toggle should persist to settings');
   await page.eval(`location.reload()`);
-  await until(() => page.eval(`!!document.querySelector('#settings .settings-tabs .tab')`), 'settings rebuilt after reload');
+  await until(() => page.eval(`[...document.querySelectorAll('#settings .set-row')].some(r => r.textContent.includes('Autoplay trailers'))`), 'settings Playback panel rebuilt after reload');
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).autoplayTrailers`), false, 'toggle should survive reload');
   assert.strictEqual(await page.eval(`[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Autoplay trailers')).querySelector('input[type=checkbox]').checked`), false, 'rebuilt toggle should reflect the saved value');
   ok('settings: a renderer toggle persists across reload');
@@ -926,32 +934,43 @@ async function main() {
   await page.eval(`document.querySelector('.wiz-x').click()`);
   ok('wizard: shell renders once — navigating a step does not rebuild the overlay');
 
-  // 32w3. v0.2.5: a multi-source match shows ONE tile; clicking it opens the source-picker modal
+  // 32w3. v0.2.6: unified live grid — one name-only card per match; clicking opens the source PAGE
   await page.eval(`document.getElementById('home-btn').click()`);
   await page.eval(`settings.liveLanguage = ''; saveSettings(); sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); renderSources();`);
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Team A'))`), 'nested catalog match tile renders');
-  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].filter(t => t.textContent.includes('Team A')).length`), 1, 'a multi-source match should render exactly one tile');
-  assert.ok(await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Team A')).textContent.includes('2 source')`), 'the match tile shows a source-count badge');
-  assert.ok(await page.eval(`['Soccer','Tennis'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'category filter (Soccer/Tennis) present');
-  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Team A')).click()`);
-  await until(() => page.eval(`!document.getElementById('wizard').hidden && document.querySelectorAll('.src-row').length === 2`), 'source picker modal lists both sources');
-  await page.eval(`document.querySelector('.src-row').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Team A'))`), 'unified match card renders');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].filter(t => t.textContent.includes('Team A')).length`), 1, 'a multi-source match renders exactly one card');
+  assert.ok(await page.eval(`!/[0-9]+\\s*source/i.test([...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Team A')).textContent)`), 'the card shows the name only (no source count)');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Team A')).click()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelectorAll('#detail .src-row').length === 2`), 'source page lists both sources');
+  await page.eval(`document.querySelector('#detail .src-row').click()`);
   await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/ch')`), 'picking a source embeds it');
-  ok('live: one tile per match; picker modal lists all sources; picking one embeds it');
+  ok('live: unified grid, name-only card, source PAGE lists sources, pick embeds');
 
-  // 32w4. v0.2.5: the default live language floats matching sources to the top (prefer but show all)
+  // 32w4. v0.2.6: default live language floats matching sources to the top of the source page
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`settings.liveLanguage = 'Spanish'; saveSettings();`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Team A'))`), 'live tab re-rendered for language sort');
-  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Team A')).click()`);
-  await until(() => page.eval(`document.querySelectorAll('.src-row').length === 2`), 'picker open for language sort');
-  assert.strictEqual(await page.eval(`document.querySelector('.src-row .src-lang').textContent`), 'Spanish', 'preferred language should sort to the top');
-  assert.ok(await page.eval(`[...document.querySelectorAll('.src-row .src-lang')].some(c => c.textContent === 'English')`), 'other languages are still listed (prefer but show all)');
-  await page.eval(`document.getElementById('wizard').hidden = true; document.getElementById('wizard').replaceChildren(); settings.liveLanguage = ''; saveSettings();`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Team A'))`), 'live grid re-rendered for language sort');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Team A')).click()`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length === 2`), 'source page open for language sort');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .src-row .src-lang').textContent`), 'Spanish', 'preferred language should sort to the top');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#detail .src-row .src-lang')].some(c => c.textContent === 'English')`), 'other languages are still listed (prefer but show all)');
+  await page.eval(`settings.liveLanguage = ''; saveSettings();`);
   ok('live: default language floats matching sources to the top, others still shown');
+
+  // 32w5. v0.2.6: cross-catalog team-order merge — "Team A vs Team B" + "Team B vs Team A" = one card
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); addSource({ name: 'BCat', category: 'live', catalogUrl: '${CATALOG_B}/api' }); renderSources();`);
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].filter(t => /team [ab] vs team [ab]/i.test(t.textContent)).length === 1`), 'the reversed-order match merges into one card');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => /team [ab] vs team [ab]/i.test(t.textContent)).click()`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .src-group').length >= 2`), 'the source page groups sources under both catalogs');
+  assert.ok(await page.eval(`(() => { const n = [...document.querySelectorAll('#detail .src-group-name')].map(g => g.textContent); return n.includes('NestedCat') && n.includes('BCat'); })()`), 'both catalog groups present on the source page');
+  await page.eval(`document.getElementById('home-btn').click()`); // leave the source page clean for the next tests
+  ok('live: cross-catalog team-order merge pools sources under both catalogs');
 
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)
@@ -1018,5 +1037,6 @@ main()
     catalog.close();
     ytFix.close();
     catalogNested.close();
+    catalogB.close();
     process.exit(process.exitCode ?? 0); // open CDP sockets would otherwise keep the loop alive
   });

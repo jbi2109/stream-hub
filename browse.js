@@ -186,55 +186,106 @@ async function fetchCatalog(url) {
   return out;
 }
 
-// Collapse per-source rows into one entry per match (by normalised title) with a sources[] list, so a
-// match with many channels/servers shows as a single tile instead of a wall of duplicates.
+// Team-order-aware key so "A vs B" and "B vs A" collapse to one match, even across catalogs.
+function matchKey(title) {
+  const t = String(title || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const m = t.match(/^(.+?)\s+v(?:s)?\s+(.+)$/);
+  return m ? [m[1].trim(), m[2].trim()].sort().join(' v ') : t;
+}
+
+// Collapse per-source rows into one entry per match (team-order-aware, pooled across catalogs). Each
+// source keeps its catalog + language so the source page can group + sort them.
 function groupMatches(rows) {
   const byKey = new Map();
   for (const r of rows) {
-    const key = (r.matchTitle || '').toLowerCase().replace(/\s+/g, ' ').trim() || r.embed;
+    const key = matchKey(r.matchTitle) || r.embed;
     let g = byKey.get(key);
     if (!g) { g = { title: r.matchTitle || 'Stream', category: r.category || '', logo: r.logo || '', sources: [] }; byKey.set(key, g); }
     if (!g.logo && r.logo) g.logo = r.logo;
     if (!g.category && r.category) g.category = r.category;
-    if (!g.sources.some((s) => s.embed === r.embed)) g.sources.push({ label: r.label || '', embed: r.embed, language: r.language || '' });
+    if (!g.sources.some((s) => s.embed === r.embed)) g.sources.push({ label: r.label || '', embed: r.embed, language: r.language || '', catalog: r.catalog || '' });
   }
   return [...byKey.values()];
 }
 
-// Source-picker modal: lists every source for a match (label + language chip). The chosen default live
-// language sorts to the top ("prefer but show all"). Reuses the #wizard modal host + .modal-overlay styles.
-function openLiveSources(match) {
-  const host = $('wizard');
-  const close = () => { host.hidden = true; host.replaceChildren(); };
-  const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-  overlay.onclick = (e) => { if (e.target === overlay) close(); };
-  const card = document.createElement('div'); card.className = 'wiz-card src-pick';
-  const head = document.createElement('div'); head.className = 'wiz-head';
-  const h = document.createElement('h3'); h.textContent = match.title; h.style.flex = '1';
-  const x = document.createElement('button'); x.type = 'button'; x.className = 'wiz-x'; x.textContent = '✕'; x.onclick = close;
-  head.append(h, x);
-  const pref = (settings.liveLanguage || '').toLowerCase();
-  const rank = (s) => { const l = (s.language || '').toLowerCase(); return pref && l === pref ? 0 : (l ? 2 : 1); };
-  const list = document.createElement('div'); list.className = 'src-list';
-  list.append(...match.sources
-    .map((s, idx) => ({ ...s, label: s.label || ('Source ' + (idx + 1)) }))
-    .sort((a, b) => rank(a) - rank(b))
-    .map((s) => {
+// HD/FHD/SD/4K from a source label (a small quality chip on the source page).
+const parseQuality = (label) => { const m = String(label || '').match(/\b(4k|uhd|fhd|hd|sd)\b/i); return m ? m[1].toUpperCase() : ''; };
+
+// Generic photo-3 source list: groups of rows, each row = [quality] label [language], click -> onPick.
+// `groups = [{ name, rows: [{ label, language, quality, onPick }] }]`.
+function sourceList(groups) {
+  const wrap = document.createElement('div'); wrap.className = 'src-list';
+  for (const g of groups) {
+    const group = document.createElement('div'); group.className = 'src-group';
+    if (g.name) { const gh = document.createElement('div'); gh.className = 'src-group-name'; gh.textContent = g.name; group.append(gh); }
+    for (const r of g.rows) {
       const row = document.createElement('div'); row.className = 'src-row';
-      const name = document.createElement('span'); name.className = 'src-name'; name.textContent = s.label;
+      if (r.quality) { const qc = document.createElement('span'); qc.className = 'src-q'; qc.textContent = r.quality; row.append(qc); }
+      const name = document.createElement('span'); name.className = 'src-name'; name.textContent = r.label;
       row.append(name);
-      if (s.language) { const chip = document.createElement('span'); chip.className = 'src-lang'; chip.textContent = s.language; row.append(chip); }
-      row.onclick = () => { open(s.embed); intendedMedia = { title: match.title, poster: match.logo, live: true }; close(); };
-      return row;
-    }));
-  card.append(head, list);
-  overlay.append(card);
-  host.replaceChildren(overlay);
-  host.hidden = false;
+      if (r.language) { const chip = document.createElement('span'); chip.className = 'src-lang'; chip.textContent = r.language; row.append(chip); }
+      row.onclick = r.onPick;
+      group.append(row);
+    }
+    if (!g.rows.length) group.append(emptyMsg('No sources — add one in Settings.'));
+    wrap.append(group);
+  }
+  return wrap;
 }
 
-// Live TV tab: catalog sources (fetch JSON -> tiles + category filter + search) + plain site tiles.
-// Search filters client-side (no refetch); the category filter is built from the fetched data.
+// Build source-list groups for a live match: grouped by catalog, default language floated to the top.
+function liveMatchGroups(match) {
+  const pref = (settings.liveLanguage || '').toLowerCase();
+  const rank = (s) => { const l = (s.language || '').toLowerCase(); return pref && l === pref ? 0 : (l ? 2 : 1); };
+  const byCat = new Map();
+  match.sources.forEach((s, i) => {
+    const c = s.catalog || 'Sources';
+    if (!byCat.has(c)) byCat.set(c, []);
+    byCat.get(c).push({ ...s, label: s.label || ('Source ' + (i + 1)) });
+  });
+  return [...byCat.entries()].map(([name, list]) => ({
+    name,
+    rows: list.sort((a, b) => rank(a) - rank(b)).map((s) => ({
+      label: s.label, language: s.language, quality: parseQuality(s.label),
+      onPick: () => { open(s.embed); intendedMedia = { title: match.title, poster: match.logo, live: true }; currentLiveMatch = match; $('live-sources').hidden = false; },
+    })),
+  }));
+}
+
+// Live source-selection PAGE (photo 3/4): rendered into the #detail container. Back returns to the grid.
+function showLivePicker(match) {
+  hideAll();
+  currentLiveMatch = match;
+  const el = $('detail');
+  const back = document.createElement('div'); back.className = 'detail-back';
+  const bb = document.createElement('button'); bb.textContent = '← Back'; bb.onclick = () => { browseTab = 'live'; showBrowse(); };
+  back.append(bb);
+  const head = document.createElement('div'); head.className = 'live-pick-head';
+  if (match.logo) { const img = document.createElement('img'); img.className = 'live-pick-logo'; img.src = match.logo; img.onerror = () => img.remove(); head.append(img); }
+  const h = document.createElement('h1'); h.textContent = match.title; head.append(h);
+  const sec = document.createElement('div'); sec.className = 'detail-section';
+  sec.append(sourceList(liveMatchGroups(match)));
+  el.replaceChildren(back, head, sec);
+  el.hidden = false;
+}
+
+// photo-2 style match card: 16:9 image (cover) + title below, no source count.
+function matchCard(m) {
+  const el = document.createElement('div'); el.className = 'match-card';
+  const thumb = document.createElement('div'); thumb.className = 'match-thumb';
+  if (m.logo) { const img = document.createElement('img'); img.src = m.logo; img.onerror = () => { img.remove(); thumb.classList.add('noimg'); }; thumb.append(img); }
+  else thumb.classList.add('noimg');
+  const t = document.createElement('div'); t.className = 'match-title'; t.textContent = m.title;
+  el.append(thumb, t);
+  el.onclick = () => {
+    if (m.sources.length === 1) { open(m.sources[0].embed); intendedMedia = { title: m.title, poster: m.logo, live: true }; currentLiveMatch = m; $('live-sources').hidden = false; }
+    else showLivePicker(m);
+  };
+  return el;
+}
+
+// Live TV tab: ONE grid amalgamating every catalog source (matches pooled + merged across catalogs) +
+// plain "open the site" tiles for non-catalog live sources.
 function renderLiveTab(container) {
   const live = sources.filter((s) => s.category === 'live');
   const catalogSrcs = live.filter((s) => s.catalogUrl);
@@ -247,67 +298,50 @@ function renderLiveTab(container) {
     return;
   }
 
-  for (const s of catalogSrcs) nodes.push(liveCatalogSection(s));
-
   if (siteSrcs.length) {
-    const grid = document.createElement('div'); grid.className = 'grid tiles';
-    grid.append(...siteSrcs.map((s) => {
+    const siteGrid = document.createElement('div'); siteGrid.className = 'grid tiles';
+    siteGrid.append(...siteSrcs.map((s) => {
       const el = document.createElement('div'); el.className = 'tile'; el.textContent = s.name;
       el.onclick = () => { currentSource = s.url; open(s.url); };
       return el;
     }));
-    nodes.push(grid);
+    nodes.push(siteGrid);
   }
 
-  container.replaceChildren(...nodes);
-}
+  if (!catalogSrcs.length) { container.replaceChildren(...nodes); return; }
 
-// One catalog source: a titled section with a category filter + search box + tile grid.
-function liveCatalogSection(src) {
-  const sec = document.createElement('div'); sec.className = 'live-provider';
-  const h = document.createElement('h3'); h.className = 'live-provider-name'; h.textContent = src.name;
   const controls = document.createElement('div'); controls.className = 'live-controls';
   const catBar = document.createElement('div'); catBar.className = 'subtabs';
-  const search = document.createElement('input');
-  search.className = 'browse-search'; search.placeholder = 'Search live…';
+  const search = document.createElement('input'); search.className = 'browse-search'; search.placeholder = 'Search live…';
   controls.append(catBar, search);
-  const grid = document.createElement('div'); grid.className = 'grid tiles'; grid.textContent = 'Loading…';
-  sec.append(h, controls, grid);
+  const grid = document.createElement('div'); grid.className = 'grid match-grid'; grid.textContent = 'Loading…';
+  nodes.push(controls, grid);
+  container.replaceChildren(...nodes);
 
-  let all = [], cat = 'all'; // all = grouped matches ({ title, category, logo, sources: [...] })
+  let all = [], cat = 'all';
   const draw = () => {
     const q = search.value.trim().toLowerCase();
     let items = cat === 'all' ? all : all.filter((it) => it.category === cat);
     if (q) items = items.filter((it) => (it.title || '').toLowerCase().includes(q));
     if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
-    grid.replaceChildren(...items.slice(0, 300).map((m) => {
-      const el = document.createElement('div'); el.className = 'tile';
-      if (m.logo) { const img = document.createElement('img'); img.className = 'tile-logo'; img.src = m.logo; img.onerror = () => img.remove(); el.append(img); }
-      const t = document.createElement('div'); t.textContent = m.title; el.append(t);
-      if (m.sources.length > 1) { const badge = document.createElement('div'); badge.className = 'tile-count'; badge.textContent = m.sources.length + ' sources'; el.append(badge); }
-      el.onclick = () => {
-        if (m.sources.length === 1) { open(m.sources[0].embed); intendedMedia = { title: m.title, poster: m.logo, live: true }; }
-        else openLiveSources(m);
-      };
-      return el;
-    }));
+    grid.replaceChildren(...items.slice(0, 400).map(matchCard));
   };
   search.oninput = draw;
 
-  fetchCatalog(src.catalogUrl).then((rows) => {
-    all = groupMatches(rows);
-    const cats = ['all', ...[...new Set(all.map((it) => it.category).filter(Boolean))].sort()];
-    if (cats.length > 2) {
-      catBar.append(...cats.map((c) => {
-        const b = document.createElement('button');
-        b.className = 'tab' + (c === cat ? ' active' : '');
-        b.textContent = c === 'all' ? 'All' : c[0].toUpperCase() + c.slice(1);
-        b.onclick = () => { cat = c; [...catBar.children].forEach((x) => x.classList.toggle('active', x === b)); draw(); };
-        return b;
-      }));
-    }
-    draw();
-  }).catch((e) => { grid.textContent = 'Failed to load (' + (e && e.message || e) + ').'; });
-
-  return sec;
+  // fetch every catalog in parallel; tag each row with its catalog; tolerate a failing/slow one
+  Promise.allSettled(catalogSrcs.map((s) => fetchCatalog(s.catalogUrl).then((rows) => rows.map((r) => ({ ...r, catalog: s.name })))))
+    .then((results) => {
+      const rows = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+      all = groupMatches(rows);
+      const cats = ['all', ...[...new Set(all.map((it) => it.category).filter(Boolean))].sort()];
+      if (cats.length > 2) {
+        catBar.append(...cats.map((c) => {
+          const b = document.createElement('button'); b.className = 'tab' + (c === cat ? ' active' : '');
+          b.textContent = c === 'all' ? 'All' : c[0].toUpperCase() + c.slice(1);
+          b.onclick = () => { cat = c; [...catBar.children].forEach((x) => x.classList.toggle('active', x === b)); draw(); };
+          return b;
+        }));
+      }
+      draw();
+    });
 }
