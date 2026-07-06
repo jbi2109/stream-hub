@@ -1,6 +1,6 @@
 {
   "name": "stream-hub",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A desktop browser for streaming sites, with bookmarks, automatic watch-progress tracking, and ad-blocking.",
   "main": "main.js",
   "scripts": {
@@ -8,7 +8,13 @@
     "test": "node test/e2e.js",
     "dist": "electron-builder"
   },
-  "keywords": ["electron", "streaming", "media", "desktop", "webview"],
+  "keywords": [
+    "electron",
+    "streaming",
+    "media",
+    "desktop",
+    "webview"
+  ],
   "author": "Joshua Irvine",
   "license": "MIT",
   "repository": {
@@ -19,7 +25,16 @@
   "build": {
     "appId": "com.jbi2109.streamhub",
     "productName": "Stream Hub",
-    "files": ["**/*", "!test", "!docs", "!.github", "!.plans", "!**/*.md", "!launch.bat", "!dist"],
+    "files": [
+      "**/*",
+      "!test",
+      "!docs",
+      "!.github",
+      "!.plans",
+      "!**/*.md",
+      "!launch.bat",
+      "!dist"
+    ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico"
