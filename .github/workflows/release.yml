@@ -20,6 +20,17 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # electron-builder spins up one publisher per artifact; if the release doesn't
+      # exist yet they race to POST /releases and one 422s ("already_exists"), killing
+      # the upload mid-flight. Pre-creating the release makes both publishers GET it.
+      - name: Pre-create release (prevents electron-builder create race)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) { gh release create $tag --title $tag --notes "Automated release. See assets below." }
       - name: Build and publish
         run: npx electron-builder --publish always
         env:
