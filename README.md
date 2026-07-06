@@ -94,7 +94,14 @@ one and **Import** in the other to carry your setup over.
 | `main.js` | Electron main process: window, popup policy, ad-blocker, reads playback position from the player frame, per-host user-agent tweaks. |
 | `preload.js` | Tiny `contextBridge` that forwards playback progress to the UI. |
 | `index.html` | App layout (sidebar, top bar, webview, home container). |
-| `renderer.js` | All UI logic: sources, capture/classification, tabs, cards, storage. |
+| `core.js` | Renderer foundation: DOM helper, storage, shared state, view switching. |
+| `media.js` | Page inspection + Continue-Watching capture. |
+| `sources.js` | Settings source list + play-URL building/routing. |
+| `browse.js` | TMDB browse (Movies/TV/Anime) + the Live TV catalog tab. |
+| `detail.js` | Native TMDB detail page + episode picker. |
+| `library.js` | Continue Watching / Watch Later grid. |
+| `wizard.js` | Guided "Add player / source" modal. |
+| `app.js` | Event wiring, auto-update banner, settings export/import, bootstrap. |
 | `style.css` | Styling. |
 | `test/e2e.js` | End-to-end test suite. |
 
