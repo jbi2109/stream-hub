@@ -106,6 +106,9 @@ function showUpdate(state) {
 function requestInstall() { window.sh.installUpdate(); } // indirection so e2e can stub it safely
 if (window.sh && window.sh.onUpdate) window.sh.onUpdate(showUpdate);
 
+// After a standalone Google-login window closes, reload the webview so it picks up the sign-in cookies.
+window.sh?.onAuthReload?.(() => { if (!webview.hidden) webview.reload(); });
+
 // ---- settings export / import (all localStorage: sources, tmdbKey, library, settings, defaults) ----
 function exportSettings() { return Object.fromEntries(Object.entries(localStorage)); }
 function importSettings(obj) {

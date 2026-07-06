@@ -36,6 +36,7 @@ function ok(name) { passed++; console.log(`  ok ${passed} - ${name}`); }
 // ---- local test site: a media page with og tags + a cross-origin player iframe ----
 const site = http.createServer((req, res) => {
   res.setHeader('content-type', 'text/html');
+  res.setHeader('x-sec-ch-ua', req.headers['sec-ch-ua'] || 'NONE'); // echo the UA client hint (same-origin readable)
   res.end(`<!doctype html><html><head>
     <meta property="og:title" content="Widow's Bay">
     <meta property="og:image" content="${SITE}/poster.png">
@@ -60,6 +61,8 @@ const player = http.createServer((req, res) => {
 // CORS-open so the guest (different origin) can fetch it.
 const uaEcho = http.createServer((req, res) => {
   res.setHeader('access-control-allow-origin', '*');
+  res.setHeader('access-control-expose-headers', 'x-sec-ch-ua'); // so the cross-origin guest can read it
+  res.setHeader('x-sec-ch-ua', req.headers['sec-ch-ua'] || 'NONE'); // echo the UA client hint (should be stripped here)
   res.end(req.headers['user-agent'] || '');
 });
 
@@ -241,6 +244,13 @@ async function main() {
   const normalUA = await guest.eval(`navigator.userAgent`);
   assert.ok(!normalUA.includes('Firefox'), `normal browsing UA should stay Chrome, got: ${normalUA}`);
   ok('login hosts get Firefox UA header; normal browsing stays Chrome');
+
+  // 5c3. v0.2.1: google-login hosts also get Chromium's UA Client Hints stripped (real Firefox sends none)
+  const siteHints = await guest.eval(`fetch('${SITE}/').then(r => r.headers.get('x-sec-ch-ua'))`);
+  const loginHints = await guest.eval(`fetch('${UA_ECHO}/').then(r => r.headers.get('x-sec-ch-ua'))`);
+  if (siteHints === 'NONE') console.log('  WARN - Chromium sent no sec-ch-ua to the test host; the strip assertion is weaker here');
+  assert.strictEqual(loginHints, 'NONE', `sec-ch-ua must be stripped for google-login hosts, got: ${loginHints}`);
+  ok('login hosts: Chromium UA Client Hints (sec-ch-ua) stripped');
 
   // 5d. nested popups from login window denied
   await popupCdp.eval(`void window.open('https://example.com/nested')`);
@@ -868,6 +878,22 @@ async function main() {
   assert.strictEqual(await page.eval(`(JSON.parse(localStorage.getItem('sources')) || []).length`), 1, 'Reset must NOT drop sources');
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('tmdbKey'))`), 'keepkey', 'Reset must NOT drop the TMDB key');
   ok('settings: Clear / Merge / Reset act correctly; Reset keeps sources + library');
+
+  // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
+  //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/login-origin'`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/login-origin')`), 'webview on origin page for login-intercept');
+  const liTarget = await until(async () =>
+    (await targets()).find((t) => t.url.includes('/login-origin') && t.webSocketDebuggerUrl), 'guest for login-intercept');
+  const liGuest = await CDP.connect(liTarget.webSocketDebuggerUrl);
+  await liGuest.eval(`location.href = '${UA_ECHO}/login'`); // renderer-initiated -> fires will-navigate
+  const loginWin = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(UA_ECHO) && t.type === 'page'), 'standalone login window opened');
+  assert.ok(loginWin, 'a google-login nav should open a standalone window');
+  assert.ok(!(await page.eval(`document.getElementById('webview').getURL().startsWith('${UA_ECHO}')`)), 'the webview must NOT follow to the login host');
+  liGuest.close();
+  await closeTarget(loginWin.id);
+  ok('login: in-page nav to a google-login host opens a standalone window, not the webview');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`

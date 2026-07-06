@@ -13,7 +13,7 @@ try {
 // so navigator.userAgent matches and Google doesn't flag the embedded browser as insecure.
 try {
   if (['accounts.google.com', 'accounts.youtube.com'].includes(location.host)) {
-    const FF = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0';
+    const FF = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0';
     Object.defineProperty(navigator, 'userAgent', { get: () => FF });
     Object.defineProperty(navigator, 'appVersion', { get: () => '5.0 (Windows)' });
     Object.defineProperty(navigator, 'vendor', { get: () => '' });        // Firefox: empty

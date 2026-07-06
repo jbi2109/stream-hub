@@ -40,8 +40,10 @@ const AUTH_HOSTS = ['accounts.google.com', 'appleid.apple.com', 'www.facebook.co
 
 // Google refuses OAuth from embedded Chromium ("browser may not be secure");
 // it accepts the flow when the login window presents as Firefox
-const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0';
+// Keep this byte-identical to the FF string in webview-preload.js so the header + navigator agree.
+const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0';
 const GOOGLE_LOGIN_HOSTS = ['accounts.google.com', 'accounts.youtube.com'];
+const hostOf = (u) => { try { return new URL(u).host; } catch { return ''; } };
 if (process.env.SH_TEST_UA_HOST) GOOGLE_LOGIN_HOSTS.push(process.env.SH_TEST_UA_HOST);
 const isGoogleLoginHost = (url) => { try { return GOOGLE_LOGIN_HOSTS.includes(new URL(url).host); } catch { return false; } };
 
@@ -83,6 +85,11 @@ app.on('web-contents-created', (_e, contents) => {
   });
   // every window we allow is a login popup — make its JS environment report Firefox too
   contents.on('did-create-window', (win) => win.webContents.setUserAgent(FIREFOX_UA));
+  // In-place login navigations (e.g. YouTube → accounts.google.com in the main frame) are popped out
+  // to a standalone top-level window — Google blocks its embedded-browser check on <webview> guests.
+  contents.on('will-navigate', (e, url) => {
+    if (isGoogleLoginHost(url)) { e.preventDefault(); openGoogleLoginWindow(url, hostOf(contents.getURL())); }
+  });
   contents.setWindowOpenHandler(({ url }) => {
     try {
       const host = new URL(url).host;
@@ -131,6 +138,32 @@ async function enableAdblock() {
   blocker.enableBlockingInSession(session.defaultSession); // webview shares default session
 }
 
+// Open a Google login URL in a standalone top-level window (not the embedded <webview>), with the same
+// Firefox spoof preload so it presents cleanly. Cookies are shared (default session), so on return the
+// webview is reloaded to pick up the new sign-in. `returnHost` = the host the login started from.
+function openGoogleLoginWindow(url, returnHost) {
+  if (!mainWindow) return;
+  const win = new BrowserWindow({
+    width: 500,
+    height: 660,
+    parent: mainWindow,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'webview-preload.js'),
+      contextIsolation: false, // preload runs in the page's world (same posture as the guest)
+      nodeIntegration: false,
+    },
+  });
+  win.webContents.setUserAgent(FIREFOX_UA);
+  // Best-effort auto-close once login returns to the originating site; the `closed` handler is the
+  // guaranteed path that reloads the webview so it sees the new session cookies.
+  const check = (u) => { try { if (returnHost && hostOf(u) === returnHost && !win.isDestroyed()) win.close(); } catch {} };
+  win.webContents.on('did-navigate', (_e, u) => check(u));
+  win.webContents.on('will-redirect', (_e, u) => check(u));
+  win.on('closed', () => { try { mainWindow && mainWindow.webContents.send('auth-reload'); } catch {} });
+  win.loadURL(url);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -174,6 +207,11 @@ app.whenReady().then(() => {
     try {
       if (GOOGLE_LOGIN_HOSTS.includes(new URL(details.url).host)) {
         details.requestHeaders['User-Agent'] = FIREFOX_UA;
+        // Real Firefox sends no UA Client Hints; leaving Chromium's Sec-CH-UA* headers on a Firefox
+        // UA is what Google now flags as "browser may not be secure". Strip them so it's consistent.
+        for (const k of Object.keys(details.requestHeaders)) {
+          if (k.toLowerCase().startsWith('sec-ch-ua')) delete details.requestHeaders[k];
+        }
       }
     } catch {}
     cb({ requestHeaders: details.requestHeaders });
