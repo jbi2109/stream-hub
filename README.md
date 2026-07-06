@@ -13,7 +13,8 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 ## Features
 
 - **Browse home (TMDB)** — the app's own landing page: discover Movies, TV, and Anime
-  from [TMDB](https://www.themoviedb.org/), search, and open a title's **native detail page**
+  from [TMDB](https://www.themoviedb.org/), **filter by genre / year / streaming provider and sort**,
+  **page** through the whole catalog (20 at a time), search, and open a title's **native detail page**
   (overview, genres, rating, cast, seasons + episode picker with stills, in-app trailer,
   "where to watch"). Pick which **source** to play on (defaults to your last-used), and the
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
@@ -119,7 +120,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 77-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs an 80-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, single- and two-hop live catalogs, the add-player wizard, the tabbed library, the

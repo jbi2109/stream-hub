@@ -178,6 +178,35 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   font-size: 13px;
 }
 
+/* filter pills (genre / year / sort / provider) */
+.browse-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.pill-select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pill-select:hover { border-color: var(--accent); }
+.pill-select:focus { outline: none; border-color: var(--accent); }
+
+/* pager (Prev / page / Next) */
+.browse-pager { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 22px 0 8px; }
+.pager-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 7px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pager-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.pager-btn:disabled { opacity: 0.4; cursor: default; }
+.pager-info { color: var(--muted); font-size: 13px; }
+
 #browse .grid.tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 #browse .tile {
   display: flex;

@@ -34,6 +34,7 @@ let defaultSource = load('defaultSource', null); // preferred player URL for Mov
 let currentLiveMatch = null;         // the live match being watched (for the topbar "Sources" reopen)
 let lastLiveMatch = null;            // last live match watched (kept across leave, for the ⏯ Resume button)
 let lastPlayedLive = false;          // was the last open() a live stream? (Resume restores the Sources UI)
+let lastPlayedUrl = null;            // the ⏯ Resume target url (survives the webview navigating elsewhere)
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
@@ -97,24 +98,30 @@ function hideAll() {
   $('sources-overlay').hidden = true;
 }
 
-function open(url) {
+// track=true records the ⏯ Resume target. The YouTube rail button opens untracked (track=false) so browsing
+// to YouTube doesn't clobber the show you were watching (it navigates the webview but leaves Resume intact).
+function open(url, track = true) {
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
   webview.src = url;
-  lastPlayedLive = false; lastLiveMatch = null; // default: a generic (non-live) watch; live enriches after
-  $('resume-btn').hidden = false;               // something is now resumable
+  if (track) {
+    lastPlayedUrl = url;
+    lastPlayedLive = false; lastLiveMatch = null; // a generic (non-live) watch; live enriches after open()
+    $('resume-btn').hidden = false;               // something is now resumable
+  }
 }
 
-// ⏯ Resume: reveal the still-loaded webview (hideAll never clears its src) — instant, keeps the live
-// stream / VOD position, no re-walking the source page. Restores the live Sources UI if the last watch
-// was live. // ponytail: reveal-not-reload; a provider that suspends media while hidden resumes on show.
+// ⏯ Resume: go back to the last-watched page. Reveal it when the webview still holds it (instant, keeps the
+// live stream / VOD position); reload it when the webview moved on (e.g. the YouTube tab). Restores the live
+// Sources UI if the last watch was live. // ponytail: reveal when still loaded, reload when moved on.
 function resumeLast() {
-  if ($('resume-btn').hidden) return;   // nothing watched this session
+  if (!lastPlayedUrl) return;           // nothing watched this session
   const wasLive = lastPlayedLive, m = lastLiveMatch;
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
+  if (webview.getAttribute('src') !== lastPlayedUrl) webview.src = lastPlayedUrl;
   if (wasLive && m) { currentLiveMatch = m; $('live-sources').hidden = false; $('sources-overlay').hidden = false; }
 }
 

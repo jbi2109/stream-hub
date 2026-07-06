@@ -76,7 +76,9 @@ const uaEcho = http.createServer((req, res) => {
 // detail objects for /movie|tv/{id}, episode lists for /season/{n}, else a results list.
 const tmdb = http.createServer((req, res) => {
   res.setHeader('content-type', 'application/json');
-  const p = req.url.split('?')[0];
+  const u = new URL(req.url, 'http://x');
+  const p = u.pathname;
+  const q = u.searchParams;
   if (/\/season\/\d+$/.test(p)) {
     res.end(JSON.stringify({ episodes: [
       { episode_number: 1, season_number: 1, name: 'Ep One', overview: 'first', still_path: '/s1.jpg' },
@@ -94,8 +96,18 @@ const tmdb = http.createServer((req, res) => {
       external_ids: { imdb_id: 'tt123' },
       'watch/providers': { results: { US: { flatrate: [{ provider_name: 'Netflix', logo_path: '/n.jpg' }] } } },
     }));
+  } else if (/\/genre\/(movie|tv)\/list$/.test(p)) {
+    res.end(JSON.stringify({ genres: [{ id: 28, name: 'Action & Adventure' }, { id: 16, name: 'Animation' }, { id: 18, name: 'Drama' }] }));
+  } else if (/\/watch\/providers\/(movie|tv)$/.test(p)) {
+    res.end(JSON.stringify({ results: [{ provider_id: 8, provider_name: 'Netflix', display_priority: 1 }, { provider_id: 337, provider_name: 'Disney Plus', display_priority: 2 }] }));
+  } else if (/\/discover\/(movie|tv)$/.test(p)) {
+    // echo page + with_genres into the title so pagination + filters are assertable
+    const page = +(q.get('page') || 1);
+    res.end(JSON.stringify({ page, total_pages: 3, results: [
+      { id: 42, title: `Disc P${page} G${q.get('with_genres') || 'all'}`, name: `Disc P${page} G${q.get('with_genres') || 'all'}`, poster_path: '/x.jpg' },
+    ] }));
   } else {
-    res.end(JSON.stringify({ results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
+    res.end(JSON.stringify({ page: 1, total_pages: 1, results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
   }
 });
 
@@ -1054,6 +1066,36 @@ async function main() {
   assert.strictEqual(await page.eval(`document.getElementById('webview').src`), resumeUrl, 'resume keeps the same src (no reload)');
   assert.strictEqual(await page.eval(`document.getElementById('sources-overlay').hidden`), false, 'resume restores the live Sources overlay');
   ok('resume: ⏯ reveals the last-watched page and restores the live Sources UI');
+
+  // 32F1. v0.2.10 browse filters: Movies tab shows 4 filter selects; a genre re-queries /discover.
+  await page.eval(`document.getElementById('browse-btn').click()`); // -> Movies tab (resets off Live)
+  await until(() => page.eval(`document.querySelectorAll('#browse .browse-filters select').length === 4`), 'four filter selects render');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P1'))`), 'discover page-1 card');
+  await page.eval(`(() => { const s = document.querySelectorAll('#browse .browse-filters select')[0]; s.value = '28'; s.dispatchEvent(new Event('change')); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('G28'))`), 'genre filter passes with_genres=28 to /discover');
+  ok('browse: filter bar renders 4 selects; genre filter re-queries discover');
+
+  // 32F2. v0.2.10 pagination: Prev disabled on page 1; Next loads page 2 (20/page), Prev then enabled.
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .pager-btn')].find(b => b.textContent.includes('Prev')).disabled`), true, 'Prev disabled on page 1');
+  await page.eval(`[...document.querySelectorAll('#browse .pager-btn')].find(b => b.textContent.includes('Next')).click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P2'))`), 'Next loads page 2');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .pager-btn')].find(b => b.textContent.includes('Prev')).disabled`), false, 'Prev enabled on page 2');
+  ok('browse: pager Prev/Next walks pages (Prev disabled on page 1)');
+
+  // 32F3. v0.2.10 fix: opening the YouTube tab must NOT wipe the Resume target (untracked open).
+  await page.eval(`document.getElementById('home-btn').click(); sources.length = 0; store('sources', sources); addSource({ name: 'TwoHop', category: 'live', catalogUrl: '${CATALOG_TWOHOP}/api/matches/live' }); renderSources();`);
+  await page.eval(`document.getElementById('live-btn').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Hop Match'))`), 'live match for youtube-resume test');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Hop Match')).click()`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length === 1`), 'source row for youtube-resume test');
+  await page.eval(`document.querySelector('#detail .src-row').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/900')`), 'live embed playing before youtube');
+  await page.eval(`document.getElementById('youtube-btn').click()`); // navigates the webview away, untracked
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('youtube.com')`), 'youtube tab opened');
+  await page.eval(`resumeLast()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/900')`), 'Resume returns to the live show after YouTube (reload)');
+  assert.strictEqual(await page.eval(`document.getElementById('sources-overlay').hidden`), false, 'Resume restores the live Sources overlay after YouTube');
+  ok('resume: the YouTube tab does not wipe the Resume target');
 
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)

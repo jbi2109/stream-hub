@@ -3,14 +3,11 @@
 let browseTab = 'movie'; // 'movie' | 'tv' | 'anime' | 'live' | 'youtube'
 let browseQuery = '';
 let browseTimer = null;
+let browsePage = 1;
+let browseFilters = { genre: '', year: '', sort: '', provider: '' };
 const debouncedBrowse = () => { clearTimeout(browseTimer); browseTimer = setTimeout(renderBrowse, 350); };
 
-async function tmdbFetch(path, params) {
-  const res = await window.sh.tmdb(path, { api_key: tmdbKey, ...params });
-  return res && res.results ? res.results : [];
-}
-
-// Full TMDB object (details/season), not the .results list.
+// Full TMDB object (details/season/discover), not just the .results list.
 async function tmdbGet(path, params) {
   return window.sh.tmdb(path, { api_key: tmdbKey, ...params });
 }
@@ -32,6 +29,51 @@ async function tmdbMeta(id, type) {
   } catch {}
   tmdbMetaCache.set(ck, meta);
   return meta;
+}
+
+// --- browse filters (genre / year / sort / provider) ---
+// Option lists come from TMDB and are cached per media type so filter/page re-renders don't refetch.
+const genreCache = new Map();    // mt -> [[id, name], ...]
+const providerCache = new Map(); // mt -> [[id, name], ...]
+
+async function ensureGenres(mt) {
+  if (genreCache.has(mt)) return genreCache.get(mt);
+  let list = [];
+  try { const d = await tmdbGet(`/genre/${mt}/list`, {}); list = (d?.genres || []).map((g) => [String(g.id), g.name]); } catch {}
+  genreCache.set(mt, list);
+  return list;
+}
+async function ensureProviders(mt) {
+  if (providerCache.has(mt)) return providerCache.get(mt);
+  let list = [];
+  try {
+    const d = await tmdbGet(`/watch/providers/${mt}`, { watch_region: settings.watchRegion || 'US' });
+    list = (d?.results || []).slice().sort((a, b) => (a.display_priority ?? 999) - (b.display_priority ?? 999))
+      .slice(0, 16).map((p) => [String(p.provider_id), p.provider_name]); // the majors, by display priority
+  } catch {}
+  providerCache.set(mt, list);
+  return list;
+}
+
+// sort_by options per media type (TMDB sort_by value -> label). First entry is the default.
+const browseSorts = (mt) => {
+  const date = mt === 'movie' ? 'primary_release_date' : 'first_air_date';
+  const az = mt === 'movie' ? 'title.asc' : 'name.asc';
+  return [['popularity.desc', 'Most Popular'], [`${date}.desc`, 'Newest'], [`${date}.asc`, 'Oldest'],
+    ['vote_average.desc', 'Highest Rated'], ['vote_count.desc', 'Most Voted'], [az, 'A-Z']];
+};
+const browseYears = () => { const out = []; for (let y = new Date().getFullYear(); y >= 1950; y--) out.push([String(y), String(y)]); return out; };
+
+// A pill <select>: a leading default option (firstLabel/firstValue) then [value,label] pairs.
+function pillSelect(firstLabel, firstValue, pairs, value, onChange) {
+  const sel = document.createElement('select');
+  sel.className = 'pill-select';
+  for (const [v, label] of [[firstValue, firstLabel], ...pairs]) {
+    const o = document.createElement('option'); o.value = v; o.textContent = label; sel.append(o);
+  }
+  sel.value = value || firstValue;
+  sel.onchange = () => onChange(sel.value);
+  return sel;
 }
 
 function posterCard(kind, item) {
@@ -62,6 +104,8 @@ function browseTabBar() {
   return tabBar(tabs, browseTab, (id) => {
     browseTab = id;
     browseQuery = '';
+    browsePage = 1;
+    browseFilters = { genre: '', year: '', sort: '', provider: '' }; // genre lists differ per media type
     renderBrowse();
   }, 'tabs');
 }
@@ -77,42 +121,86 @@ async function renderBrowse() {
     return;
   }
 
+  const mt = browseTab === 'movie' ? 'movie' : 'tv';
+
   // search box
   const search = document.createElement('input');
   search.className = 'browse-search';
   search.placeholder = `Search ${browseTab === 'anime' ? 'anime' : browseTab === 'movie' ? 'movies' : 'TV'}...`;
   search.value = browseQuery;
-  search.oninput = () => { browseQuery = search.value; debouncedBrowse(); };
+  search.oninput = () => { browseQuery = search.value; browsePage = 1; debouncedBrowse(); };
   nodes.push(search);
+
+  // filter bar (genre / year / sort / provider) — populated once the cached option lists resolve
+  const filterBar = document.createElement('div');
+  filterBar.className = 'browse-filters';
+  nodes.push(filterBar);
 
   const grid = document.createElement('div');
   grid.className = 'grid';
   grid.textContent = 'Loading…';
   nodes.push(grid);
+
+  const pager = document.createElement('div');
+  pager.className = 'browse-pager';
+  nodes.push(pager);
+
   const tabAtRender = browseTab;
   $('browse').replaceChildren(...nodes);
 
-  const results = await fetchBrowse(browseTab, browseQuery);
+  // filters (cached after the first fetch)
+  const [genres, providers] = await Promise.all([ensureGenres(mt), ensureProviders(mt)]);
   if (browseTab !== tabAtRender) return; // user switched tabs mid-fetch
+  const setFilter = (key, v) => { browseFilters[key] = v; browsePage = 1; renderBrowse(); };
+  filterBar.replaceChildren(
+    pillSelect('All Genres', '', genres, browseFilters.genre, (v) => setFilter('genre', v)),
+    pillSelect('All Years', '', browseYears(), browseFilters.year, (v) => setFilter('year', v)),
+    pillSelect('Most Popular', 'popularity.desc', browseSorts(mt).slice(1), browseFilters.sort, (v) => setFilter('sort', v)),
+    pillSelect('All Providers', '', providers, browseFilters.provider, (v) => setFilter('provider', v)),
+  );
+
+  // results
+  const data = await fetchBrowse(browseTab, browseQuery, browseFilters, browsePage);
+  if (browseTab !== tabAtRender) return;
+  const results = (data && data.results) || [];
   grid.textContent = '';
-  if (!results.length) { grid.textContent = 'No results (check your TMDB key).'; return; }
-  const kind = browseTab;
-  grid.append(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(kind, r)));
+  if (!results.length) grid.textContent = 'No results (check your TMDB key / filters).';
+  else grid.append(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(browseTab, r)));
+
+  // pager: 20 per page, Prev disabled on page 1, Next disabled at the last page (TMDB caps at 500)
+  const totalPages = Math.min(data?.total_pages || 1, 500);
+  const pageBtn = (label, disabled, delta) => {
+    const b = document.createElement('button'); b.className = 'pager-btn'; b.textContent = label; b.disabled = disabled;
+    if (!disabled) b.onclick = () => { browsePage += delta; renderBrowse(); };
+    return b;
+  };
+  const info = document.createElement('span'); info.className = 'pager-info';
+  info.textContent = `Page ${browsePage}${totalPages > 1 ? ' / ' + totalPages : ''}`;
+  pager.replaceChildren(pageBtn('‹ Prev', browsePage <= 1, -1), info, pageBtn('Next ›', browsePage >= totalPages, 1));
+
   // keep focus in the search box while typing
   if (browseQuery) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
 }
 
-async function fetchBrowse(tab, query) {
+// Returns the full TMDB response ({ results, page, total_pages }). Search honors year only; browsing
+// (no query) uses /discover with all four filters.
+async function fetchBrowse(tab, query, filters, page) {
+  const mt = tab === 'movie' ? 'movie' : 'tv';
+  const yearKey = mt === 'movie' ? 'primary_release_year' : 'first_air_date_year';
   if (query) {
-    const mt = tab === 'movie' ? 'movie' : 'tv';
-    return tmdbFetch(`/search/${mt}`, { query });
+    const p = { query, page };
+    if (filters.year) p[yearKey] = filters.year; // ponytail: TMDB search ignores genre/sort/provider
+    return tmdbGet(`/search/${mt}`, p);
   }
-  if (tab === 'movie') return tmdbFetch('/trending/movie/week', {});
-  if (tab === 'tv') return tmdbFetch('/trending/tv/week', {});
-  // anime: Japanese-origin animation
-  return tmdbFetch('/discover/tv', {
-    with_genres: 16, with_original_language: 'ja', sort_by: 'popularity.desc',
-  });
+  const p = { page, sort_by: filters.sort || 'popularity.desc' };
+  const genres = [];
+  if (tab === 'anime') { genres.push('16'); p.with_original_language = 'ja'; } // keep anime = Japanese animation
+  if (filters.genre) genres.push(filters.genre);
+  if (genres.length) p.with_genres = genres.join(',');
+  if (filters.year) p[yearKey] = filters.year;
+  if (filters.provider) { p.with_watch_providers = filters.provider; p.watch_region = settings.watchRegion || 'US'; }
+  if ((filters.sort || '').startsWith('vote_average')) p['vote_count.gte'] = 200; // avoid a few-vote 10.0s
+  return tmdbGet(`/discover/${mt}`, p);
 }
 
 // Fetch a live-catalog JSON API (via the main-process httpGet, past CSP) and flatten it to tiles.
