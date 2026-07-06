@@ -1058,5 +1058,45 @@ webview.addEventListener('did-stop-loading', scheduleCapture);
 webview.addEventListener('enter-html-full-screen', () => webview.classList.add('fullscreen'));
 webview.addEventListener('leave-html-full-screen', () => webview.classList.remove('fullscreen'));
 
+// ---- auto-update banner (packaged builds; events never fire in dev) ----
+function showUpdate(state) {
+  const el = $('update-banner');
+  if (state.type === 'progress') {
+    el.textContent = `Downloading update… ${state.percent}%`;
+    el.hidden = false;
+  } else if (state.type === 'ready') {
+    const msg = document.createElement('span');
+    msg.textContent = `Update ${state.version ? 'v' + state.version + ' ' : ''}ready`;
+    const btn = document.createElement('button');
+    btn.textContent = 'Restart';
+    btn.onclick = () => requestInstall();
+    el.replaceChildren(msg, btn);
+    el.hidden = false;
+  }
+}
+function requestInstall() { window.sh.installUpdate(); } // indirection so e2e can stub it safely
+if (window.sh && window.sh.onUpdate) window.sh.onUpdate(showUpdate);
+
+// ---- settings export / import (all localStorage: sources, tmdbKey, library, defaults) ----
+function exportSettings() { return Object.fromEntries(Object.entries(localStorage)); }
+function importSettings(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  for (const [k, v] of Object.entries(obj)) localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+}
+$('export-settings').onclick = () => {
+  const blob = new Blob([JSON.stringify(exportSettings(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'stream-hub-settings.json'; a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('import-settings').onclick = () => $('import-file').click();
+$('import-file').onchange = (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = () => { try { importSettings(JSON.parse(r.result)); location.reload(); } catch { alert('Invalid settings file.'); } };
+  r.readAsText(file);
+  e.target.value = '';
+};
+
 renderSources();
 showBrowse(); // Browse is the landing page

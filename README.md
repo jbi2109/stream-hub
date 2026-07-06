@@ -45,22 +45,33 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   can sign into sites that offer accounts (Google logins get a Firefox user-agent so its
   "insecure browser" check passes).
 - **Persistent** — sources, library, and site logins all persist across restarts.
+- **Auto-updating desktop app** — a Windows installer with **in-app auto-update** from GitHub
+  Releases (a Restart banner appears when a new version is downloaded; updates also apply on quit).
+- **Settings backup** — **Export / Import** all your data (sources, TMDB key, library) as a JSON file.
 
-## Requirements
+## Download (Windows)
 
-- [Node.js](https://nodejs.org/) 18+ (developed on v24)
-- Windows / macOS / Linux (Electron)
+Grab the latest **`Stream Hub Setup <version>.exe`** from the
+[Releases page](https://github.com/jbi2109/stream-hub/releases/latest) and run it — it installs
+per-user (no admin) and launches automatically, then **auto-updates** itself.
 
-## Install & run
+> The installer is **unsigned**, so Windows SmartScreen may warn "Windows protected your PC" —
+> click **More info → Run anyway**. (Code signing needs a paid certificate.)
+
+## Build from source / run in dev
+
+- [Node.js](https://nodejs.org/) 18+ (developed on v24); Windows / macOS / Linux (Electron).
 
 ```bash
 git clone https://github.com/jbi2109/stream-hub.git
 cd stream-hub
 npm install
-npm start
+npm start          # dev; on Windows you can also double-click launch.bat
+npm run dist       # build the Windows installer into dist/
 ```
 
-On Windows you can also double-click **`launch.bat`**.
+The dev app uses a different data folder than the installed app — use **Settings → Export** in
+one and **Import** in the other to carry your setup over.
 
 ## Usage
 
@@ -96,7 +107,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 45-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 47-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, the add-player wizard, the tabbed library, categorisation, and persistence.

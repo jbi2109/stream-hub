@@ -1,5 +1,6 @@
 const { app, BrowserWindow, session, ipcMain } = require('electron');
 const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -7,6 +8,17 @@ const fs = require('fs');
 // e2e tests run against a throwaway profile so they never touch real bookmarks/logins
 if (process.argv.includes('--test-profile')) {
   app.setPath('userData', path.join(os.tmpdir(), 'stream-hub-test-profile'));
+}
+
+// Packaged app: single instance only — a second launch focuses the existing window.
+// Skipped in dev/tests so the e2e harness can launch its own instance freely.
+let mainWindow = null;
+if (app.isPackaged && !app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
+  });
 }
 
 // Some streaming sites / Cloudflare block the Electron user agent
@@ -134,6 +146,19 @@ function createWindow() {
     webPreferences.contextIsolation = false; // so the preload runs in the page's world
   });
   win.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow = win;
+  return win;
+}
+
+// In-app auto-update from GitHub Releases (packaged builds only; silent on errors).
+function initUpdater() {
+  if (!app.isPackaged || process.argv.includes('--test-profile')) return;
+  autoUpdater.autoInstallOnAppQuit = true;
+  const send = (ch, data) => { try { mainWindow && mainWindow.webContents.send(ch, data); } catch {} };
+  autoUpdater.on('download-progress', (p) => send('update-progress', { percent: Math.round(p.percent) }));
+  autoUpdater.on('update-downloaded', (info) => send('update-ready', { version: info.version }));
+  autoUpdater.on('error', (e) => console.error('updater:', e && e.message)); // offline / no release yet -> ignore
+  autoUpdater.checkForUpdates().catch(() => {});
 }
 
 app.whenReady().then(() => {
@@ -160,8 +185,10 @@ app.whenReady().then(() => {
     }
   });
 
-  // Generic https GET (runs here to sidestep the renderer CSP). Used by optional local
-  // live-TV provider modules to reach their APIs. https only; no provider logic ships here.
+  ipcMain.handle('install-update', () => { if (app.isPackaged) autoUpdater.quitAndInstall(); });
+
+  // Generic https GET (runs here to sidestep the renderer CSP). Used by live-catalog fetches
+  // to reach their JSON APIs. https only (loopback http allowed for tests); no provider logic here.
   ipcMain.handle('httpGet', async (_e, url) => {
     try {
       const u = String(url);
@@ -175,5 +202,6 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  initUpdater();
 });
 app.on('window-all-closed', () => app.quit());

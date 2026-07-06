@@ -21,6 +21,11 @@
       <label for="default-source">Default player</label>
       <select id="default-source"></select>
     </div>
+    <div id="settings-io">
+      <button id="export-settings" title="Save all your data to a JSON file">Export</button>
+      <button id="import-settings" title="Load data from a JSON file">Import</button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden>
+    </div>
 
     <h2>Players &amp; Sources</h2>
     <div id="sources"></div>
@@ -45,6 +50,7 @@
   </div>
 
   <div id="wizard" hidden></div>
+  <div id="update-banner" hidden></div>
 
   <script src="renderer.js"></script>
 </body>

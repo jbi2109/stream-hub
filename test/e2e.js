@@ -654,6 +654,26 @@ async function main() {
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/7'`), 'catalog tile embeds the stream');
   ok('live: JSON catalog renders with category filter + search + embed');
 
+  // 32g. auto-update banner: hidden at boot; showUpdate drives it; Restart calls install (stubbed)
+  assert.strictEqual(await page.eval(`document.getElementById('update-banner').hidden`), true, 'update banner should be hidden at boot');
+  await page.eval(`showUpdate({ type: 'progress', percent: 42 })`);
+  assert.ok(await page.eval(`(() => { const el = document.getElementById('update-banner'); return !el.hidden && el.textContent.includes('42%'); })()`), 'progress banner should show the percent');
+  await page.eval(`showUpdate({ type: 'ready', version: '9.9.9' })`);
+  assert.ok(await page.eval(`document.getElementById('update-banner').textContent.includes('9.9.9')`), 'ready banner should show the version');
+  await page.eval(`window.__installed = false; requestInstall = () => { window.__installed = true; };`); // stub the indirection
+  await page.eval(`[...document.querySelectorAll('#update-banner button')].find(b => b.textContent === 'Restart').click()`);
+  assert.strictEqual(await page.eval(`window.__installed`), true, 'Restart should trigger the install');
+  await page.eval(`document.getElementById('update-banner').hidden = true`); // clear so it doesn't overlap later UI
+  ok('update: banner shows progress/ready and Restart triggers install');
+
+  // 32h. settings export/import round-trips all localStorage
+  const exported = await page.eval(`JSON.stringify(exportSettings())`);
+  assert.ok(exported.includes('sources'), 'export should include the sources key');
+  await page.eval(`importSettings({ tmdbKey: JSON.stringify('imported-key-123'), sources: '[]' })`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('tmdbKey'))`), 'imported-key-123', 'import should write tmdbKey');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('sources')).length`), 0, 'import should write sources');
+  ok('settings: export dumps localStorage; import writes it back');
+
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
     document.getElementById('home').hidden = true;

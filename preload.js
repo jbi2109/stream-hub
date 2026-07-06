@@ -6,4 +6,9 @@ contextBridge.exposeInMainWorld('sh', {
   onVideoProgress: (cb) => ipcRenderer.on('video-progress', (_e, d) => cb(d)),
   tmdb: (path, params) => ipcRenderer.invoke('tmdb', { path, params }),
   httpGet: (url) => ipcRenderer.invoke('httpGet', url), // generic GET for live-catalog fetches
+  onUpdate: (cb) => {
+    ipcRenderer.on('update-progress', (_e, d) => cb({ type: 'progress', percent: d.percent }));
+    ipcRenderer.on('update-ready', (_e, d) => cb({ type: 'ready', version: d.version }));
+  },
+  installUpdate: () => ipcRenderer.invoke('install-update'),
 });
