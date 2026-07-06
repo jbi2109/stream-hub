@@ -56,10 +56,10 @@ function posterCard(kind, item) {
   return el;
 }
 
+// VOD tabs only — Live TV + YouTube are reached from the rail (📺 / ▶), not this bar.
 function browseTabBar() {
-  const tabs = [['movie', 'Movies'], ['tv', 'TV'], ['anime', 'Anime'], ['live', 'Live TV'], ['youtube', 'YouTube']];
+  const tabs = [['movie', 'Movies'], ['tv', 'TV'], ['anime', 'Anime']];
   return tabBar(tabs, browseTab, (id) => {
-    if (id === 'youtube') { open('https://www.youtube.com'); return; }
     browseTab = id;
     browseQuery = '';
     renderBrowse();
@@ -167,6 +167,13 @@ async function fetchCatalog(url) {
           if (embed) out.push({ matchTitle: t || 'Stream', label: catalogTitle(ch) || '', embed,
             category: String(ch.category || ch.sport || nodeCat || '').toLowerCase(),
             logo: catalogLogo(ch) || catalogLogo(node), language: ch.language || ch.lang || parseLanguage(catalogTitle(ch) || t) });
+          else if (ch && typeof ch === 'object' && typeof ch.source === 'string' && ch.id != null) {
+            // two-hop shape: {source,id} with no embed -> resolve later via a derived /stream/{source}/{id} URL
+            out.push({ matchTitle: t || 'Stream', label: String(ch.source), embed: null,
+              unresolved: { source: ch.source, id: String(ch.id) },
+              category: String(ch.category || ch.sport || nodeCat || '').toLowerCase(),
+              logo: catalogLogo(node) || catalogLogo(ch), language: ch.language || ch.lang || '' });
+          }
         }
       }
     }
@@ -183,6 +190,60 @@ async function fetchCatalog(url) {
     }
   };
   walk(data, '', '');
+  return out;
+}
+
+// --- two-hop live catalogs (streamed.pk-style: matches list -> per-source stream lookup) ---
+// Derive the second-hop stream endpoint from the user's catalog URL — generic, no committed provider path.
+// streamed.pk resolves via {origin}/api/stream/{source}/{id}; the /matches -> /stream path swap covers
+// APIs not under /api. // ponytail: assumes a /stream/{source}/{id} convention; other shapes won't resolve.
+function streamEndpoints(catalogUrl, source, id) {
+  const s = encodeURIComponent(source), i = encodeURIComponent(id);
+  const cands = [];
+  try {
+    const u = new URL(catalogUrl);
+    if (/\/matches\b/i.test(u.pathname)) cands.push(u.origin + u.pathname.replace(/\/matches\b.*$/i, '') + `/stream/${s}/${i}`);
+    cands.push(u.origin + `/api/stream/${s}/${i}`);
+  } catch {}
+  return [...new Set(cands)];
+}
+
+// Fetch a source's second hop and flatten to playable rows. First endpoint that parses to an array of
+// objects carrying an embed field wins. Reuses window.sh.httpGet (browser UA + 60s timeout in main.js).
+async function fetchStreams(catalogUrl, source, id) {
+  for (const url of streamEndpoints(catalogUrl, source, id)) {
+    try {
+      const r = await window.sh.httpGet(url);
+      if (!r || r.error || !r.ok) continue;
+      const arr = JSON.parse(r.body);
+      if (!Array.isArray(arr)) continue;
+      const rows = arr.filter((x) => x && typeof x === 'object' && catalogEmbed(x)).map((x) => ({
+        embed: catalogEmbed(x),
+        language: x.language || x.lang || '',
+        quality: x.hd === true ? 'HD' : parseQuality(x.quality || x.label || ''),
+        streamNo: x.streamNo != null ? x.streamNo : '',
+      }));
+      if (rows.length) return rows;
+    } catch {}
+  }
+  return [];
+}
+
+// Resolve a match's sources for the source page: pass single-hop embeds through; second-hop the {source,id}
+// ones. Cached on the match object so reopening (Resume / Sources button) doesn't refetch.
+async function resolveMatchSources(match) {
+  if (match._resolved) return match._resolved;
+  const out = [];
+  for (const s of match.sources) {
+    if (s.embed) { out.push({ label: s.label, embed: s.embed, language: s.language, quality: parseQuality(s.label), catalog: s.catalog }); continue; }
+    if (!s.unresolved) continue;
+    const streams = await fetchStreams(s.catalogUrl, s.unresolved.source, s.unresolved.id);
+    for (const st of streams) out.push({
+      label: `${s.unresolved.source}${st.streamNo !== '' ? ' ' + st.streamNo : ''}`.trim() || 'Source',
+      embed: st.embed, language: st.language, quality: st.quality, catalog: s.catalog,
+    });
+  }
+  match._resolved = out;
   return out;
 }
 
@@ -203,7 +264,12 @@ function groupMatches(rows) {
     if (!g) { g = { title: r.matchTitle || 'Stream', category: r.category || '', logo: r.logo || '', sources: [] }; byKey.set(key, g); }
     if (!g.logo && r.logo) g.logo = r.logo;
     if (!g.category && r.category) g.category = r.category;
-    if (!g.sources.some((s) => s.embed === r.embed)) g.sources.push({ label: r.label || '', embed: r.embed, language: r.language || '', catalog: r.catalog || '' });
+    // dedup resolved sources by embed, unresolved (two-hop) by source+id
+    const dup = r.embed
+      ? g.sources.some((s) => s.embed === r.embed)
+      : r.unresolved && g.sources.some((s) => s.unresolved && s.unresolved.source === r.unresolved.source && s.unresolved.id === r.unresolved.id);
+    if (!dup) g.sources.push({ label: r.label || '', embed: r.embed || null, unresolved: r.unresolved || null,
+      language: r.language || '', catalog: r.catalog || '', catalogUrl: r.catalogUrl || '' });
   }
   return [...byKey.values()];
 }
@@ -233,12 +299,12 @@ function sourceList(groups) {
   return wrap;
 }
 
-// Build source-list groups for a live match: grouped by catalog, default language floated to the top.
-function liveMatchGroups(match) {
+// Build source-list groups from a resolved source array: grouped by catalog, default language floated up.
+function liveMatchGroups(match, srcs) {
   const pref = (settings.liveLanguage || '').toLowerCase();
   const rank = (s) => { const l = (s.language || '').toLowerCase(); return pref && l === pref ? 0 : (l ? 2 : 1); };
   const byCat = new Map();
-  match.sources.forEach((s, i) => {
+  srcs.forEach((s, i) => {
     const c = s.catalog || 'Sources';
     if (!byCat.has(c)) byCat.set(c, []);
     byCat.get(c).push({ ...s, label: s.label || ('Source ' + (i + 1)) });
@@ -246,14 +312,21 @@ function liveMatchGroups(match) {
   return [...byCat.entries()].map(([name, list]) => ({
     name,
     rows: list.sort((a, b) => rank(a) - rank(b)).map((s) => ({
-      label: s.label, language: s.language, quality: parseQuality(s.label),
-      onPick: () => { open(s.embed); intendedMedia = { title: match.title, poster: match.logo, live: true }; currentLiveMatch = match; $('live-sources').hidden = false; $('sources-overlay').hidden = false; },
+      label: s.label, language: s.language, quality: s.quality || parseQuality(s.label),
+      onPick: () => {
+        open(s.embed);
+        intendedMedia = { title: match.title, poster: match.logo, live: true };
+        currentLiveMatch = match; lastPlayedLive = true; lastLiveMatch = match;
+        $('live-sources').hidden = false; $('sources-overlay').hidden = false;
+      },
     })),
   }));
 }
 
 // Live source-selection PAGE (photo 3/4): rendered into the #detail container. Back returns to the grid.
-function showLivePicker(match) {
+// Async: single-hop sources render at once; two-hop ({source,id}) sources are resolved (a "Loading…"
+// placeholder shows meanwhile) via the derived stream endpoint.
+async function showLivePicker(match) {
   hideAll();
   currentLiveMatch = match;
   const el = $('detail');
@@ -264,9 +337,13 @@ function showLivePicker(match) {
   if (match.logo) { const img = document.createElement('img'); img.className = 'live-pick-logo'; img.src = match.logo; img.onerror = () => img.remove(); head.append(img); }
   const h = document.createElement('h1'); h.textContent = match.title; head.append(h);
   const sec = document.createElement('div'); sec.className = 'detail-section';
-  sec.append(sourceList(liveMatchGroups(match)));
+  sec.textContent = 'Loading sources…';
   el.replaceChildren(back, head, sec);
   el.hidden = false;
+  const srcs = await resolveMatchSources(match);
+  if (currentLiveMatch !== match || el.hidden) return; // user navigated away while resolving
+  if (!srcs.length) { sec.textContent = 'No playable sources.'; return; }
+  sec.replaceChildren(sourceList(liveMatchGroups(match, srcs)));
 }
 
 // photo-2 style match card: 16:9 image (cover) + title below, no source count.
@@ -289,7 +366,7 @@ function renderLiveTab(container) {
   const live = sources.filter((s) => s.category === 'live');
   const catalogSrcs = live.filter((s) => s.catalogUrl);
   const siteSrcs = live.filter((s) => !s.catalogUrl && s.url);
-  const nodes = [browseTabBar()];
+  const nodes = []; // no browse tab bar here — the Live view is reached via the 📺 rail button
 
   if (!live.length) {
     nodes.push(emptyMsg('Add a Live TV source in Settings → + Add player / source.'));
@@ -343,8 +420,14 @@ function renderLiveTab(container) {
   // Incremental: each catalog renders into the grid as it resolves — fast ones appear in seconds, slow
   // ones stream in without blocking. A dead catalog is aborted by the httpGet timeout (main.js) and skipped.
   for (const s of catalogSrcs) {
+    let origin = ''; try { origin = new URL(s.catalogUrl).origin; } catch {}
     fetchCatalog(s.catalogUrl)
-      .then((rows) => { allRows.push(...rows.map((r) => ({ ...r, catalog: s.name }))); rebuild(); })
+      .then((rows) => {
+        allRows.push(...rows.map((r) => ({ ...r, catalog: s.name, catalogUrl: s.catalogUrl,
+          // absolutize relative logos (e.g. streamed's /api/images/... posters) against the catalog origin
+          logo: r.logo && r.logo.startsWith('/') && origin ? origin + r.logo : r.logo })));
+        rebuild();
+      })
       .catch(() => {});
   }
 }

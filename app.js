@@ -22,10 +22,12 @@ $('watch-later').onclick = async () => {
 };
 
 // ---- rail + topbar navigation ----
-$('browse-btn').onclick = showBrowse;
+// 🔎 Browse shows Movies/TV/Anime only; if we're on Live (its tab bar was removed) reset to a VOD tab.
+$('browse-btn').onclick = () => { if (browseTab === 'live') browseTab = settings.defaultBrowseTab || 'movie'; showBrowse(); };
 $('home-btn').onclick = showHome;
 $('live-btn').onclick = () => { browseTab = 'live'; showBrowse(); };
 $('youtube-btn').onclick = () => open('https://www.youtube.com');
+$('resume-btn').onclick = resumeLast;
 $('settings-btn').onclick = showSettings;
 $('back').onclick = () => webview.goBack();
 $('forward').onclick = () => webview.goForward();

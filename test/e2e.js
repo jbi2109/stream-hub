@@ -18,6 +18,7 @@ const YT_FIX_HOST = '127.0.0.1:9315';
 const YT_FIX = 'http://' + YT_FIX_HOST;
 const CATALOG2 = 'http://127.0.0.1:9316';
 const CATALOG_B = 'http://127.0.0.1:9317';
+const CATALOG_TWOHOP = 'http://127.0.0.1:9318';
 const PROFILE = path.join(os.tmpdir(), 'stream-hub-test-profile');
 
 let electronProc = null;
@@ -136,6 +137,17 @@ const catalogB = http.createServer((req, res) => {
   res.end(JSON.stringify({ streams: [{ name: 'Team B vs Team A', category: 'soccer', embed_url: `${PLAYER}/live/reverse` }] }));
 });
 
+// Two-hop catalog (streamed.pk-style): the matches list gives {source,id} with NO embed; the real embed
+// comes from a second request to the derived /api/stream/{source}/{id}. Exercises Part C.
+const catalogTwoHop = http.createServer((req, res) => {
+  res.setHeader('content-type', 'application/json');
+  if (req.url.startsWith('/api/stream/alpha/m1')) {
+    res.end(JSON.stringify([{ streamNo: 1, language: 'English', hd: true, embedUrl: `${PLAYER}/live/900`, source: 'alpha' }]));
+  } else if (req.url.startsWith('/api/matches')) {
+    res.end(JSON.stringify([{ id: 'm1', title: 'Hop Match', category: 'soccer', poster: '', sources: [{ source: 'alpha', id: 'm1' }] }]));
+  } else { res.statusCode = 404; res.end('[]'); }
+});
+
 // ---- minimal CDP client ----
 class CDP {
   static async connect(wsUrl) {
@@ -208,6 +220,7 @@ async function main() {
   ytFix.listen(9315);
   catalogNested.listen(9316);
   catalogB.listen(9317);
+  catalogTwoHop.listen(9318);
 
   // ---------- boot ----------
   let pageTarget = await launchApp();
@@ -218,9 +231,9 @@ async function main() {
   assert.strictEqual(await page.eval(`document.querySelectorAll('#sources li').length`), 0, 'expected no seeded sources');
   assert.strictEqual(await page.eval(`document.getElementById('browse').hidden`), false, 'browse should be the landing view');
   assert.strictEqual(await page.eval(`document.getElementById('home').hidden`), true, 'library should be hidden at boot');
-  assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 5, 'expected 5 browse tabs');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 3, 'expected 3 browse tabs (Movies/TV/Anime — Live+YouTube moved to the rail)');
   assert.ok(await page.eval(`(document.querySelector('#browse .empty')||{}).textContent?.includes('TMDB')`), 'no-key prompt should mention TMDB');
-  ok('UI boots on Browse: 5 tabs, no-key prompt, no default sources');
+  ok('UI boots on Browse: 3 tabs, no-key prompt, no default sources');
 
   // 2. add local test source + click it -> interaction regression check
   await page.eval(`addSource({ name: 'LocalTest', url: '${SITE}', category: 'vod' })`);
@@ -560,13 +573,13 @@ async function main() {
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'anime').click()`);
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'anime grid');
-  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await page.eval(`document.getElementById('live-btn').click()`);
   assert.ok(await page.eval(`document.querySelectorAll('#browse .tiles .tile').length >= 1`), 'live tiles missing');
   ok('browse: Anime grid + Live TV tiles render');
 
   // 26. YouTube tab opens youtube.com in the webview
   await page.eval(`document.getElementById('browse-btn').click()`);
-  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'youtube').click()`);
+  await page.eval(`document.getElementById('youtube-btn').click()`);
   assert.ok(await page.eval(`document.getElementById('webview').src.includes('youtube.com')`), 'YouTube tab did not open youtube.com');
   ok('browse: YouTube tab opens youtube.com');
 
@@ -690,7 +703,7 @@ async function main() {
 
   // 32f. Live tab: unified match grid from the catalog API, with a category filter + search; click embeds
   await page.eval(`document.getElementById('browse-btn').click()`);
-  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await page.eval(`document.getElementById('live-btn').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha Match'))`), 'match cards render from the API');
   // category filter tabs derived from the data
   assert.ok(await page.eval(`['All','Soccer','Tennis'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'category filter tabs (All/Soccer/Tennis) missing');
@@ -760,7 +773,7 @@ async function main() {
   await page.eval(`sources.length = 0; cont.length = 0; later.length = 0; store('sources', sources); store('continue', cont); store('watchlater', later);`);
   await page.eval(`addSource({ name: 'CatSrc', category: 'live', catalogUrl: '${CATALOG}/api/streams' })`);
   await page.eval(`document.getElementById('browse-btn').click()`);
-  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await page.eval(`document.getElementById('live-btn').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha'))`), 'match cards (live capture)');
   await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Alpha')).click()`);
   await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length === 1`), 'source page for live capture');
@@ -942,7 +955,7 @@ async function main() {
   await page.eval(`document.getElementById('home-btn').click()`);
   await page.eval(`settings.liveLanguage = ''; saveSettings(); sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); renderSources();`);
   await page.eval(`document.getElementById('browse-btn').click()`);
-  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await page.eval(`document.getElementById('live-btn').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Team A'))`), 'unified match card renders');
   assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].filter(t => t.textContent.includes('Team A')).length`), 1, 'a multi-source match renders exactly one card');
   assert.ok(await page.eval(`!/[0-9]+\\s*source/i.test([...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Team A')).textContent)`), 'the card shows the name only (no source count)');
@@ -955,7 +968,7 @@ async function main() {
   // 32w4. v0.2.6: default live language floats matching sources to the top of the source page
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`settings.liveLanguage = 'Spanish'; saveSettings();`);
-  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await page.eval(`document.getElementById('live-btn').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Team A'))`), 'live grid re-rendered for language sort');
   await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Team A')).click()`);
   await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length === 2`), 'source page open for language sort');
@@ -968,7 +981,7 @@ async function main() {
   await page.eval(`document.getElementById('home-btn').click()`);
   await page.eval(`sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); addSource({ name: 'BCat', category: 'live', catalogUrl: '${CATALOG_B}/api' }); renderSources();`);
   await page.eval(`document.getElementById('browse-btn').click()`);
-  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await page.eval(`document.getElementById('live-btn').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].filter(t => /team [ab] vs team [ab]/i.test(t.textContent)).length === 1`), 'the reversed-order match merges into one card');
   await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => /team [ab] vs team [ab]/i.test(t.textContent)).click()`);
   await until(() => page.eval(`document.querySelectorAll('#detail .src-group').length >= 2`), 'the source page groups sources under both catalogs');
@@ -978,7 +991,7 @@ async function main() {
 
   // 32w6. v0.2.7: the "Sources" overlay appears while a live match plays and reopens the source page
   await page.eval(`document.getElementById('home-btn').click(); sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); renderSources();`);
-  await page.eval(`document.getElementById('browse-btn').click(); [...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await page.eval(`document.getElementById('browse-btn').click(); document.getElementById('live-btn').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Team A'))`), 'live grid for overlay test');
   await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Team A')).click()`);
   await until(() => page.eval(`document.querySelectorAll('#detail .src-row').length === 2`), 'source page for overlay test');
@@ -1008,6 +1021,39 @@ async function main() {
   await until(() => page.eval(`!!document.querySelector('#browse .tabs .tab')`), 'reloaded after seeding a youtube entry');
   assert.ok(!(await page.eval(`JSON.parse(localStorage.getItem('continue'))`)).some((c) => c.url.includes('youtube.com')), 'youtube-host entry purged from Continue Watching on load');
   ok('migration: youtube entries purged from Continue Watching on load');
+
+  // 32L1. v0.2.8 layout: 📺 Live is reached from the rail and shows NO Movies/TV/Anime tab bar; 🔎 leaves Live.
+  await page.eval(`document.getElementById('live-btn').click()`);
+  await until(() => page.eval(`!document.getElementById('browse').hidden`), 'live view shown from the rail');
+  assert.strictEqual(await page.eval(`browseTab`), 'live', 'the 📺 rail button selects the live tab');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs').length`), 0, 'the Live view must not render the VOD tab bar');
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  assert.notStrictEqual(await page.eval(`browseTab`), 'live', '🔎 Browse must leave the Live tab');
+  await until(() => page.eval(`!!document.querySelector('#browse .tabs') && document.querySelectorAll('#browse .tabs .tab').length === 3`), 'VOD tab bar (3 tabs) restored after 🔎');
+  ok('layout: 📺 Live shows no VOD tab bar; 🔎 returns to a VOD tab');
+
+  // 32L2. v0.2.8 two-hop: a streamed-style catalog (matches list -> /stream/{source}/{id}) resolves on open.
+  await page.eval(`document.getElementById('home-btn').click(); sources.length = 0; store('sources', sources); addSource({ name: 'TwoHop', category: 'live', catalogUrl: '${CATALOG_TWOHOP}/api/matches/live' }); renderSources();`);
+  await page.eval(`document.getElementById('live-btn').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Hop Match'))`), 'two-hop match tile from hop 1');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Hop Match')).click()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelectorAll('#detail .src-row').length === 1`), 'hop 2 resolved a source row');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .src-row .src-lang').textContent`), 'English', 'the resolved stream shows its language');
+  assert.ok(await page.eval(`(document.querySelector('#detail .src-row .src-q')||{}).textContent === 'HD'`), 'the resolved stream shows an HD quality chip');
+  await page.eval(`document.querySelector('#detail .src-row').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/900')`), 'clicking the resolved row plays the hop-2 embedUrl');
+  ok('two-hop: streamed-style matches -> stream/{source}/{id} resolves + plays');
+
+  // 32L3. v0.2.8 Resume: ⏯ reveals the last-watched page (no reload) + restores the live Sources UI.
+  assert.strictEqual(await page.eval(`document.getElementById('resume-btn').hidden`), false, 'resume-btn should be visible after a watch');
+  const resumeUrl = await page.eval(`document.getElementById('webview').src`);
+  await page.eval(`showBrowse()`); // leave the player: webview hidden, src kept
+  assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), true, 'webview hidden after leaving');
+  await page.eval(`resumeLast()`);
+  assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), false, 'resume must reveal the webview');
+  assert.strictEqual(await page.eval(`document.getElementById('webview').src`), resumeUrl, 'resume keeps the same src (no reload)');
+  assert.strictEqual(await page.eval(`document.getElementById('sources-overlay').hidden`), false, 'resume restores the live Sources overlay');
+  ok('resume: ⏯ reveals the last-watched page and restores the live Sources UI');
 
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)
@@ -1075,5 +1121,6 @@ main()
     ytFix.close();
     catalogNested.close();
     catalogB.close();
+    catalogTwoHop.close();
     process.exit(process.exitCode ?? 0); // open CDP sockets would otherwise keep the loop alive
   });

@@ -32,6 +32,8 @@ let intendedMedia = null;            // {title,poster,id?} known title/poster fo
 let lastSourceUrl = load('lastSource', null); // last source the user watched on
 let defaultSource = load('defaultSource', null); // preferred player URL for Movies/TV/Anime
 let currentLiveMatch = null;         // the live match being watched (for the topbar "Sources" reopen)
+let lastLiveMatch = null;            // last live match watched (kept across leave, for the ⏯ Resume button)
+let lastPlayedLive = false;          // was the last open() a live stream? (Resume restores the Sources UI)
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
@@ -100,6 +102,20 @@ function open(url) {
   setActiveRail(null);
   webview.hidden = false;
   webview.src = url;
+  lastPlayedLive = false; lastLiveMatch = null; // default: a generic (non-live) watch; live enriches after
+  $('resume-btn').hidden = false;               // something is now resumable
+}
+
+// ⏯ Resume: reveal the still-loaded webview (hideAll never clears its src) — instant, keeps the live
+// stream / VOD position, no re-walking the source page. Restores the live Sources UI if the last watch
+// was live. // ponytail: reveal-not-reload; a provider that suspends media while hidden resumes on show.
+function resumeLast() {
+  if ($('resume-btn').hidden) return;   // nothing watched this session
+  const wasLive = lastPlayedLive, m = lastLiveMatch;
+  hideAll();
+  setActiveRail(null);
+  webview.hidden = false;
+  if (wasLive && m) { currentLiveMatch = m; $('live-sources').hidden = false; $('sources-overlay').hidden = false; }
 }
 
 function showHome() {

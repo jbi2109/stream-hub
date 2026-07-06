@@ -17,10 +17,13 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   (overview, genres, rating, cast, seasons + episode picker with stills, in-app trailer,
   "where to watch"). Pick which **source** to play on (defaults to your last-used), and the
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
-  a top-bar switcher to swap sources mid-watch. A **Live TV** tab shows your live sources as
-  tiles, or — for a **live catalog** source (a JSON API of live streams you add by URL) — a
-  **searchable catalog** with a **category filter**, each stream clickable to embed. Plus a
-  built-in **YouTube** tab. Needs a free TMDB API key.
+  a top-bar switcher to swap sources mid-watch. The left **rail** splits the views cleanly — 🔎
+  Browse (Movies/TV/Anime), 📺 **Live TV**, ▶ **YouTube**, and a ⏯ **Resume** button that jumps
+  straight back to whatever you were last watching. Live TV shows your live sources as tiles, or —
+  for a **live catalog** source (a JSON API of live streams you add by URL) — one **searchable,
+  category-filtered grid** merged across catalogs; each match opens a source-selection page. Catalogs
+  can be single-hop (the embed URL is in the list) or **two-hop** (a matches list plus a per-source
+  `…/stream/{source}/{id}` lookup, auto-resolved). Needs a free TMDB API key.
 - **Bring-your-own players & sources** — manage everything in one **Settings** list: add any
   embed player or site by name + URL, tag each as **Movies / TV Shows**, **Anime**, or **Live TV**,
   and pick a **default player**. Each entry has an optional, editable **embed pattern** (tokens
@@ -116,11 +119,11 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 74-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 77-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
-picker/switcher, the add-player wizard, the tabbed library, the Settings screen (theme/accent/
-poster + library actions), categorisation, and persistence.
+picker/switcher, single- and two-hop live catalogs, the add-player wizard, the tabbed library, the
+Settings screen (theme/accent/poster + library actions), categorisation, and persistence.
 
 ## Disclaimer
 
