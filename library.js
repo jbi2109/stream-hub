@@ -91,7 +91,12 @@ function card(item, isCont) {
   sub.textContent = isCont ? (item.note || se || 'Watching') : (se || 'Movie');
 
   el.append(wrap, title, sub);
-  el.onclick = () => { activeKey = item.key; open(item.url); };
+  el.onclick = (e) => {
+    if (e.target.closest('.card-actions')) return; // a click on the ✕ / category dropdown must never open the show
+    activeKey = item.key;
+    open(item.url);
+    intendedMedia = { title: item.title, poster: item.poster, live: item.type === 'live' || undefined };
+  };
   return el;
 }
 

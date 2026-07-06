@@ -165,7 +165,7 @@ function liveCatalogSection(src) {
       const el = document.createElement('div'); el.className = 'tile';
       if (it.logo) { const img = document.createElement('img'); img.className = 'tile-logo'; img.src = it.logo; img.onerror = () => img.remove(); el.append(img); }
       const t = document.createElement('div'); t.textContent = it.title; el.append(t);
-      el.onclick = () => open(it.embed);
+      el.onclick = () => { open(it.embed); intendedMedia = { title: it.title, poster: it.logo, live: true }; };
       return el;
     }));
   };

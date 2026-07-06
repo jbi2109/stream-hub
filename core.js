@@ -26,6 +26,9 @@ let tmdbKey = load('tmdbKey', '');   // user's free TMDB API key (for Browse)
 let currentSource = null;            // home URL for the topbar home button
 let activeKey = null;                // continue entry the player position attaches to
 let playing = null;                  // {kind,type,id,season,episode} of the open embed (for source switching)
+let intendedMedia = null;            // {title,poster,id?} known title/poster for the next capture — set by any
+                                     // play path that already knows them (detail Watch, live tile, card reopen),
+                                     // so capture/Watch-Later never depend on a provider's embed-page og:title
 let lastSourceUrl = load('lastSource', null); // last source the user watched on
 let defaultSource = load('defaultSource', null); // preferred player URL for Movies/TV/Anime
 
@@ -72,6 +75,7 @@ function hideAll() {
   $('detail').hidden = true;
   webview.hidden = true;
   playing = null;              // leaving the embed: forget what's playing
+  intendedMedia = null;        // and forget any known title/poster; producers re-set it after open()
   $('src-switch').hidden = true;
 }
 

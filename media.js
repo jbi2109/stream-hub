@@ -69,27 +69,35 @@ function scheduleCapture() {
 async function captureCurrent() {
   const url = webview.getURL();
   if (!url || !/^https?:/.test(url) || !isMediaUrl(url)) return;
-  if (isLiveUrl(url)) return; // Live TV sources never enter Continue Watching
-  const page = await parsePage();
-  if (!page.title) return;
+  // Live TV never enters Continue Watching. Catalog embeds live on an arbitrary host that isLiveUrl
+  // can't recognise, so also trust the `live` flag set when a live stream was opened/reopened.
+  if (isLiveUrl(url) || intendedMedia?.live) return;
   const key = mediaKey(url);
-  const { season, episode } = parseSeasonEpisode(url, page.title);
+  const existing = cont.find((c) => c.key === key);
+  const page = await parsePage();
+  // Prefer a title/poster we already know (set by whatever started playback — detail Watch, live
+  // tile, card reopen), then the existing entry, then the scraped embed page. Provider-agnostic:
+  // never inspects the URL host, so any source's bare embed page (no og:title) still gets a title.
+  const known = intendedMedia && (!intendedMedia.id || String(url).includes(String(intendedMedia.id))) ? intendedMedia : null;
+  const title = known?.title || existing?.title || page.title;
+  if (!title) return;
+  const poster = known?.poster || page.poster || existing?.poster || '';
+  const { season, episode } = parseSeasonEpisode(url, title);
   const type = mediaType(url, season);
   activeKey = key;
-  const existing = cont.find((c) => c.key === key);
-  const base = { key, title: page.title, url, poster: page.poster, season, episode, type, updatedAt: Date.now() };
+  const base = { key, title, url, poster, season, episode, type, updatedAt: Date.now() };
   if (existing) {
-    Object.assign(existing, base, { poster: page.poster || existing.poster });
+    Object.assign(existing, base);
   } else {
     cont.unshift({ ...base, position: null, duration: null, note: '' });
   }
   cont.sort((a, b) => b.updatedAt - a.updatedAt);
   store('continue', cont);
 
-  // Watch Later tracks the show too: advance its episode/url as you watch
+  // Watch Later tracks the show too: advance its episode/url as you watch (keep its add-time title)
   const wl = later.find((w) => w.key === key);
   if (wl) {
-    Object.assign(wl, { season, episode, url, type, poster: page.poster || wl.poster });
+    Object.assign(wl, { season, episode, url, type, poster: poster || wl.poster });
     store('watchlater', later);
   }
 }

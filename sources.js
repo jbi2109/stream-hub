@@ -128,12 +128,14 @@ function sourcesFor(kind) {
 }
 
 // Load a source's embed player for a title/episode and remember it so the topbar can switch source.
-function openOn(src, kind, type, id, season, episode) {
+// title/poster (from the TMDB detail page) are carried so capture uses them instead of scraping.
+function openOn(src, kind, type, id, season, episode, title, poster) {
   currentSource = src.url;
   lastSourceUrl = src.url;
   store('lastSource', lastSourceUrl);
-  open(buildUrl(src, type, id, season, episode)); // open()->hideAll() clears `playing`; re-set after
-  playing = { kind, type, id, season, episode };
+  open(buildUrl(src, type, id, season, episode)); // open()->hideAll() clears playing/intendedMedia; re-set after
+  playing = { kind, type, id, season, episode, title, poster };
+  intendedMedia = { title, poster, id };
   renderSourceSwitch();
 }
 
@@ -152,7 +154,7 @@ function renderSourceSwitch() {
 }
 
 // Play a title on the chosen source: the detail-page selector, else last-used, else the first source.
-function playOn(kind, type, id, season, episode) {
+function playOn(kind, type, id, season, episode, title, poster) {
   const srcs = sourcesFor(kind);
   if (srcs.length === 0) { alert('Add a ' + (kind === 'anime' ? 'Anime' : 'Movies/TV') + ' source first.'); return; }
   const sel = document.querySelector('.detail-source');
@@ -160,5 +162,5 @@ function playOn(kind, type, id, season, episode) {
     || srcs.find((s) => s.url === defaultSource)
     || srcs.find((s) => s.url === lastSourceUrl)
     || srcs[0];
-  openOn(chosen, kind, type, id, season, episode);
+  openOn(chosen, kind, type, id, season, episode, title, poster);
 }

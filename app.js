@@ -7,9 +7,13 @@ $('watch-later').onclick = async () => {
   const url = webview.getURL();
   const page = await parsePage();
   const key = mediaKey(url);
-  const { season, episode } = parseSeasonEpisode(url, page.title);
+  // Prefer the title/poster we already know (provider-agnostic) over scraping the embed page.
+  const title = intendedMedia?.title || page.title || url;
+  const poster = intendedMedia?.poster || page.poster;
+  const { season, episode } = parseSeasonEpisode(url, title);
+  const type = intendedMedia?.live ? 'live' : classify(url, season);
   later = later.filter((c) => c.key !== key); // dedupe
-  later.unshift({ key, title: page.title || url, url, poster: page.poster, season, episode, type: classify(url, season), addedAt: Date.now() });
+  later.unshift({ key, title, url, poster, season, episode, type, addedAt: Date.now() });
   store('watchlater', later);
   const btn = $('watch-later');
   btn.textContent = '✓ Added';
@@ -30,7 +34,7 @@ $('src-home').onclick = () => currentSource && open(currentSource);
 $('src-switch').onchange = () => {
   if (!playing) return;
   const src = sourcesFor(playing.kind).find((s) => s.url === $('src-switch').value);
-  if (src) openOn(src, playing.kind, playing.type, playing.id, playing.season, playing.episode);
+  if (src) openOn(src, playing.kind, playing.type, playing.id, playing.season, playing.episode, playing.title, playing.poster);
 };
 $('default-source').onchange = () => { defaultSource = $('default-source').value; store('defaultSource', defaultSource); };
 

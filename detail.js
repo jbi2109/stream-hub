@@ -33,6 +33,7 @@ function detailHeaderBar() {
 function renderDetail(kind, type, id, d) {
   const el = $('detail');
   const title = d.title || d.name;
+  const posterUrl = IMG(d.poster_path, 'w342'); // carried into playOn so capture uses the TMDB title/poster
   const year = (d.release_date || d.first_air_date || '').slice(0, 4);
   const rating = d.vote_average ? d.vote_average.toFixed(1) : null;
   const genres = (d.genres || []).map((g) => g.name);
@@ -90,7 +91,7 @@ function renderDetail(kind, type, id, d) {
   watchBtn.className = 'btn-primary';
   const setWatchLabel = () => { watchBtn.textContent = type === 'tv' ? `▶ Watch S${curSeason}E${curEpisode}` : '▶ Watch'; };
   setWatchLabel();
-  watchBtn.onclick = () => playOn(kind, type, id, curSeason, curEpisode);
+  watchBtn.onclick = () => playOn(kind, type, id, curSeason, curEpisode, title, posterUrl);
   actions.append(watchBtn);
   if (trailer) {
     const tb = document.createElement('button');
@@ -105,7 +106,7 @@ function renderDetail(kind, type, id, d) {
     const url = src ? buildUrl(src, type, id, curSeason, curEpisode) : `tmdb:${type}/${id}`;
     const key = mediaKey(url);
     later = later.filter((c) => c.key !== key);
-    later.unshift({ key, title, url, poster: IMG(d.poster_path, 'w342'), season: curSeason, episode: curEpisode, type: kind === 'anime' ? 'tv' : type, addedAt: Date.now() });
+    later.unshift({ key, title, url, poster: posterUrl, season: curSeason, episode: curEpisode, type: kind === 'anime' ? 'tv' : type, addedAt: Date.now() });
     store('watchlater', later);
     wl.textContent = '✓ Added';
     setTimeout(() => { wl.textContent = '+ Watch Later'; }, 1500);
@@ -152,7 +153,7 @@ function renderDetail(kind, type, id, d) {
       epGrid.replaceChildren(emptyMsg('Loading…'));
       let s;
       try { s = await tmdbGet(`/tv/${id}/season/${n}`, {}); } catch { s = null; }
-      epGrid.replaceChildren(...(s?.episodes || []).map((ep) => episodeCard(kind, type, id, ep, () => { curEpisode = ep.episode_number; setWatchLabel(); })));
+      epGrid.replaceChildren(...(s?.episodes || []).map((ep) => episodeCard(kind, type, id, ep, () => { curEpisode = ep.episode_number; setWatchLabel(); }, title, posterUrl)));
     };
     sel.onchange = () => loadSeason(sel.value);
     loadSeason(curSeason);
@@ -193,7 +194,7 @@ function renderDetail(kind, type, id, d) {
   }
 }
 
-function episodeCard(kind, type, id, ep, onPick) {
+function episodeCard(kind, type, id, ep, onPick, title, poster) {
   const el = document.createElement('div');
   el.className = 'episode';
   const still = document.createElement('img');
@@ -206,6 +207,6 @@ function episodeCard(kind, type, id, ep, onPick) {
   const ov = document.createElement('div'); ov.className = 'episode-ov'; ov.textContent = ep.overview || '';
   body.append(t, ov);
   el.append(still, body);
-  el.onclick = () => { onPick(); playOn(kind, type, id, ep.season_number, ep.episode_number); };
+  el.onclick = () => { onPick(); playOn(kind, type, id, ep.season_number, ep.episode_number, title, poster); };
   return el;
 }

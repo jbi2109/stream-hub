@@ -94,7 +94,9 @@ const tmdb = http.createServer((req, res) => {
 const catalog = http.createServer((req, res) => {
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ count: 3, streams: [
-    { name: 'Alpha Match', category: 'soccer', embed_url: `${PLAYER}/live/7`, thumbnail_url: '' },
+    // Alpha's embed has a 3-digit id so it passes isMediaUrl — proves the `live` flag (not isMediaUrl)
+    // is what keeps a live stream out of Continue Watching (v15.2 test 32k).
+    { name: 'Alpha Match', category: 'soccer', embed_url: `${PLAYER}/live/700`, thumbnail_url: '' },
     { name: 'Beta Match', category: 'soccer', embed_url: `${PLAYER}/live/8` },
     { name: 'Gamma Match', category: 'tennis', embed_url: `${PLAYER}/live/9` },
   ] }));
@@ -651,7 +653,7 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#browse .subtabs .tab')].find(b => b.textContent === 'Soccer').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha'))`), 'Soccer shows Alpha');
   await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha')).click()`);
-  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/7'`), 'catalog tile embeds the stream');
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'catalog tile embeds the stream');
   ok('live: JSON catalog renders with category filter + search + embed');
 
   // 32g. auto-update banner: hidden at boot; showUpdate drives it; Restart calls install (stubbed)
@@ -673,6 +675,61 @@ async function main() {
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('tmdbKey'))`), 'imported-key-123', 'import should write tmdbKey');
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('sources')).length`), 0, 'import should write sources');
   ok('settings: export dumps localStorage; import writes it back');
+
+  // 32i. v15.2: Continue Watching uses the known TMDB title even when the embed page has NO og:title
+  //      (the player fixture is a bare <video> page — stands in for VidSrc). Provider-agnostic: the
+  //      source is a generic unnamed player, so the fix can't be keyed to any provider.
+  await page.eval(`document.getElementById('home-btn').click()`); // leave any embed
+  await page.eval(`sources.length = 0; cont.length = 0; later.length = 0; store('sources', sources); store('continue', cont); store('watchlater', later); renderSources();`);
+  await page.eval(`addSource({ name: 'NoTitleSrc', url: '${PLAYER}', category: 'vod' })`); // embed = PLAYER (no og:title)
+  await page.eval(`(() => { const k = document.getElementById('tmdb-key'); k.value = 'testkey'; k.dispatchEvent(new Event('change')); })()`);
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'movie').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'movie grid (no-title capture)');
+  await page.eval(`document.querySelector('#browse .grid .card').click()`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-actions .btn-primary')`), 'detail (no-title capture)');
+  await page.eval(`document.querySelector('#detail .detail-actions .btn-primary').click()`); // Watch -> PLAYER embed (no og:title)
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/movie/42')`), 'watch opened no-title embed');
+  const capTitle = await until(() => page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).title`), 'continue captured from no-title embed');
+  assert.strictEqual(capTitle, 'Fixture Title', 'Continue Watching should use the TMDB title, not the empty/URL embed-page title');
+  ok('capture: Continue Watching uses the known title when the embed page has no og:title');
+
+  // 32j. v15.2 (bug b): topbar "+ Watch Later" while that embed plays stores the title, not the URL
+  await page.eval(`later.length = 0; store('watchlater', later);`);
+  await page.eval(`document.getElementById('watch-later').click()`);
+  const wlTitle = await until(() => page.eval(`(JSON.parse(localStorage.getItem('watchlater'))[0] || {}).title`), 'topbar watch later added');
+  assert.strictEqual(wlTitle, 'Fixture Title', 'topbar Watch Later should store the title, not the URL');
+  ok('watch later: topbar uses the known title, not the URL');
+
+  // 32k. v15.2: a live-catalog stream keeps its title in Watch Later and never enters Continue Watching
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`sources.length = 0; cont.length = 0; later.length = 0; store('sources', sources); store('continue', cont); store('watchlater', later);`);
+  await page.eval(`addSource({ name: 'CatSrc', category: 'live', catalogUrl: '${CATALOG}/api/streams' })`);
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Alpha'))`), 'catalog tiles (live capture)');
+  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Alpha')).click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'live tile opened');
+  await sleep(900); // let any capture attempt run (600ms debounce); /live/700 passes isMediaUrl, so the live flag is what must skip it
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 0, 'a live stream must not enter Continue Watching');
+  await page.eval(`document.getElementById('watch-later').click()`);
+  const liveWl = await until(() => page.eval(`JSON.parse(localStorage.getItem('watchlater'))[0]`), 'live watch later added');
+  assert.strictEqual(liveWl.title, 'Alpha Match', 'live Watch Later should store the catalog title, not the URL');
+  assert.strictEqual(liveWl.type, 'live', 'live Watch Later entry should be type live');
+  ok('live: catalog stream keeps its title in Watch Later and stays out of Continue Watching');
+
+  // 32l. v15.2 (bug d): a click originating in .card-actions must not open the show; the body still does
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`cont.length = 0; cont.push({ key: 'k1', title: 'CardShow', url: '${PLAYER}/embed/movie/99', poster: '', season: null, episode: null, type: 'movie', updatedAt: Date.now(), position: null, duration: null, note: '' }); store('continue', cont); topTab = 'continue'; subTab = 'all'; showHome();`);
+  const openedFromActions = await page.eval(`(() => {
+    const card = document.querySelector('#home .grid .card');
+    card.onclick({ target: card.querySelector('.card-actions') }); // simulate a click on the ✕/dropdown area
+    return !document.getElementById('webview').hidden;
+  })()`);
+  assert.strictEqual(openedFromActions, false, 'a click inside .card-actions must not open the show');
+  await page.eval(`document.querySelector('#home .grid .card').click()`); // real click on the card body (target outside .card-actions)
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/movie/99')`), 'a normal card-body click should still open the show');
+  ok('card: clicks on the ✕/dropdown area do not open the show; the card body still does');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
