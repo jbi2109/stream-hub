@@ -121,7 +121,8 @@ const catalogNested = http.createServer((req, res) => {
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ 'cdn-live-tv': {
     Soccer: [{ event: 'Team A vs Team B', homeTeam: 'Team A', awayTeam: 'Team B', tournament: 'Cup',
-      channels: [{ channel_name: 'HD', url: `${PLAYER}/live/ch1` }, { channel_name: 'SD', url: `${PLAYER}/live/ch2` }] }],
+      channels: [{ channel_name: 'English TSN', url: `${PLAYER}/live/ch1`, language: 'English' },
+                 { channel_name: 'Spanish DAZN', url: `${PLAYER}/live/ch2`, language: 'Spanish' }] }],
     Tennis: [{ event: 'Player X vs Player Y', homeTeam: 'Player X', awayTeam: 'Player Y',
       channels: [{ channel_name: 'HD', url: `${PLAYER}/live/ch3` }] }],
   } }));
@@ -925,16 +926,32 @@ async function main() {
   await page.eval(`document.querySelector('.wiz-x').click()`);
   ok('wizard: shell renders once — navigating a step does not rebuild the overlay');
 
-  // 32w3. v0.2.4: generic catalog parser flattens a nested grouped-by-sport shape with a channels[] array
+  // 32w3. v0.2.5: a multi-source match shows ONE tile; clicking it opens the source-picker modal
   await page.eval(`document.getElementById('home-btn').click()`);
-  await page.eval(`sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); renderSources();`);
+  await page.eval(`settings.liveLanguage = ''; saveSettings(); sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); renderSources();`);
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Team A'))`), 'nested catalog tiles render (team names)');
-  assert.ok(await page.eval(`['Soccer','Tennis'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'category filter derived from the grouping keys (Soccer/Tennis)');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Team A'))`), 'nested catalog match tile renders');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].filter(t => t.textContent.includes('Team A')).length`), 1, 'a multi-source match should render exactly one tile');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Team A')).textContent.includes('2 source')`), 'the match tile shows a source-count badge');
+  assert.ok(await page.eval(`['Soccer','Tennis'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'category filter (Soccer/Tennis) present');
   await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Team A')).click()`);
-  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/ch')`), 'nested catalog tile embeds the channel url');
-  ok('live: generic catalog parser flattens a nested grouped-by-sport shape with channels[]');
+  await until(() => page.eval(`!document.getElementById('wizard').hidden && document.querySelectorAll('.src-row').length === 2`), 'source picker modal lists both sources');
+  await page.eval(`document.querySelector('.src-row').click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/ch')`), 'picking a source embeds it');
+  ok('live: one tile per match; picker modal lists all sources; picking one embeds it');
+
+  // 32w4. v0.2.5: the default live language floats matching sources to the top (prefer but show all)
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`settings.liveLanguage = 'Spanish'; saveSettings();`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Team A'))`), 'live tab re-rendered for language sort');
+  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Team A')).click()`);
+  await until(() => page.eval(`document.querySelectorAll('.src-row').length === 2`), 'picker open for language sort');
+  assert.strictEqual(await page.eval(`document.querySelector('.src-row .src-lang').textContent`), 'Spanish', 'preferred language should sort to the top');
+  assert.ok(await page.eval(`[...document.querySelectorAll('.src-row .src-lang')].some(c => c.textContent === 'English')`), 'other languages are still listed (prefer but show all)');
+  await page.eval(`document.getElementById('wizard').hidden = true; document.getElementById('wizard').replaceChildren(); settings.liveLanguage = ''; saveSettings();`);
+  ok('live: default language floats matching sources to the top, others still shown');
 
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)

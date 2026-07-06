@@ -13,6 +13,7 @@ const SETTINGS_DEFAULTS = {
   trackContinue: true,      // auto-add to Continue Watching as you watch
   autoAdvanceLater: true,   // Watch Later follows the episode you're on
   autoplayTrailers: true,   // trailer opens with autoplay
+  liveLanguage: '',         // '' = any; floats this language to the top of the live source picker
   captureDebounce: 600,     // ms before a watched page is captured
 };
 let settings = { ...SETTINGS_DEFAULTS, ...load('settings', {}) };
@@ -22,6 +23,9 @@ const ACCENTS = ['#4c8dff', '#8b5cf6', '#22c55e', '#f97316', '#ef4444', '#14b8a6
 const REGIONS = [['US', 'United States'], ['GB', 'United Kingdom'], ['CA', 'Canada'],
   ['AU', 'Australia'], ['IN', 'India'], ['DE', 'Germany'], ['FR', 'France'], ['BR', 'Brazil']];
 const POSTER_SIZES = [[130, 'Small'], [160, 'Medium'], [200, 'Large']]; // [value, label] for segmented()
+const LIVE_LANGS = [['', '(any)'], ['English', 'English'], ['Spanish', 'Spanish'], ['French', 'French'],
+  ['German', 'German'], ['Italian', 'Italian'], ['Portuguese', 'Portuguese'], ['Dutch', 'Dutch'],
+  ['Arabic', 'Arabic'], ['Russian', 'Russian'], ['Turkish', 'Turkish']];
 
 let settingsTab = 'general';
 let settingsTabsBar = null;
@@ -155,6 +159,8 @@ function buildPlayback() {
   p.append(settingRow('Track Continue Watching', 'Auto-add shows to Continue Watching as you watch.', toggleControl('trackContinue')));
   p.append(settingRow('Auto-advance Watch Later', 'Watch Later follows the episode you are on.', toggleControl('autoAdvanceLater')));
   p.append(settingRow('Autoplay trailers', 'Start trailers automatically.', toggleControl('autoplayTrailers')));
+  p.append(settingRow('Default live language', 'Floats this language to the top of the live source picker.',
+    selectControl(settings.liveLanguage, LIVE_LANGS, (v) => { settings.liveLanguage = v; saveSettings(); })));
   return p;
 }
 

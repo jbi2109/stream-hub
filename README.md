@@ -116,7 +116,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 69-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 70-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, the add-player wizard, the tabbed library, the Settings screen (theme/accent/

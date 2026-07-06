@@ -131,6 +131,20 @@ const catalogLogo = (o) => o.thumbnail_url || o.thumbnail || o.poster || o.logo 
 const catalogTitle = (o) => o.name || o.title || o.event
   || (o.homeTeam && o.awayTeam ? `${o.homeTeam} v ${o.awayTeam}` : '') || o.channel_name || o.stream_key || '';
 
+// Best-effort language from a source label/title (fuzzy — catalogs rarely give a clean field). Used only
+// to sort the source picker; the user chose "prefer but show all", so a mis-detect only mis-orders.
+const LANG_WORDS = { english: 'English', spanish: 'Spanish', french: 'French', german: 'German',
+  italian: 'Italian', portuguese: 'Portuguese', dutch: 'Dutch', arabic: 'Arabic', russian: 'Russian',
+  turkish: 'Turkish', polish: 'Polish', greek: 'Greek', hindi: 'Hindi', japanese: 'Japanese' };
+const LANG_CODES = { en: 'English', es: 'Spanish', fr: 'French', de: 'German', it: 'Italian',
+  pt: 'Portuguese', nl: 'Dutch', ar: 'Arabic', ru: 'Russian', tr: 'Turkish', pl: 'Polish', gr: 'Greek' };
+function parseLanguage(str) {
+  const s = String(str || '').toLowerCase();
+  for (const [w, name] of Object.entries(LANG_WORDS)) if (s.includes(w)) return name;
+  for (const c of (s.match(/\b[a-z]{2}\b/g) || [])) if (LANG_CODES[c]) return LANG_CODES[c];
+  return '';
+}
+
 async function fetchCatalog(url) {
   const r = await window.sh.httpGet(url);
   if (!r || r.error) throw new Error(r && r.error || 'request failed');
@@ -144,19 +158,22 @@ async function fetchCatalog(url) {
     if (typeof node !== 'object') return;
     const t = catalogTitle(node) || parentTitle;
     const nodeCat = String(node.category || node.sport || node.group || cat || node.tournament || '').toLowerCase();
-    // per-item channels/streams/sources array -> one tile per entry that has an embed
+    // per-item channels/streams/sources array -> one row per entry (grouped back into the match later)
     for (const key of CATALOG_CHANNEL_ARRAYS) {
       if (Array.isArray(node[key])) {
         for (const ch of node[key]) {
           if (out.length >= CAP) return;
           const embed = ch && typeof ch === 'object' && catalogEmbed(ch);
-          if (embed) out.push({ title: [t, catalogTitle(ch)].filter(Boolean).join(' · ') || 'Stream', category: String(ch.category || ch.sport || nodeCat || '').toLowerCase(), logo: catalogLogo(ch) || catalogLogo(node), embed });
+          if (embed) out.push({ matchTitle: t || 'Stream', label: catalogTitle(ch) || '', embed,
+            category: String(ch.category || ch.sport || nodeCat || '').toLowerCase(),
+            logo: catalogLogo(ch) || catalogLogo(node), language: ch.language || ch.lang || parseLanguage(catalogTitle(ch) || t) });
         }
       }
     }
     // a direct embed on this node
     const embed = catalogEmbed(node);
-    if (embed) out.push({ title: t || 'Stream', category: nodeCat, logo: catalogLogo(node), embed });
+    if (embed) out.push({ matchTitle: t || 'Stream', label: String(node.server || node.quality || node.channel_name || ''),
+      embed, category: nodeCat, logo: catalogLogo(node), language: node.language || node.lang || parseLanguage(t) });
     // recurse into nested objects/arrays, carrying a category down from a non-wrapper string key ("Soccer")
     for (const [k, v] of Object.entries(node)) {
       if (v && typeof v === 'object' && !CATALOG_EMBED_FIELDS.includes(k) && !CATALOG_CHANNEL_ARRAYS.includes(k)) {
@@ -167,6 +184,53 @@ async function fetchCatalog(url) {
   };
   walk(data, '', '');
   return out;
+}
+
+// Collapse per-source rows into one entry per match (by normalised title) with a sources[] list, so a
+// match with many channels/servers shows as a single tile instead of a wall of duplicates.
+function groupMatches(rows) {
+  const byKey = new Map();
+  for (const r of rows) {
+    const key = (r.matchTitle || '').toLowerCase().replace(/\s+/g, ' ').trim() || r.embed;
+    let g = byKey.get(key);
+    if (!g) { g = { title: r.matchTitle || 'Stream', category: r.category || '', logo: r.logo || '', sources: [] }; byKey.set(key, g); }
+    if (!g.logo && r.logo) g.logo = r.logo;
+    if (!g.category && r.category) g.category = r.category;
+    if (!g.sources.some((s) => s.embed === r.embed)) g.sources.push({ label: r.label || '', embed: r.embed, language: r.language || '' });
+  }
+  return [...byKey.values()];
+}
+
+// Source-picker modal: lists every source for a match (label + language chip). The chosen default live
+// language sorts to the top ("prefer but show all"). Reuses the #wizard modal host + .modal-overlay styles.
+function openLiveSources(match) {
+  const host = $('wizard');
+  const close = () => { host.hidden = true; host.replaceChildren(); };
+  const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  const card = document.createElement('div'); card.className = 'wiz-card src-pick';
+  const head = document.createElement('div'); head.className = 'wiz-head';
+  const h = document.createElement('h3'); h.textContent = match.title; h.style.flex = '1';
+  const x = document.createElement('button'); x.type = 'button'; x.className = 'wiz-x'; x.textContent = '✕'; x.onclick = close;
+  head.append(h, x);
+  const pref = (settings.liveLanguage || '').toLowerCase();
+  const rank = (s) => { const l = (s.language || '').toLowerCase(); return pref && l === pref ? 0 : (l ? 2 : 1); };
+  const list = document.createElement('div'); list.className = 'src-list';
+  list.append(...match.sources
+    .map((s, idx) => ({ ...s, label: s.label || ('Source ' + (idx + 1)) }))
+    .sort((a, b) => rank(a) - rank(b))
+    .map((s) => {
+      const row = document.createElement('div'); row.className = 'src-row';
+      const name = document.createElement('span'); name.className = 'src-name'; name.textContent = s.label;
+      row.append(name);
+      if (s.language) { const chip = document.createElement('span'); chip.className = 'src-lang'; chip.textContent = s.language; row.append(chip); }
+      row.onclick = () => { open(s.embed); intendedMedia = { title: match.title, poster: match.logo, live: true }; close(); };
+      return row;
+    }));
+  card.append(head, list);
+  overlay.append(card);
+  host.replaceChildren(overlay);
+  host.hidden = false;
 }
 
 // Live TV tab: catalog sources (fetch JSON -> tiles + category filter + search) + plain site tiles.
@@ -210,25 +274,29 @@ function liveCatalogSection(src) {
   const grid = document.createElement('div'); grid.className = 'grid tiles'; grid.textContent = 'Loading…';
   sec.append(h, controls, grid);
 
-  let all = [], cat = 'all';
+  let all = [], cat = 'all'; // all = grouped matches ({ title, category, logo, sources: [...] })
   const draw = () => {
     const q = search.value.trim().toLowerCase();
     let items = cat === 'all' ? all : all.filter((it) => it.category === cat);
     if (q) items = items.filter((it) => (it.title || '').toLowerCase().includes(q));
     if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
-    grid.replaceChildren(...items.slice(0, 300).map((it) => {
+    grid.replaceChildren(...items.slice(0, 300).map((m) => {
       const el = document.createElement('div'); el.className = 'tile';
-      if (it.logo) { const img = document.createElement('img'); img.className = 'tile-logo'; img.src = it.logo; img.onerror = () => img.remove(); el.append(img); }
-      const t = document.createElement('div'); t.textContent = it.title; el.append(t);
-      el.onclick = () => { open(it.embed); intendedMedia = { title: it.title, poster: it.logo, live: true }; };
+      if (m.logo) { const img = document.createElement('img'); img.className = 'tile-logo'; img.src = m.logo; img.onerror = () => img.remove(); el.append(img); }
+      const t = document.createElement('div'); t.textContent = m.title; el.append(t);
+      if (m.sources.length > 1) { const badge = document.createElement('div'); badge.className = 'tile-count'; badge.textContent = m.sources.length + ' sources'; el.append(badge); }
+      el.onclick = () => {
+        if (m.sources.length === 1) { open(m.sources[0].embed); intendedMedia = { title: m.title, poster: m.logo, live: true }; }
+        else openLiveSources(m);
+      };
       return el;
     }));
   };
   search.oninput = draw;
 
-  fetchCatalog(src.catalogUrl).then((items) => {
-    all = items;
-    const cats = ['all', ...[...new Set(items.map((it) => it.category).filter(Boolean))].sort()];
+  fetchCatalog(src.catalogUrl).then((rows) => {
+    all = groupMatches(rows);
+    const cats = ['all', ...[...new Set(all.map((it) => it.category).filter(Boolean))].sort()];
     if (cats.length > 2) {
       catBar.append(...cats.map((c) => {
         const b = document.createElement('button');

@@ -461,6 +461,20 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 .live-provider { margin-bottom: 20px; }
 .live-provider-name { font-size: 15px; margin-bottom: 10px; color: var(--text); }
 .tile-logo { height: 34px; max-width: 80%; object-fit: contain; margin-bottom: 6px; }
+.tile-count { margin-top: 4px; font-size: 11px; color: var(--muted); }
+
+/* live source-picker modal (one match -> its sources) */
+.wiz-card.src-pick { width: 460px; }
+.src-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.src-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+  cursor: pointer;
+}
+.src-row:hover { background: var(--panel-3); }
+.src-name { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src-lang { font-size: 11px; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 
 /* ---- native detail page ---- */
 .detail-back { padding: 14px 24px 0; }
