@@ -198,6 +198,7 @@ function createWindow() {
     height: 900,
     autoHideMenuBar: true,
     backgroundColor: '#14161a',
+    icon: path.join(__dirname, 'build', 'icon.ico'), // taskbar/window icon (dev too — win.icon only applies when packaged)
     webPreferences: {
       webviewTag: true,
       nodeIntegration: false,
