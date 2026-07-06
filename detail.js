@@ -96,7 +96,7 @@ function renderDetail(kind, type, id, d) {
   if (trailer) {
     const tb = document.createElement('button');
     tb.textContent = '🎬 Trailer';
-    tb.onclick = () => open(`https://www.youtube.com/embed/${trailer.key}?autoplay=1`);
+    tb.onclick = () => open(`https://www.youtube.com/embed/${trailer.key}?autoplay=${settings.autoplayTrailers === false ? 0 : 1}`);
     actions.append(tb);
   }
   const wl = document.createElement('button');
@@ -179,8 +179,9 @@ function renderDetail(kind, type, id, d) {
     el.append(sec);
   }
 
-  // where to watch (legal providers)
-  const provs = (d['watch/providers']?.results?.US || d['watch/providers']?.results?.GB || {});
+  // where to watch (legal providers) — prefer the user's region, then US/GB
+  const wp = d['watch/providers']?.results || {};
+  const provs = wp[settings.watchRegion] || wp.US || wp.GB || {};
   const flat = [...(provs.flatrate || []), ...(provs.free || []), ...(provs.ads || [])];
   if (flat.length) {
     const sec = document.createElement('div');

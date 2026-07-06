@@ -4,37 +4,19 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:">
   <title>Stream Hub</title>
+  <!-- pre-paint theme apply (before the stylesheet) so there's no flash -->
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="sidebar">
-    <h1>Stream Hub</h1>
-
-    <div class="nav">
-      <button id="browse-btn">&#128269; Browse</button>
-      <button id="home-btn">&#127909; Library</button>
+  <div id="rail">
+    <div class="rail-top">
+      <button id="browse-btn" class="rail-btn" title="Browse">&#128269;</button>
+      <button id="home-btn" class="rail-btn" title="Library">&#127909;</button>
+      <button id="live-btn" class="rail-btn" title="Live TV">&#128250;</button>
+      <button id="youtube-btn" class="rail-btn" title="YouTube">&#9654;</button>
     </div>
-
-    <h2>Settings</h2>
-    <input id="tmdb-key" placeholder="TMDB API key (for Browse)">
-    <div id="default-player-row" hidden>
-      <label for="default-source">Default player</label>
-      <select id="default-source"></select>
-    </div>
-    <div id="settings-io">
-      <button id="export-settings" title="Save all your data to a JSON file">Export</button>
-      <button id="import-settings" title="Load data from a JSON file">Import</button>
-      <input id="import-file" type="file" accept="application/json,.json" hidden>
-    </div>
-
-    <h2>Players &amp; Sources</h2>
-    <div id="sources"></div>
-    <button id="add-source-btn" class="add-btn">+ Add player / source</button>
-
-    <div id="app-footer">
-      <span id="version" title="Click to check for updates"></span>
-      <span id="update-status"></span>
-    </div>
+    <button id="settings-btn" class="rail-btn rail-settings" title="Settings">&#9881;</button>
   </div>
 
   <div id="content">
@@ -50,6 +32,7 @@
       <div id="browse"></div>
       <div id="detail" hidden></div>
       <div id="home" hidden></div>
+      <div id="settings" hidden></div>
       <webview id="webview" allowpopups hidden></webview>
     </div>
   </div>
@@ -57,7 +40,7 @@
   <div id="wizard" hidden></div>
   <div id="update-banner" hidden></div>
 
-  <!-- classic scripts sharing one global scope; load order: core first, app (bootstrap) last -->
+  <!-- classic scripts sharing one global scope; load order: core first, settings before app, app (bootstrap) last -->
   <script src="core.js"></script>
   <script src="media.js"></script>
   <script src="sources.js"></script>
@@ -65,6 +48,7 @@
   <script src="detail.js"></script>
   <script src="library.js"></script>
   <script src="wizard.js"></script>
+  <script src="settings.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -89,7 +89,7 @@ const typeOf = (item) => item.type || classify(item.url, item.season);
 let captureTimer = null;
 function scheduleCapture() {
   clearTimeout(captureTimer);
-  captureTimer = setTimeout(captureCurrent, 600);
+  captureTimer = setTimeout(captureCurrent, settings.captureDebounce || 600);
 }
 
 async function captureCurrent() {
@@ -112,24 +112,30 @@ async function captureCurrent() {
   const title = known?.title || tmdb?.title || existing?.title || page.title;
   if (!title) return;
   const poster = known?.poster || tmdb?.poster || page.poster || existing?.poster || '';
-  activeKey = key;
-  const base = { key, title, url, poster, season, episode, type, updatedAt: Date.now() };
-  if (existing) {
-    Object.assign(existing, base);
-  } else {
-    cont.unshift({ ...base, position: null, duration: null, note: '' });
+
+  // Continue Watching upsert (gated by the setting; still lets Watch Later track below).
+  if (settings.trackContinue !== false) {
+    activeKey = key;
+    const base = { key, title, url, poster, season, episode, type, updatedAt: Date.now() };
+    if (existing) {
+      Object.assign(existing, base);
+    } else {
+      cont.unshift({ ...base, position: null, duration: null, note: '' });
+    }
+    cont.sort((a, b) => b.updatedAt - a.updatedAt);
+    store('continue', cont);
   }
-  cont.sort((a, b) => b.updatedAt - a.updatedAt);
-  store('continue', cont);
 
   // Watch Later tracks the show as you watch. Only overwrite its title from an authoritative source
   // (what we were told, or TMDB) — never clobber it with a scrape.
-  const wl = later.find((w) => w.key === key);
-  if (wl) {
-    const patch = { season, episode, url, type, poster: poster || wl.poster };
-    if (known || tmdb) patch.title = title;
-    Object.assign(wl, patch);
-    store('watchlater', later);
+  if (settings.autoAdvanceLater !== false) {
+    const wl = later.find((w) => w.key === key);
+    if (wl) {
+      const patch = { season, episode, url, type, poster: poster || wl.poster };
+      if (known || tmdb) patch.title = title;
+      Object.assign(wl, patch);
+      store('watchlater', later);
+    }
   }
 }
 

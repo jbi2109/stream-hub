@@ -69,10 +69,16 @@ function tabBar(tabs, current, onPick, cls) {
 
 // ---------- views ----------
 
+// Highlight the rail button for the active view (null clears all — e.g. while watching an embed).
+function setActiveRail(id) {
+  for (const b of document.querySelectorAll('#rail .rail-btn')) b.classList.toggle('active', b.id === id);
+}
+
 function hideAll() {
   $('home').hidden = true;
   $('browse').hidden = true;
   $('detail').hidden = true;
+  $('settings').hidden = true;
   webview.hidden = true;
   playing = null;              // leaving the embed: forget what's playing
   intendedMedia = null;        // and forget any known title/poster; producers re-set it after open()
@@ -81,18 +87,27 @@ function hideAll() {
 
 function open(url) {
   hideAll();
+  setActiveRail(null);
   webview.hidden = false;
   webview.src = url;
 }
 
 function showHome() {
   hideAll();
+  setActiveRail('home-btn');
   $('home').hidden = false;
   renderHome();
 }
 
 function showBrowse() {
   hideAll();
+  setActiveRail(browseTab === 'live' ? 'live-btn' : 'browse-btn');
   $('browse').hidden = false;
   renderBrowse();
+}
+
+function showSettings() {
+  hideAll();
+  setActiveRail('settings-btn');
+  $('settings').hidden = false;
 }

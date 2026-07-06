@@ -93,7 +93,8 @@ one and **Import** in the other to carry your setup over.
 |------|----------------|
 | `main.js` | Electron main process: window, popup policy, ad-blocker, reads playback position from the player frame, per-host user-agent tweaks. |
 | `preload.js` | Tiny `contextBridge` that forwards playback progress to the UI. |
-| `index.html` | App layout (sidebar, top bar, webview, home container). |
+| `index.html` | App layout (icon rail, top bar, webview, and the browse/detail/library/settings views). |
+| `theme.js` | Pre-paint theme apply (runs in `<head>` so there's no flash) — sets the theme/accent/poster CSS vars. |
 | `core.js` | Renderer foundation: DOM helper, storage, shared state, view switching. |
 | `media.js` | Page inspection + Continue-Watching capture. |
 | `sources.js` | Settings source list + play-URL building/routing. |
@@ -101,8 +102,9 @@ one and **Import** in the other to carry your setup over.
 | `detail.js` | Native TMDB detail page + episode picker. |
 | `library.js` | Continue Watching / Watch Later grid. |
 | `wizard.js` | Guided "Add player / source" modal. |
-| `app.js` | Event wiring, auto-update banner, settings export/import, bootstrap. |
-| `style.css` | Styling. |
+| `settings.js` | The tabbed Settings screen: settings object + defaults, theme/accent/poster, and library actions. |
+| `app.js` | Rail/top-bar wiring, auto-update banner, settings export/import, bootstrap. |
+| `style.css` | Styling + theme variables (dark/light + accent). |
 | `test/e2e.js` | End-to-end test suite. |
 
 State is stored in the browser's `localStorage` (sources, `continue`, `watchlater`). There is
@@ -114,10 +116,11 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 57-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 63-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
-picker/switcher, the add-player wizard, the tabbed library, categorisation, and persistence.
+picker/switcher, the add-player wizard, the tabbed library, the Settings screen (theme/accent/
+poster + library actions), categorisation, and persistence.
 
 ## Disclaimer
 

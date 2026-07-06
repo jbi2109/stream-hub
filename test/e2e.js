@@ -809,6 +809,66 @@ async function main() {
   assert.ok(await page.eval(`document.querySelector('#home .grid .card .card-source-label').textContent === 'MyLive'`), 'live entry should show a read-only source label');
   ok('card: live / non-rebuildable entries show a read-only source label');
 
+  // 32s. v0.2.0: the rail opens the Settings screen; its tabs switch panels
+  await page.eval(`document.getElementById('settings-btn').click()`);
+  assert.strictEqual(await page.eval(`document.getElementById('settings').hidden`), false, 'settings should open from the rail');
+  assert.strictEqual(await page.eval(`document.getElementById('browse').hidden`), true, 'browse should hide when settings opens');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#settings .settings-tabs .tab').length`), 8, 'settings should have 8 tabs');
+  await page.eval(`[...document.querySelectorAll('#settings .settings-tabs .tab')].find(t => t.textContent === 'Appearance').click()`);
+  assert.ok(await page.eval(`!!document.querySelector('#settings .set-panel:not([hidden]) .swatches')`), 'Appearance tab should show the accent swatches');
+  ok('settings: rail opens the screen; tabs switch panels');
+
+  // 32t. v0.2.0: theme dark→light flips data-theme + a color var, and persists
+  await page.eval(`[...document.querySelectorAll('#settings .set-panel:not([hidden]) .segmented button')].find(b => b.textContent === 'Light').click()`);
+  assert.strictEqual(await page.eval(`document.documentElement.dataset.theme`), 'light', 'theme toggle should set data-theme=light');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).theme`), 'light', 'theme should persist');
+  assert.ok(await page.eval(`getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() === '#f4f5f7'`), 'light theme should change --bg');
+  await page.eval(`[...document.querySelectorAll('#settings .set-panel:not([hidden]) .segmented button')].find(b => b.textContent === 'Dark').click()`); // back to dark
+  ok('settings: theme dark→light flips data-theme + color var');
+
+  // 32u. v0.2.0: an accent swatch updates --accent and persists
+  await page.eval(`document.querySelector('#settings .swatches .swatch[data-c="#8b5cf6"]').click()`);
+  assert.ok(await page.eval(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() === '#8b5cf6'`), 'accent swatch should update --accent');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).accent`), '#8b5cf6', 'accent should persist');
+  ok('settings: accent swatch updates --accent');
+
+  // 32v. v0.2.0: poster size changes --poster-min
+  await page.eval(`[...document.querySelectorAll('#settings .set-panel:not([hidden]) .segmented button')].find(b => b.textContent === 'Large').click()`);
+  assert.ok(await page.eval(`getComputedStyle(document.documentElement).getPropertyValue('--poster-min').trim() === '200px'`), 'poster size Large should set --poster-min:200px');
+  ok('settings: poster size changes --poster-min');
+
+  // 32w. v0.2.0: a renderer toggle persists across reload
+  await page.eval(`[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Autoplay trailers')).querySelector('input[type=checkbox]').click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).autoplayTrailers`), false, 'toggle should persist to settings');
+  await page.eval(`location.reload()`);
+  await until(() => page.eval(`!!document.querySelector('#settings .settings-tabs .tab')`), 'settings rebuilt after reload');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).autoplayTrailers`), false, 'toggle should survive reload');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Autoplay trailers')).querySelector('input[type=checkbox]').checked`), false, 'rebuilt toggle should reflect the saved value');
+  ok('settings: a renderer toggle persists across reload');
+
+  // 32x. v0.2.0: Clear / Merge / Reset act on the library; Reset keeps sources + tmdbKey
+  await page.eval(`window.confirm = () => true`); // fresh page after the reload
+  await page.eval(`
+    sources.length = 0; cont.length = 0; later.length = 0;
+    addSource({ name: 'KeepSrc', url: '${SITE}', category: 'vod' });
+    tmdbKey = 'keepkey'; store('tmdbKey', tmdbKey);
+    cont.push({ key: 'tv#111', title: 'A', url: '${SITE}/embed/tv/111/1/1', season: 1, episode: 1, type: 'tv', poster: '', updatedAt: 100, position: null, duration: null, note: '' });
+    cont.push({ key: 'player#111', title: 'A', url: '${PLAYER}/embed/tv/111/1/1', season: 1, episode: 1, type: 'tv', poster: '', updatedAt: 200, position: null, duration: null, note: '' });
+    store('sources', sources); store('continue', cont);
+  `);
+  await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Merge duplicates').click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 1, 'Merge duplicates should collapse the two entries');
+  await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Clear Continue Watching').click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 0, 'Clear Continue Watching should empty it');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#settings .set-btn')].some(b => b.textContent === 'Re-fetch titles')`), 'Re-fetch titles button should exist');
+  await page.eval(`document.querySelector('#settings .swatches .swatch[data-c="#22c55e"]').click()`); // set a non-default accent
+  await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Reset settings').click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).accent`), '#4c8dff', 'Reset should restore the default accent');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).theme`), 'dark', 'Reset should restore the default theme');
+  assert.strictEqual(await page.eval(`(JSON.parse(localStorage.getItem('sources')) || []).length`), 1, 'Reset must NOT drop sources');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('tmdbKey'))`), 'keepkey', 'Reset must NOT drop the TMDB key');
+  ok('settings: Clear / Merge / Reset act correctly; Reset keeps sources + library');
+
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
     document.getElementById('home').hidden = true;
