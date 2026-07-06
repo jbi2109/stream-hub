@@ -16,6 +16,7 @@ const PLAYER = 'http://127.0.0.1:9312';
 const CATALOG = 'http://127.0.0.1:9314';
 const YT_FIX_HOST = '127.0.0.1:9315';
 const YT_FIX = 'http://' + YT_FIX_HOST;
+const CATALOG2 = 'http://127.0.0.1:9316';
 const PROFILE = path.join(os.tmpdir(), 'stream-hub-test-profile');
 
 let electronProc = null;
@@ -114,6 +115,18 @@ const ytFix = http.createServer((req, res) => {
   res.end('<!doctype html><body><div id="sh-cosmetic">ad</div></body>');
 });
 
+// Nested, grouped-by-sport live catalog with a per-event channels[] array (cdnlivetv-style) — exercises
+// the generic fetchCatalog flatten + channel expansion. Two sports so the category filter (>2) renders.
+const catalogNested = http.createServer((req, res) => {
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ 'cdn-live-tv': {
+    Soccer: [{ event: 'Team A vs Team B', homeTeam: 'Team A', awayTeam: 'Team B', tournament: 'Cup',
+      channels: [{ channel_name: 'HD', url: `${PLAYER}/live/ch1` }, { channel_name: 'SD', url: `${PLAYER}/live/ch2` }] }],
+    Tennis: [{ event: 'Player X vs Player Y', homeTeam: 'Player X', awayTeam: 'Player Y',
+      channels: [{ channel_name: 'HD', url: `${PLAYER}/live/ch3` }] }],
+  } }));
+});
+
 // ---- minimal CDP client ----
 class CDP {
   static async connect(wsUrl) {
@@ -184,6 +197,7 @@ async function main() {
   tmdb.listen(9313);
   catalog.listen(9314);
   ytFix.listen(9315);
+  catalogNested.listen(9316);
 
   // ---------- boot ----------
   let pageTarget = await launchApp();
@@ -559,19 +573,24 @@ async function main() {
     `${SITE}/embed/movie/42`, 'default movie url should be unchanged');
   ok('buildUrl: template trims movie / fills tv; default unchanged');
 
-  // 28. edit a source's play-URL pattern via the inline ✎ editor; it persists
+  // 28. v0.2.4: edit a source via ✎ → the wizard in edit mode; changes save in place (no duplicate)
   await page.eval(`document.getElementById('home-btn').click()`); // leave any embed
   await page.eval(`addSource({ name: 'CineTest', url: '${PLAYER}', category: 'vod' })`);
+  const srcCountBeforeEdit = (await page.eval(`JSON.parse(localStorage.getItem('sources'))`)).length;
   await page.eval(`[...document.querySelectorAll('#sources li')].find(li => li.textContent.includes('CineTest')).querySelector('button[title^="Edit"]').click()`);
-  await page.eval(`(() => {
-    const inp = document.querySelector('#sources li input');
-    inp.value = '${PLAYER}/player/{id}/{season}/{episode}';
-    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-  })()`);
+  await until(() => page.eval(`!!document.querySelector('.wiz-input') && document.querySelector('.wiz-input').value === 'CineTest'`), 'edit wizard opens prefilled with the source name');
+  await page.eval(`document.querySelector('.wiz-next').click()`); // name -> category
+  await page.eval(`document.querySelector('.wiz-next').click()`); // category (vod prefilled) -> url
+  await page.eval(`document.querySelector('.wiz-next').click()`); // url (prefilled) -> template (last)
+  assert.strictEqual(await page.eval(`document.querySelector('.wiz-next').textContent`), 'Save', 'edit wizard last step should read Save');
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = '${PLAYER}/player/{id}/{season}/{episode}'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // Save
+  await until(() => page.eval(`document.getElementById('wizard').hidden`), 'edit wizard closes after Save');
   assert.strictEqual(
     await page.eval(`(JSON.parse(localStorage.getItem('sources')).find(s => s.name === 'CineTest')||{}).template`),
     `${PLAYER}/player/{id}/{season}/{episode}`, 'edited template did not persist');
-  ok('sources: inline ✎ sets a play-URL pattern that persists');
+  assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('sources'))`)).length, srcCountBeforeEdit, 'edit must update in place, not add a duplicate');
+  ok('sources: ✎ opens the wizard in edit mode; changes save in place');
 
   // 29. detail-page source selector routes Watch to the chosen source + its pattern
   await page.eval(`document.getElementById('browse-btn').click()`);
@@ -638,6 +657,10 @@ async function main() {
   // 32d. sh.httpGet fetches a (loopback) URL body via main — used by the live-catalog fetch
   assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${SITE}/'); return !!(r && r.body && r.body.includes('Widow')); })()`), 'sh.httpGet should return the fetched body');
   ok('ipc: sh.httpGet returns fetched body (for live-catalog fetches)');
+
+  // 32d2. v0.2.4: sh.httpGet sends a browser User-Agent (many catalog APIs 403 the default Node UA)
+  assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${UA_ECHO}/'); return !!(r && r.body && r.body.includes('Mozilla')); })()`), 'sh.httpGet should send a browser User-Agent');
+  ok('ipc: sh.httpGet sends a browser User-Agent');
 
   // 32e. wizard adds a Live catalog (JSON API) source through the widget
   await page.eval(`document.getElementById('home-btn').click()`);
@@ -889,6 +912,30 @@ async function main() {
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('tmdbKey'))`), 'keepkey', 'Reset must NOT drop the TMDB key');
   ok('settings: Clear / Merge / Reset act correctly; Reset keeps sources + library');
 
+  // 32w2. v0.2.4: the wizard renders its shell once — navigating a step does NOT rebuild the overlay
+  //        (fixes the flash/rebuild on every click). Same .modal-overlay node before & after a step.
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`document.getElementById('add-source-btn').click()`);
+  await until(() => page.eval(`!!document.querySelector('.modal-overlay')`), 'wizard open for render-once');
+  await page.eval(`window.__ov = document.querySelector('.modal-overlay')`);
+  await page.eval(`(() => { const i = document.querySelector('.wiz-input'); i.value = 'RenderOnce'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.wiz-next').click()`); // name -> category (a step change)
+  await until(() => page.eval(`!!document.querySelector('.wiz-choices')`), 'advanced to the category step');
+  assert.strictEqual(await page.eval(`document.querySelector('.modal-overlay') === window.__ov`), true, 'the overlay must be the same node across a step (no full rebuild/flash)');
+  await page.eval(`document.querySelector('.wiz-x').click()`);
+  ok('wizard: shell renders once — navigating a step does not rebuild the overlay');
+
+  // 32w3. v0.2.4: generic catalog parser flattens a nested grouped-by-sport shape with a channels[] array
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`sources.length = 0; store('sources', sources); addSource({ name: 'NestedCat', category: 'live', catalogUrl: '${CATALOG2}/api' }); renderSources();`);
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'live').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].some(t => t.textContent.includes('Team A'))`), 'nested catalog tiles render (team names)');
+  assert.ok(await page.eval(`['Soccer','Tennis'].every(l => [...document.querySelectorAll('#browse .subtabs .tab')].some(t => t.textContent === l))`), 'category filter derived from the grouping keys (Soccer/Tennis)');
+  await page.eval(`[...document.querySelectorAll('#browse .live-provider .tile')].find(t => t.textContent.includes('Team A')).click()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/ch')`), 'nested catalog tile embeds the channel url');
+  ok('live: generic catalog parser flattens a nested grouped-by-sport shape with channels[]');
+
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)
   await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/login-origin'`);
@@ -953,5 +1000,6 @@ main()
     tmdb.close();
     catalog.close();
     ytFix.close();
+    catalogNested.close();
     process.exit(process.exitCode ?? 0); // open CDP sockets would otherwise keep the loop alive
   });

@@ -39,7 +39,7 @@ $('src-switch').onchange = () => {
 // Wire the controls settings.js builds. A named function so it can re-run after a settings Reset
 // rebuilds those DOM nodes (which would otherwise drop their handlers).
 function wireSettingsControls() {
-  $('add-source-btn').onclick = openAddWizard;
+  $('add-source-btn').onclick = () => openAddWizard(); // no arg -> add mode (not the click Event)
 
   const tmdbKeyInput = $('tmdb-key');
   tmdbKeyInput.value = tmdbKey;

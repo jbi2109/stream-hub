@@ -115,22 +115,58 @@ async function fetchBrowse(tab, query) {
   });
 }
 
-// Fetch a live-catalog JSON API (via the main-process httpGet, past CSP) and map it to tiles.
-// Generic field fallbacks so a plain URL works for common live-catalog shapes with no provider code.
+// Fetch a live-catalog JSON API (via the main-process httpGet, past CSP) and flatten it to tiles.
+// Fully generic (no provider code): recurses through nested objects (e.g. grouped-by-sport catalogs),
+// expands a per-item channels[]/streams[]/sources[] array into one tile each, and uses broad field
+// fallbacks — so flat `{streams:[{embed_url}]}`, nested `{prov:{Soccer:[{…channels:[{url}]}]}}`, and
+// anything carrying an embed URL all work with just a pasted URL.
+const CATALOG_EMBED_FIELDS = ['embed_url', 'embedUrl', 'url', 'stream_url', 'iframe', 'src'];
+// Per-item sub-stream arrays to expand into one tile each. NOT 'streams' — that's a common top-level
+// wrapper (`{streams:[…]}`) whose items carry their own category, so it's recursed, not expanded.
+const CATALOG_CHANNEL_ARRAYS = ['channels', 'sources', 'servers'];
+const CATALOG_WRAPPER_KEYS = new Set(['streams', 'data', 'results', 'items', 'events', 'matches',
+  'channels', 'sources', 'servers', 'list', 'response', 'payload']);
+const catalogEmbed = (o) => { for (const k of CATALOG_EMBED_FIELDS) if (typeof o[k] === 'string' && o[k]) return o[k]; return null; };
+const catalogLogo = (o) => o.thumbnail_url || o.thumbnail || o.poster || o.logo || o.image || o.homeTeamIMG || o.countryIMG || '';
+const catalogTitle = (o) => o.name || o.title || o.event
+  || (o.homeTeam && o.awayTeam ? `${o.homeTeam} v ${o.awayTeam}` : '') || o.channel_name || o.stream_key || '';
+
 async function fetchCatalog(url) {
   const r = await window.sh.httpGet(url);
   if (!r || r.error) throw new Error(r && r.error || 'request failed');
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const data = JSON.parse(r.body);
-  let arr = Array.isArray(data) ? data
-    : data.streams || data.data || data.results || data.items
-    || Object.values(data).find((v) => Array.isArray(v)) || [];
-  return arr.map((s) => ({
-    title: s.name || s.title || s.stream_key || 'Stream',
-    category: String(s.category || s.sport || s.group || '').toLowerCase(),
-    logo: s.thumbnail_url || s.thumbnail || s.poster || s.logo || s.image,
-    embed: s.embed_url || s.embedUrl || s.url || s.stream_url,
-  })).filter((it) => it.embed);
+  const out = [];
+  const CAP = 500;
+  const walk = (node, cat, parentTitle) => {
+    if (out.length >= CAP || node == null) return;
+    if (Array.isArray(node)) { for (const v of node) walk(v, cat, parentTitle); return; }
+    if (typeof node !== 'object') return;
+    const t = catalogTitle(node) || parentTitle;
+    const nodeCat = String(node.category || node.sport || node.group || cat || node.tournament || '').toLowerCase();
+    // per-item channels/streams/sources array -> one tile per entry that has an embed
+    for (const key of CATALOG_CHANNEL_ARRAYS) {
+      if (Array.isArray(node[key])) {
+        for (const ch of node[key]) {
+          if (out.length >= CAP) return;
+          const embed = ch && typeof ch === 'object' && catalogEmbed(ch);
+          if (embed) out.push({ title: [t, catalogTitle(ch)].filter(Boolean).join(' · ') || 'Stream', category: String(ch.category || ch.sport || nodeCat || '').toLowerCase(), logo: catalogLogo(ch) || catalogLogo(node), embed });
+        }
+      }
+    }
+    // a direct embed on this node
+    const embed = catalogEmbed(node);
+    if (embed) out.push({ title: t || 'Stream', category: nodeCat, logo: catalogLogo(node), embed });
+    // recurse into nested objects/arrays, carrying a category down from a non-wrapper string key ("Soccer")
+    for (const [k, v] of Object.entries(node)) {
+      if (v && typeof v === 'object' && !CATALOG_EMBED_FIELDS.includes(k) && !CATALOG_CHANNEL_ARRAYS.includes(k)) {
+        const childCat = (isNaN(k) && !CATALOG_WRAPPER_KEYS.has(k.toLowerCase())) ? k.toLowerCase() : (nodeCat || cat);
+        walk(v, childCat, t);
+      }
+    }
+  };
+  walk(data, '', '');
+  return out;
 }
 
 // Live TV tab: catalog sources (fetch JSON -> tiles + category filter + search) + plain site tiles.

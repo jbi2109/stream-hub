@@ -6,27 +6,8 @@ function sourceItem(src) {
   grow.append(mk('div', 'title', src.name), mk('div', 'meta', CAT_LABEL[src.category || 'vod']));
 
   const edit = mk('button', null, '✎');
-  edit.title = 'Edit play-URL pattern'; // tokens: {origin} {type} {id} {season} {episode}
-  edit.onclick = (e) => {
-    e.stopPropagation();
-    const inp = document.createElement('input');
-    inp.value = src.template || '';
-    inp.placeholder = '{origin}/embed/{type}/{id}/{season}/{episode}';
-    inp.title = 'Play-URL pattern — tokens {origin} {type} {id} {season} {episode}; blank = default';
-    inp.onclick = (ev) => ev.stopPropagation(); // don't open the source while editing
-    const commit = () => {
-      if (inp.value.trim()) src.template = inp.value.trim(); else delete src.template;
-      store('sources', sources);
-      renderSources();
-    };
-    inp.onkeydown = (ev) => {
-      if (ev.key === 'Enter') { inp.onblur = null; commit(); }
-      if (ev.key === 'Escape') { inp.onblur = null; renderSources(); }
-    };
-    inp.onblur = commit;
-    li.replaceChildren(inp);
-    inp.focus();
-  };
+  edit.title = 'Edit source'; // full-facet edit via the wizard (name, URL, category, catalog, pattern)
+  edit.onclick = (e) => { e.stopPropagation(); openAddWizard(src); };
 
   const del = mk('button', null, '✕');
   del.title = 'Remove source';
@@ -76,15 +57,21 @@ function renderDefaultPicker() {
   }));
 }
 
-// Add a player/source (shared by the wizard + tests). Auto-prefixes the URL scheme.
+// Assemble a source object from wizard/test data (shared by add + edit). Auto-prefixes the URL scheme.
 // A Live TV source may instead be a catalog (catalogUrl: a JSON API of live streams, no site URL).
-function addSource({ name, url, category, template, catalogUrl }) {
-  category = category || 'vod';
-  const src = { name: (name || '').trim(), category };
+function buildSource(data) {
+  const category = data.category || 'vod';
   const prefix = (u) => (/^https?:\/\//i.test(u) ? u : 'https://' + u);
-  if (category === 'live' && catalogUrl && catalogUrl.trim()) src.catalogUrl = prefix(catalogUrl.trim());
-  if (url && url.trim()) src.url = prefix(url.trim());
-  if (template && template.trim()) src.template = template.trim();
+  const src = { name: (data.name || '').trim(), category };
+  if (category === 'live' && data.catalogUrl && data.catalogUrl.trim()) src.catalogUrl = prefix(data.catalogUrl.trim());
+  if (data.url && data.url.trim()) src.url = prefix(data.url.trim());
+  if (data.template && data.template.trim()) src.template = data.template.trim();
+  return src;
+}
+
+// Add a player/source (shared by the wizard + tests).
+function addSource(data) {
+  const src = buildSource(data);
   sources.push(src);
   store('sources', sources);
   renderSources();

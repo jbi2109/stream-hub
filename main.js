@@ -276,7 +276,8 @@ app.whenReady().then(() => {
       const u = String(url);
       const okScheme = /^https:\/\//i.test(u) || /^http:\/\/(127\.0\.0\.1|localhost)(:|\/)/i.test(u);
       if (!okScheme) return { error: 'https only' };
-      const r = await fetch(u);
+      // Send a browser User-Agent — many live-catalog APIs 403 the default Node/undici UA.
+      const r = await fetch(u, { headers: { 'User-Agent': DEFAULT_UA, 'Accept': 'application/json,text/plain,*/*' } });
       return { ok: r.ok, status: r.status, body: await r.text() };
     } catch (e) {
       return { error: e.message };
