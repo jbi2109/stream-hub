@@ -120,9 +120,11 @@ const catalog = http.createServer((req, res) => {
   res.end(JSON.stringify({ count: 3, streams: [
     // Alpha's embed has a 3-digit id so it passes isMediaUrl — proves the `live` flag (not isMediaUrl)
     // is what keeps a live stream out of Continue Watching (v15.2 test 32k).
-    { name: 'Alpha Match', category: 'soccer', embed_url: `${PLAYER}/live/700`, thumbnail_url: '' },
-    { name: 'Beta Match', category: 'soccer', embed_url: `${PLAYER}/live/8` },
+    // viewers/date drive the "Most watched" sort + "Live now" filter (date in seconds; 1000 = past).
+    { name: 'Alpha Match', category: 'soccer', embed_url: `${PLAYER}/live/700`, thumbnail_url: '', viewers: 5000, date: 1000 },
+    { name: 'Beta Match', category: 'soccer', embed_url: `${PLAYER}/live/8`, viewers: 100, date: 1000 },
     { name: 'Gamma Match', category: 'tennis', embed_url: `${PLAYER}/live/9` },
+    { name: 'Future Match', category: 'soccer', embed_url: `${PLAYER}/live/50`, date: 4102444800 }, // year 2100 -> upcoming
   ] }));
 });
 
@@ -737,6 +739,15 @@ async function main() {
   await page.eval(`document.querySelector('#detail .src-row').click()`);
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/700'`), 'picking the source embeds the stream');
   ok('live: unified match grid with category filter + search; single source routes through the page');
+
+  // 32f2. v0.2.13 live filters: "Live now" hides upcoming matches; "Most watched" sorts by popularity.
+  await page.eval(`document.getElementById('browse-btn').click(); document.getElementById('live-btn').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Future Match'))`), 'future match visible before filtering');
+  await page.eval(`[...document.querySelectorAll('#browse .live-controls .pill-toggle')].find(b => b.textContent === 'Live now').click()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .match-grid .match-card')].map(t => t.textContent); return ts.some(x => x.includes('Alpha')) && ts.every(x => !x.includes('Future')); })()`), 'Live now hides the upcoming match, keeps live ones');
+  await page.eval(`(() => { const s = [...document.querySelectorAll('#browse .live-controls select')].find(x => [...x.options].some(o => o.textContent === 'Most watched')); s.value = 'popular'; s.dispatchEvent(new Event('change')); })()`);
+  await until(() => page.eval(`document.querySelector('#browse .match-grid .match-card .match-title').textContent.includes('Alpha')`), 'Most watched sorts Alpha (5000 viewers) to the top');
+  ok('live: Live-now hides upcoming; Most-watched sorts by popularity');
 
   // 32g. auto-update banner: hidden at boot; showUpdate drives it; Restart calls install (stubbed)
   assert.strictEqual(await page.eval(`document.getElementById('update-banner').hidden`), true, 'update banner should be hidden at boot');

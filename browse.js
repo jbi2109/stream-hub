@@ -252,6 +252,23 @@ const catalogLogo = (o) => o.thumbnail_url || o.thumbnail || o.poster || o.logo 
 const catalogTitle = (o) => o.name || o.title || o.event
   || (o.homeTeam && o.awayTeam ? `${o.homeTeam} v ${o.awayTeam}` : '') || o.channel_name || o.stream_key || '';
 
+// Best-effort "starts at" (ms) + popularity from a catalog node — for the Live tab's "Live now" filter
+// and "Most watched" sort. Generic field names; missing/unparseable -> null / 0.
+const CATALOG_START_FIELDS = ['date', 'match_timestamp', 'timestamp', 'starts_at', 'startTime', 'start', 'kickoff'];
+const CATALOG_VIEW_FIELDS = ['viewers', 'viewer_count', 'views', 'watching', 'popularity'];
+function catalogStart(o) {
+  for (const k of CATALOG_START_FIELDS) {
+    const v = o[k];
+    if (typeof v === 'number' && v > 0) return v < 1e12 ? v * 1000 : v; // seconds -> ms
+    if (typeof v === 'string' && v) { const t = Date.parse(v); if (!isNaN(t)) return t; }
+  }
+  return null;
+}
+function catalogViews(o) {
+  for (const k of CATALOG_VIEW_FIELDS) if (typeof o[k] === 'number') return o[k];
+  return o.popular === true ? 1 : 0; // streamed.pk-style boolean floats flagged matches up
+}
+
 // Best-effort language from a source label/title (fuzzy — catalogs rarely give a clean field). Used only
 // to sort the source picker; the user chose "prefer but show all", so a mis-detect only mis-orders.
 const LANG_WORDS = { english: 'English', spanish: 'Spanish', french: 'French', german: 'German',
@@ -279,6 +296,7 @@ async function fetchCatalog(url) {
     if (typeof node !== 'object') return;
     const t = catalogTitle(node) || parentTitle;
     const nodeCat = String(node.category || node.sport || node.group || cat || node.tournament || '').toLowerCase();
+    const nodeStart = catalogStart(node), nodeViews = catalogViews(node); // match-level time/popularity
     // per-item channels/streams/sources array -> one row per entry (grouped back into the match later)
     for (const key of CATALOG_CHANNEL_ARRAYS) {
       if (Array.isArray(node[key])) {
@@ -287,13 +305,15 @@ async function fetchCatalog(url) {
           const embed = ch && typeof ch === 'object' && catalogEmbed(ch);
           if (embed) out.push({ matchTitle: t || 'Stream', label: catalogTitle(ch) || '', embed,
             category: String(ch.category || ch.sport || nodeCat || '').toLowerCase(),
-            logo: catalogLogo(ch) || catalogLogo(node), language: ch.language || ch.lang || parseLanguage(catalogTitle(ch) || t) });
+            logo: catalogLogo(ch) || catalogLogo(node), language: ch.language || ch.lang || parseLanguage(catalogTitle(ch) || t),
+            startsAt: catalogStart(ch) ?? nodeStart, popularity: catalogViews(ch) || nodeViews });
           else if (ch && typeof ch === 'object' && typeof ch.source === 'string' && ch.id != null) {
             // two-hop shape: {source,id} with no embed -> resolve later via a derived /stream/{source}/{id} URL
             out.push({ matchTitle: t || 'Stream', label: String(ch.source), embed: null,
               unresolved: { source: ch.source, id: String(ch.id) },
               category: String(ch.category || ch.sport || nodeCat || '').toLowerCase(),
-              logo: catalogLogo(node) || catalogLogo(ch), language: ch.language || ch.lang || '' });
+              logo: catalogLogo(node) || catalogLogo(ch), language: ch.language || ch.lang || '',
+              startsAt: nodeStart, popularity: nodeViews });
           }
         }
       }
@@ -301,7 +321,8 @@ async function fetchCatalog(url) {
     // a direct embed on this node
     const embed = catalogEmbed(node);
     if (embed) out.push({ matchTitle: t || 'Stream', label: String(node.server || node.quality || node.channel_name || ''),
-      embed, category: nodeCat, logo: catalogLogo(node), language: node.language || node.lang || parseLanguage(t) });
+      embed, category: nodeCat, logo: catalogLogo(node), language: node.language || node.lang || parseLanguage(t),
+      startsAt: nodeStart, popularity: nodeViews });
     // recurse into nested objects/arrays, carrying a category down from a non-wrapper string key ("Soccer")
     for (const [k, v] of Object.entries(node)) {
       if (v && typeof v === 'object' && !CATALOG_EMBED_FIELDS.includes(k) && !CATALOG_CHANNEL_ARRAYS.includes(k)) {
@@ -382,9 +403,11 @@ function groupMatches(rows) {
   for (const r of rows) {
     const key = matchKey(r.matchTitle) || r.embed;
     let g = byKey.get(key);
-    if (!g) { g = { title: r.matchTitle || 'Stream', category: r.category || '', logo: r.logo || '', sources: [] }; byKey.set(key, g); }
+    if (!g) { g = { title: r.matchTitle || 'Stream', category: r.category || '', logo: r.logo || '', sources: [], startsAt: null, popularity: 0 }; byKey.set(key, g); }
     if (!g.logo && r.logo) g.logo = r.logo;
     if (!g.category && r.category) g.category = r.category;
+    if (r.startsAt != null && (g.startsAt == null || r.startsAt < g.startsAt)) g.startsAt = r.startsAt; // earliest
+    if ((r.popularity || 0) > g.popularity) g.popularity = r.popularity || 0; // most-watched signal
     // dedup resolved sources by embed, unresolved (two-hop) by source+id
     const dup = r.embed
       ? g.sources.some((s) => s.embed === r.embed)
@@ -509,20 +532,34 @@ function renderLiveTab(container) {
 
   const controls = document.createElement('div'); controls.className = 'live-controls';
   const catBar = document.createElement('div'); catBar.className = 'subtabs';
+  const filterRow = document.createElement('div'); filterRow.className = 'live-filter-row';
   const search = document.createElement('input'); search.className = 'browse-search'; search.placeholder = 'Search live…';
-  controls.append(catBar, search);
+  filterRow.append(search);
+  controls.append(catBar, filterRow);
   const grid = document.createElement('div'); grid.className = 'grid match-grid'; grid.textContent = 'Loading…';
   nodes.push(controls, grid);
   container.replaceChildren(...nodes);
 
-  let all = [], cat = 'all', allRows = [];
+  let all = [], cat = 'all', allRows = [], liveSort = 'default', liveOnly = false;
   const draw = () => {
     const q = search.value.trim().toLowerCase();
     let items = cat === 'all' ? all : all.filter((it) => it.category === cat);
     if (q) items = items.filter((it) => (it.title || '').toLowerCase().includes(q));
+    if (liveOnly) items = items.filter((it) => !it.startsAt || it.startsAt <= Date.now() + 60000); // hide upcoming (60s grace)
+    if (liveSort === 'popular') items = items.slice().sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
     if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
     grid.replaceChildren(...items.slice(0, 400).map(matchCard));
   };
+
+  // Most-watched sort + Live-now filter (both operate on the already-fetched matches; no extra network)
+  filterRow.append(
+    pillSelect('Default order', 'default', [['popular', 'Most watched']], liveSort, (v) => { liveSort = v; draw(); }),
+  );
+  const liveNowBtn = document.createElement('button');
+  liveNowBtn.className = 'pill-toggle';
+  liveNowBtn.textContent = 'Live now';
+  liveNowBtn.onclick = () => { liveOnly = !liveOnly; liveNowBtn.classList.toggle('active', liveOnly); draw(); };
+  filterRow.append(liveNowBtn);
   const renderCatBar = () => {
     const cats = ['all', ...[...new Set(all.map((it) => it.category).filter(Boolean))].sort()];
     catBar.replaceChildren();
