@@ -8,6 +8,10 @@ const fs = require('fs');
 // e2e tests run against a throwaway profile so they never touch real bookmarks/logins
 if (process.argv.includes('--test-profile')) {
   app.setPath('userData', path.join(os.tmpdir(), 'stream-hub-test-profile'));
+} else if (!app.isPackaged) {
+  // Dev runs (npm start) use a separate `-dev` data folder so testing never touches the
+  // installed app's real sources/logins. The packaged build keeps the default folder.
+  app.setPath('userData', app.getPath('userData') + '-dev');
 }
 
 // Packaged app: single instance only — a second launch focuses the existing window.
