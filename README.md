@@ -13,7 +13,7 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 ## Features
 
 - **Browse home (TMDB)** — the app's own landing page: discover Movies, TV, and Anime
-  from [TMDB](https://www.themoviedb.org/), **filter by genre / year / streaming provider and sort**,
+  from [TMDB](https://www.themoviedb.org/), **filter by genre / year / language / country / provider and sort**,
   **page** through the whole catalog (20 at a time), search, and open a title's **native detail page**
   (overview, genres, rating, cast, seasons + episode picker with stills, in-app trailer,
   "where to watch"). Pick which **source** to play on (defaults to your last-used), and the

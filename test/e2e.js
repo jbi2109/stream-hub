@@ -100,12 +100,15 @@ const tmdb = http.createServer((req, res) => {
     res.end(JSON.stringify({ genres: [{ id: 28, name: 'Action & Adventure' }, { id: 16, name: 'Animation' }, { id: 18, name: 'Drama' }] }));
   } else if (/\/watch\/providers\/(movie|tv)$/.test(p)) {
     res.end(JSON.stringify({ results: [{ provider_id: 8, provider_name: 'Netflix', display_priority: 1 }, { provider_id: 337, provider_name: 'Disney Plus', display_priority: 2 }] }));
+  } else if (/\/configuration\/languages$/.test(p)) {
+    res.end(JSON.stringify([{ iso_639_1: 'en', english_name: 'English' }, { iso_639_1: 'ja', english_name: 'Japanese' }, { iso_639_1: 'ko', english_name: 'Korean' }]));
+  } else if (/\/configuration\/countries$/.test(p)) {
+    res.end(JSON.stringify([{ iso_3166_1: 'US', english_name: 'United States' }, { iso_3166_1: 'KR', english_name: 'South Korea' }, { iso_3166_1: 'JP', english_name: 'Japan' }]));
   } else if (/\/discover\/(movie|tv)$/.test(p)) {
-    // echo page + with_genres into the title so pagination + filters are assertable
+    // echo page + filters into the title so pagination + each filter are assertable
     const page = +(q.get('page') || 1);
-    res.end(JSON.stringify({ page, total_pages: 3, results: [
-      { id: 42, title: `Disc P${page} G${q.get('with_genres') || 'all'}`, name: `Disc P${page} G${q.get('with_genres') || 'all'}`, poster_path: '/x.jpg' },
-    ] }));
+    const t = `Disc P${page} G${q.get('with_genres') || 'all'} L${q.get('with_original_language') || '-'} C${q.get('with_origin_country') || '-'}`;
+    res.end(JSON.stringify({ page, total_pages: 3, results: [{ id: 42, title: t, name: t, poster_path: '/x.jpg' }] }));
   } else {
     res.end(JSON.stringify({ page: 1, total_pages: 1, results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
   }
@@ -1067,13 +1070,17 @@ async function main() {
   assert.strictEqual(await page.eval(`document.getElementById('sources-overlay').hidden`), false, 'resume restores the live Sources overlay');
   ok('resume: ⏯ reveals the last-watched page and restores the live Sources UI');
 
-  // 32F1. v0.2.10 browse filters: Movies tab shows 4 filter selects; a genre re-queries /discover.
+  // 32F1. v0.2.10/.11 browse filters: Movies tab shows 6 filter selects; genre/language/country re-query.
   await page.eval(`document.getElementById('browse-btn').click()`); // -> Movies tab (resets off Live)
-  await until(() => page.eval(`document.querySelectorAll('#browse .browse-filters select').length === 4`), 'four filter selects render');
+  await until(() => page.eval(`document.querySelectorAll('#browse .browse-filters select').length === 6`), 'six filter selects render');
   await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P1'))`), 'discover page-1 card');
   await page.eval(`(() => { const s = document.querySelectorAll('#browse .browse-filters select')[0]; s.value = '28'; s.dispatchEvent(new Event('change')); })()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('G28'))`), 'genre filter passes with_genres=28 to /discover');
-  ok('browse: filter bar renders 4 selects; genre filter re-queries discover');
+  await page.eval(`(() => { const s = document.querySelectorAll('#browse .browse-filters select')[2]; s.value = 'ko'; s.dispatchEvent(new Event('change')); })()`); // Language
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Lko'))`), 'language filter passes with_original_language=ko');
+  await page.eval(`(() => { const s = document.querySelectorAll('#browse .browse-filters select')[3]; s.value = 'KR'; s.dispatchEvent(new Event('change')); })()`); // Country
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('CKR'))`), 'country filter passes with_origin_country=KR');
+  ok('browse: filter bar renders 6 selects; genre/language/country re-query discover');
 
   // 32F2. v0.2.10 pagination: Prev disabled on page 1; Next loads page 2 (20/page), Prev then enabled.
   assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .pager-btn')].find(b => b.textContent.includes('Prev')).disabled`), true, 'Prev disabled on page 1');

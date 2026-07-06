@@ -4,7 +4,7 @@ let browseTab = 'movie'; // 'movie' | 'tv' | 'anime' | 'live' | 'youtube'
 let browseQuery = '';
 let browseTimer = null;
 let browsePage = 1;
-let browseFilters = { genre: '', year: '', sort: '', provider: '' };
+let browseFilters = { genre: '', year: '', sort: '', provider: '', language: '', country: '' };
 const debouncedBrowse = () => { clearTimeout(browseTimer); browseTimer = setTimeout(renderBrowse, 350); };
 
 // Full TMDB object (details/season/discover), not just the .results list.
@@ -52,6 +52,32 @@ async function ensureProviders(mt) {
       .slice(0, 16).map((p) => [String(p.provider_id), p.provider_name]); // the majors, by display priority
   } catch {}
   providerCache.set(mt, list);
+  return list;
+}
+
+// Language + country option lists (global, not per media type) from TMDB's config endpoints, cached.
+let languageList = null; // [[iso_639_1, name], ...]
+let countryList = null;  // [[iso_3166_1, name], ...]
+async function ensureLanguages() {
+  if (languageList) return languageList;
+  let list = [];
+  try {
+    const d = await tmdbGet('/configuration/languages', {});
+    list = (d || []).map((l) => [l.iso_639_1, l.english_name || l.name || l.iso_639_1])
+      .filter(([code]) => code).sort((a, b) => a[1].localeCompare(b[1]));
+  } catch {}
+  languageList = list;
+  return list;
+}
+async function ensureCountries() {
+  if (countryList) return countryList;
+  let list = [];
+  try {
+    const d = await tmdbGet('/configuration/countries', {});
+    list = (d || []).map((c) => [c.iso_3166_1, c.english_name || c.native_name || c.iso_3166_1])
+      .filter(([code]) => code).sort((a, b) => a[1].localeCompare(b[1]));
+  } catch {}
+  countryList = list;
   return list;
 }
 
@@ -105,7 +131,7 @@ function browseTabBar() {
     browseTab = id;
     browseQuery = '';
     browsePage = 1;
-    browseFilters = { genre: '', year: '', sort: '', provider: '' }; // genre lists differ per media type
+    browseFilters = { genre: '', year: '', sort: '', provider: '', language: '', country: '' }; // genre lists differ per media type
     renderBrowse();
   }, 'tabs');
 }
@@ -149,12 +175,15 @@ async function renderBrowse() {
   $('browse').replaceChildren(...nodes);
 
   // filters (cached after the first fetch)
-  const [genres, providers] = await Promise.all([ensureGenres(mt), ensureProviders(mt)]);
+  const [genres, providers, languages, countries] = await Promise.all(
+    [ensureGenres(mt), ensureProviders(mt), ensureLanguages(), ensureCountries()]);
   if (browseTab !== tabAtRender) return; // user switched tabs mid-fetch
   const setFilter = (key, v) => { browseFilters[key] = v; browsePage = 1; renderBrowse(); };
   filterBar.replaceChildren(
     pillSelect('All Genres', '', genres, browseFilters.genre, (v) => setFilter('genre', v)),
     pillSelect('All Years', '', browseYears(), browseFilters.year, (v) => setFilter('year', v)),
+    pillSelect('All Languages', '', languages, browseFilters.language, (v) => setFilter('language', v)),
+    pillSelect('All Countries', '', countries, browseFilters.country, (v) => setFilter('country', v)),
     pillSelect('Most Popular', 'popularity.desc', browseSorts(mt).slice(1), browseFilters.sort, (v) => setFilter('sort', v)),
     pillSelect('All Providers', '', providers, browseFilters.provider, (v) => setFilter('provider', v)),
   );
@@ -194,10 +223,14 @@ async function fetchBrowse(tab, query, filters, page) {
   }
   const p = { page, sort_by: filters.sort || 'popularity.desc' };
   const genres = [];
-  if (tab === 'anime') { genres.push('16'); p.with_original_language = 'ja'; } // keep anime = Japanese animation
+  if (tab === 'anime') genres.push('16'); // keep anime = animation
   if (filters.genre) genres.push(filters.genre);
   if (genres.length) p.with_genres = genres.join(',');
   if (filters.year) p[yearKey] = filters.year;
+  // language: an explicit pick wins; else anime defaults to Japanese, other tabs unrestricted
+  if (filters.language) p.with_original_language = filters.language;
+  else if (tab === 'anime') p.with_original_language = 'ja';
+  if (filters.country) p.with_origin_country = filters.country;
   if (filters.provider) { p.with_watch_providers = filters.provider; p.watch_region = settings.watchRegion || 'US'; }
   if ((filters.sort || '').startsWith('vote_average')) p['vote_count.gte'] = 200; // avoid a few-vote 10.0s
   return tmdbGet(`/discover/${mt}`, p);
