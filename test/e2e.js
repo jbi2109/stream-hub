@@ -905,8 +905,10 @@ async function main() {
   await closeTarget(loginWin.id);
   ok('login: in-page nav to a google-login host opens a standalone window, not the webview');
 
-  // 32z. v0.2.2: ad-block cosmetic/scriptlet injection is applied on normal hosts but SKIPPED on YouTube
-  //       hosts (keeps the player alive). The '###sh-cosmetic' rule hides #sh-cosmetic everywhere but YT.
+  // 32z. v0.2.3: YouTube hosts get cosmetic element-hiding CSS (hides Sponsored feed tiles / masthead)
+  //       but NOT scriptlets (which break the player — enforced by getInjectionRules:false in main.js +
+  //       the manual player check; scriptlet bodies aren't resolvable under the parse() test engine).
+  //       The '###sh-cosmetic' rule hides #sh-cosmetic on the normal host AND the YouTube host.
   await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/cosmetic-check'`);
   const ccTarget = await until(async () =>
     (await targets()).find((t) => t.url.startsWith(`${SITE}/cosmetic-check`) && t.webSocketDebuggerUrl), 'guest for cosmetic-check');
@@ -917,11 +919,10 @@ async function main() {
   const ytTarget = await until(async () =>
     (await targets()).find((t) => t.url.startsWith(YT_FIX) && t.webSocketDebuggerUrl), 'guest for yt-fix host');
   const ytGuest = await CDP.connect(ytTarget.webSocketDebuggerUrl);
-  await sleep(1500); // past cosmetic-injection time — it must NOT have been applied here
-  assert.strictEqual(await ytGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display`), 'block',
-    'cosmetic/scriptlet injection must be skipped on YouTube hosts (would break the player)');
+  await until(() => ytGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display === 'none'`),
+    'cosmetic CSS also injected on the YouTube host (sponsored-tile hiding restored)');
   ytGuest.close();
-  ok('adblock: cosmetic/scriptlet injection skipped on YouTube hosts, applied elsewhere');
+  ok('adblock: YouTube gets cosmetic CSS (hides sponsored tiles), scriptlets withheld');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
