@@ -103,7 +103,8 @@ one and **Import** in the other to carry your setup over.
 | `core.js` | Renderer foundation: DOM helper, storage, shared state, view switching. |
 | `media.js` | Page inspection + Continue-Watching capture. |
 | `sources.js` | Settings source list + play-URL building/routing. |
-| `browse.js` | TMDB browse (Movies/TV/Anime) + the Live TV catalog tab. |
+| `browse.js` | TMDB browse (Movies/TV/Anime): filters, pagination, poster grid. |
+| `live.js` | Live TV engine: catalog fetching/parsing (single- + two-hop), match grouping, source pages. |
 | `detail.js` | Native TMDB detail page + episode picker. |
 | `library.js` | Continue Watching / Watch Later grid. |
 | `wizard.js` | Guided "Add player / source" modal. |
@@ -121,7 +122,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs an 81-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs an 86-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, single- and two-hop live catalogs, the add-player wizard, the tabbed library, the

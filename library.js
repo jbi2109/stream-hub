@@ -15,6 +15,7 @@ function card(item, isCont) {
   if (item.poster) {
     const img = document.createElement('img');
     img.className = 'poster';
+    img.loading = 'lazy';
     img.src = item.poster;
     img.onerror = () => { img.remove(); wrap.classList.add('noposter'); };
     wrap.append(img);
@@ -94,6 +95,7 @@ function card(item, isCont) {
   el.onclick = (e) => {
     // clicks on a control (✕ / category dropdown / source dropdown) must never open the show
     if (e.target.closest('.card-actions') || e.target.closest('.card-source')) return;
+    if (!/^https?:/i.test(item.url || '')) return; // placeholder entries (saved with no source) can't open
     activeKey = item.key;
     open(item.url);
     intendedMedia = { title: item.title, poster: item.poster, live: item.type === 'live' || undefined };

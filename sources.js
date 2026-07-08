@@ -123,6 +123,7 @@ function openOn(src, kind, type, id, season, episode, title, poster) {
   open(buildUrl(src, type, id, season, episode)); // open()->hideAll() clears playing/intendedMedia; re-set after
   playing = { kind, type, id, season, episode, title, poster };
   intendedMedia = { title, poster, id };
+  lastPlayed.playing = playing; store('lastPlayed', lastPlayed); // ⏯ Resume restores the source-switcher
   renderSourceSwitch();
 }
 

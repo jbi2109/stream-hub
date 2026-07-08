@@ -5,6 +5,33 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.3.0 — Performance & quality-of-life (July 2026)
+
+### Performance
+- **Live TV loads instantly on re-entry** — catalog results are cached for ~90 seconds, so coming back
+  from a source page (or flicking between tabs) no longer refetches every catalog. A **↻ Refresh**
+  button forces a fresh fetch when you want one.
+- **Per-catalog status chips** — each catalog shows `name ✓ count`, `✕ failed`, or `…` while loading, so
+  a timed-out or dead catalog is visible instead of silently missing.
+- **Two-hop sources resolve in parallel** — opening a match with several `{source, id}` streams fires
+  the lookups together instead of one-after-another, and resolved results are cached across grid
+  rebuilds.
+- **Lazy image loading** everywhere (browse posters, live thumbnails, library cards, episode stills,
+  cast photos) — big grids no longer eager-load hundreds of images.
+
+### Quality of life
+- **⏯ Resume survives a restart** — the last-watched show is persisted, so the Resume button works
+  immediately after relaunching the app. Resuming a movie/show also restores the top-bar source
+  switcher (not just the live Sources UI).
+- **Window size and position are remembered** across restarts (including maximized state).
+- Changing the **watch region** now refreshes the provider filter list without a restart.
+- Library entries saved with no source configured can no longer navigate the player to a broken page.
+
+### Internals
+- The live TV engine moved into its own file (`live.js`), separated from the TMDB browse code.
+
+---
+
 ## v0.2.8 – v0.2.13 — Layout, filters & quality-of-life (July 2026)
 
 ### Features

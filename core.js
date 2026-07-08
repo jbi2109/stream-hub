@@ -32,9 +32,9 @@ let intendedMedia = null;            // {title,poster,id?} known title/poster fo
 let lastSourceUrl = load('lastSource', null); // last source the user watched on
 let defaultSource = load('defaultSource', null); // preferred player URL for Movies/TV/Anime
 let currentLiveMatch = null;         // the live match being watched (for the topbar "Sources" reopen)
-let lastLiveMatch = null;            // last live match watched (kept across leave, for the ⏯ Resume button)
-let lastPlayedLive = false;          // was the last open() a live stream? (Resume restores the Sources UI)
-let lastPlayedUrl = null;            // the ⏯ Resume target url (survives the webview navigating elsewhere)
+// ⏯ Resume target — persisted so Resume survives a restart. { url, live, match?, playing? }:
+// live picks attach the match (Sources page restore); VOD attaches `playing` (source-switcher restore).
+let lastPlayed = load('lastPlayed', null);
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
@@ -106,23 +106,31 @@ function open(url, track = true) {
   webview.hidden = false;
   webview.src = url;
   if (track) {
-    lastPlayedUrl = url;
-    lastPlayedLive = false; lastLiveMatch = null; // a generic (non-live) watch; live enriches after open()
-    $('resume-btn').hidden = false;               // something is now resumable
+    lastPlayed = { url, live: false };  // a generic watch; live picks / openOn enrich right after open()
+    store('lastPlayed', lastPlayed);
+    $('resume-btn').hidden = false;     // something is now resumable
   }
 }
 
 // ⏯ Resume: go back to the last-watched page. Reveal it when the webview still holds it (instant, keeps the
-// live stream / VOD position); reload it when the webview moved on (e.g. the YouTube tab). Restores the live
-// Sources UI if the last watch was live. // ponytail: reveal when still loaded, reload when moved on.
+// live stream / VOD position); reload it when the webview moved on (YouTube tab) or after a restart.
+// Restores the live Sources UI or the VOD source-switcher for whatever was playing.
 function resumeLast() {
-  if (!lastPlayedUrl) return;           // nothing watched this session
-  const wasLive = lastPlayedLive, m = lastLiveMatch;
+  if (!lastPlayed || !lastPlayed.url) return; // nothing watched yet
+  const lp = lastPlayed;
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
-  if (webview.getAttribute('src') !== lastPlayedUrl) webview.src = lastPlayedUrl;
-  if (wasLive && m) { currentLiveMatch = m; $('live-sources').hidden = false; $('sources-overlay').hidden = false; }
+  if (webview.getAttribute('src') !== lp.url) webview.src = lp.url; // reveal if loaded, reload if moved on
+  if (lp.live && lp.match) {
+    currentLiveMatch = lp.match;
+    intendedMedia = { title: lp.match.title, poster: lp.match.logo, live: true };
+    $('live-sources').hidden = false; $('sources-overlay').hidden = false;
+  } else if (lp.playing) {
+    playing = lp.playing;
+    intendedMedia = { title: lp.playing.title, poster: lp.playing.poster, id: lp.playing.id };
+    renderSourceSwitch();
+  }
 }
 
 function showHome() {

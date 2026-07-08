@@ -193,9 +193,14 @@ function openGoogleLoginWindow(url, returnHost) {
 }
 
 function createWindow() {
+  // Restore the last window size/position (+ maximized), saved on close to userData/window.json.
+  const boundsPath = path.join(app.getPath('userData'), 'window.json');
+  let saved = null;
+  try { saved = JSON.parse(fs.readFileSync(boundsPath, 'utf8')); if (!(saved.width > 200 && saved.height > 200)) saved = null; } catch {}
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
+    ...(saved && { x: saved.x, y: saved.y, width: saved.width, height: saved.height }),
     autoHideMenuBar: true,
     backgroundColor: '#14161a',
     icon: path.join(__dirname, 'build', 'icon.ico'), // taskbar/window icon (dev too — win.icon only applies when packaged)
@@ -205,6 +210,10 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
+  });
+  if (saved && saved.maximized) win.maximize();
+  win.on('close', () => {
+    try { fs.writeFileSync(boundsPath, JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() })); } catch {}
   });
   // Give every guest <webview> a preload that neuters WebAuthn in its main world.
   win.webContents.on('will-attach-webview', (_e, webPreferences) => {

@@ -121,6 +121,7 @@ function importSettings(obj) {
 }
 
 // ---- bootstrap ----
+if (lastPlayed && lastPlayed.url) $('resume-btn').hidden = false; // ⏯ Resume survives a restart
 wireSettingsControls();
 rekeyLibrary();          // host-independent keys + merge duplicate cards (before capture/heal)
 renderSources();

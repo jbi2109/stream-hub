@@ -160,7 +160,7 @@ function renderDetail(kind, type, id, d) {
     row.className = 'cast-row';
     row.append(...cast.map((c) => {
       const card = document.createElement('div'); card.className = 'cast';
-      const img = document.createElement('img'); img.src = IMG(c.profile_path, 'w185'); img.onerror = () => img.classList.add('noimg');
+      const img = document.createElement('img'); img.loading = 'lazy'; img.src = IMG(c.profile_path, 'w185'); img.onerror = () => img.classList.add('noimg');
       const nm = document.createElement('div'); nm.className = 'cast-name'; nm.textContent = c.name;
       const ch = document.createElement('div'); ch.className = 'cast-char'; ch.textContent = c.character || '';
       card.append(img, nm, ch);
@@ -190,6 +190,7 @@ function episodeCard(kind, type, id, ep, onPick, title, poster) {
   const el = document.createElement('div');
   el.className = 'episode';
   const still = document.createElement('img');
+  still.loading = 'lazy';
   still.src = IMG(ep.still_path, 'w300');
   still.onerror = () => still.classList.add('noimg');
   const body = document.createElement('div');

@@ -156,11 +156,14 @@ const catalogB = http.createServer((req, res) => {
 
 // Two-hop catalog (streamed.pk-style): the matches list gives {source,id} with NO embed; the real embed
 // comes from a second request to the derived /api/stream/{source}/{id}. Exercises Part C.
+// `twoHopHits` counts matches-list fetches so the live-catalog cache is assertable.
+let twoHopHits = 0;
 const catalogTwoHop = http.createServer((req, res) => {
   res.setHeader('content-type', 'application/json');
   if (req.url.startsWith('/api/stream/alpha/m1')) {
     res.end(JSON.stringify([{ streamNo: 1, language: 'English', hd: true, embedUrl: `${PLAYER}/live/900`, source: 'alpha' }]));
   } else if (req.url.startsWith('/api/matches')) {
+    twoHopHits++;
     res.end(JSON.stringify([{ id: 'm1', title: 'Hop Match', category: 'soccer', poster: '', sources: [{ source: 'alpha', id: 'm1' }] }]));
   } else { res.statusCode = 404; res.end('[]'); }
 });
@@ -1114,6 +1117,50 @@ async function main() {
   await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/900')`), 'Resume returns to the live show after YouTube (reload)');
   assert.strictEqual(await page.eval(`document.getElementById('sources-overlay').hidden`), false, 'Resume restores the live Sources overlay after YouTube');
   ok('resume: the YouTube tab does not wipe the Resume target');
+
+  // 32Q1. v0.3.0: live catalog cache — re-entering the Live tab within the TTL does NOT refetch;
+  //        ↻ Refresh forces a refetch; a loaded catalog shows a ✓ status chip.
+  const hits0 = twoHopHits;
+  await page.eval(`document.getElementById('home-btn').click(); document.getElementById('live-btn').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Hop Match'))`), 'cached live grid renders');
+  assert.strictEqual(twoHopHits, hits0, 're-entering the Live tab within the TTL must not refetch the catalog');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#browse .live-chip')].some(c => c.textContent.includes('✓'))`), 'a loaded catalog should show a ✓ status chip');
+  await page.eval(`document.getElementById('live-refresh').click()`);
+  await until(() => Promise.resolve(twoHopHits === hits0 + 1), '↻ Refresh refetches the catalog');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Hop Match'))`), 'grid re-renders after refresh');
+  ok('live: catalog cache skips refetch within TTL; ↻ Refresh refetches; ✓ chip shows');
+
+  // 32Q2. v0.3.0: a dead catalog shows a ✕ failed status chip (nothing listens on 9399)
+  await page.eval(`addSource({ name: 'DeadCat', category: 'live', catalogUrl: 'http://127.0.0.1:9399/x' })`);
+  await page.eval(`document.getElementById('live-refresh').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .live-chip')].some(c => c.textContent.includes('DeadCat') && c.textContent.includes('✕'))`), 'dead catalog shows a ✕ chip');
+  await page.eval(`sources = sources.filter((s) => s.name !== 'DeadCat'); store('sources', sources); renderSources();`);
+  ok('live: a failed catalog is visible as a ✕ status chip');
+
+  // 32Q3. v0.3.0: grid images are lazy-loaded
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await until(() => page.eval(`!!document.querySelector('#browse .grid .card img.poster')`), 'movie grid for lazy check');
+  assert.strictEqual(await page.eval(`document.querySelector('#browse .grid .card img.poster').loading`), 'lazy', 'poster images should be lazy');
+  ok('perf: grid images use loading="lazy"');
+
+  // 32Q4. v0.3.0: ⏯ Resume survives a restart (lastPlayed persisted) and restores the live UI
+  await page.eval(`location.reload()`);
+  await until(() => page.eval(`!!document.querySelector('#browse .tabs .tab')`), 'reloaded for resume persistence');
+  assert.strictEqual(await page.eval(`document.getElementById('resume-btn').hidden`), false, 'resume-btn should be visible after a restart');
+  await page.eval(`resumeLast()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/900')`), 'resume reloads the last-watched live embed after restart');
+  assert.strictEqual(await page.eval(`document.getElementById('sources-overlay').hidden`), false, 'resume restores the Sources overlay after restart');
+  ok('resume: survives a restart and restores the live Sources UI');
+
+  // 32Q5. v0.3.0: a library entry with a non-http URL (saved with no sources) cannot open the webview
+  await page.eval(`(() => { later.unshift({ key: 'nosrc#1', title: 'NoSrc', url: 'tmdb:tv/42', type: 'tv', addedAt: Date.now() }); store('watchlater', later); })()`);
+  await page.eval(`showBrowse(); document.getElementById('home-btn').click()`);
+  await clickTab('.tabs', 'Watch Later');
+  await until(() => page.eval(`[...document.querySelectorAll('#home .grid .card')].some(c => c.textContent.includes('NoSrc'))`), 'placeholder card renders');
+  await page.eval(`[...document.querySelectorAll('#home .grid .card')].find(c => c.textContent.includes('NoSrc')).click()`);
+  assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), true, 'a non-http entry must not open the webview');
+  await page.eval(`later = later.filter((w) => w.key !== 'nosrc#1'); store('watchlater', later);`);
+  ok('library: non-http placeholder entries cannot navigate the webview');
 
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)

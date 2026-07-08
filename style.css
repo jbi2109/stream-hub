@@ -487,6 +487,10 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 /* ---- live provider catalog (Live TV tab) ---- */
 .live-controls { margin-bottom: 14px; }
 .live-controls .browse-search { margin-bottom: 0; }
+.live-status { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.live-chip { font-size: 11px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
+.live-chip.ok { color: var(--text); }
+.live-chip.err { color: #ef4444; border-color: #ef4444; }
 .live-filter-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .live-filter-row .browse-search { width: auto; flex: 1 1 200px; }
 .pill-toggle {
