@@ -1137,10 +1137,10 @@ async function main() {
   await page.eval(`sources = sources.filter((s) => s.name !== 'DeadCat'); store('sources', sources); renderSources();`);
   ok('live: a failed catalog is visible as a ✕ status chip');
 
-  // 32Q3. v0.3.0: grid images are lazy-loaded
-  await page.eval(`document.getElementById('browse-btn').click()`);
-  await until(() => page.eval(`!!document.querySelector('#browse .grid .card img.poster')`), 'movie grid for lazy check');
-  assert.strictEqual(await page.eval(`document.querySelector('#browse .grid .card img.poster').loading`), 'lazy', 'poster images should be lazy');
+  // 32Q3. v0.3.0: grid images are lazy-loaded. Build the cards directly (a rendered grid's <img> can be
+  // onerror-removed when the fixture poster 404s, which races the assertion) — the attribute is what matters.
+  assert.strictEqual(await page.eval(`posterCard('movie', { id: 1, title: 'T', poster_path: '/p.jpg' }).querySelector('img').loading`), 'lazy', 'poster images should be lazy');
+  assert.strictEqual(await page.eval(`matchCard({ title: 'M', logo: '/x.png', sources: [] }).querySelector('img').loading`), 'lazy', 'match thumbs should be lazy');
   ok('perf: grid images use loading="lazy"');
 
   // 32Q4. v0.3.0: ⏯ Resume survives a restart (lastPlayed persisted) and restores the live UI

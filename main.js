@@ -236,7 +236,7 @@ function initUpdater() {
   autoUpdater.on('update-not-available', () => status('none'));
   autoUpdater.on('download-progress', (p) => send('update-progress', { percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => send('update-ready', { version: info.version }));
-  autoUpdater.on('error', (e) => { console.error('updater:', e && e.message); status('error'); }); // offline / no release yet
+  autoUpdater.on('error', (e) => { console.error('updater:', e && e.message); status('error', { message: e && e.message }); }); // offline / no release yet
   autoUpdater.checkForUpdates().catch(() => {});
 }
 

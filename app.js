@@ -73,7 +73,7 @@ function wireSettingsControls() {
       setUpdateStatus('Checking…');
       const r = await window.sh.checkForUpdates().catch(() => ({ error: 'failed' }));
       if (r && r.state === 'dev') setUpdateStatus('dev build');
-      else if (r && r.error) setUpdateStatus('Check failed'); // else the update-status events set the text
+      else if (r && r.error) setUpdateStatus('Check failed — ' + r.error); // else the update-status events set the text
     };
   }
 }
@@ -91,7 +91,9 @@ function setUpdateStatus(text) { const s = $('update-status'); if (s) s.textCont
 function showUpdate(state) {
   const el = $('update-banner');
   if (state.type === 'status') {
-    setUpdateStatus(UPDATE_STATUS_TEXT[state.state] || '');
+    const base = UPDATE_STATUS_TEXT[state.state] || '';
+    // surface the real reason on failures ("Check failed" alone is undiagnosable from a screenshot)
+    setUpdateStatus(state.state === 'error' && state.message ? `${base} — ${state.message}` : base);
   } else if (state.type === 'progress') {
     el.textContent = `Downloading update… ${state.percent}%`;
     el.hidden = false;
