@@ -125,6 +125,51 @@ function openOn(src, kind, type, id, season, episode, title, poster) {
   intendedMedia = { title, poster, id };
   lastPlayed.playing = playing; store('lastPlayed', lastPlayed); // ⏯ Resume restores the source-switcher
   renderSourceSwitch();
+  renderEpisodeSwitch();
+}
+
+// Season/episode counts for a TV show (for the topbar episode switcher + auto-play-next rollover).
+// One cached TMDB call per show; specials (season 0) and empty seasons filtered out, like the detail page.
+const seasonsCache = new Map(); // tmdbId -> [{ n, count }]
+async function ensureSeasons(id) {
+  if (seasonsCache.has(id)) return seasonsCache.get(id);
+  let list = [];
+  try {
+    const d = await tmdbGet(`/tv/${id}`, {});
+    list = (d?.seasons || []).filter((s) => s.season_number > 0 && s.episode_count > 0)
+      .map((s) => ({ n: s.season_number, count: s.episode_count }));
+  } catch {}
+  seasonsCache.set(id, list);
+  return list;
+}
+
+// The source the current playback should stay on when switching episodes (last-used, else first).
+const playingSource = () => playing
+  && (sourcesFor(playing.kind).find((s) => s.url === lastSourceUrl) || sourcesFor(playing.kind)[0]);
+
+// Populate + show the topbar episode switcher (+ the ⏭ auto-next toggle) for a playing TV show.
+// Options are S{n} E{e} per-season groups — numbers only (episode names would cost a fetch per season).
+async function renderEpisodeSwitch() {
+  const sel = $('ep-switch'), btn = $('autonext-btn');
+  const p = playing;
+  if (!p || p.type !== 'tv' || p.season == null || !p.id) { sel.hidden = true; btn.hidden = true; return; }
+  const seasons = await ensureSeasons(p.id);
+  if (playing !== p) return; // switched titles while the seasons fetch was in flight
+  if (!seasons.length) { sel.hidden = true; btn.hidden = true; return; }
+  sel.replaceChildren(...seasons.map((s) => {
+    const og = document.createElement('optgroup');
+    og.label = 'Season ' + s.n;
+    for (let e = 1; e <= Math.min(s.count, 300); e++) {
+      const o = mk('option', null, `S${s.n} E${e}`);
+      o.value = s.n + ':' + e;
+      og.append(o);
+    }
+    return og;
+  }));
+  sel.value = p.season + ':' + (p.episode ?? 1);
+  sel.hidden = false;
+  btn.classList.toggle('active', settings.autoplayNext === true);
+  btn.hidden = false;
 }
 
 // Populate + show the topbar source switcher for whatever is playing (only if >1 source to switch to).

@@ -94,6 +94,8 @@ function hideAll() {
   currentLiveMatch = null;
   clearTimeout(captureTimer);  // cancel any pending capture so a late timer can't grab the stale (live) URL
   $('src-switch').hidden = true;
+  $('ep-switch').hidden = true;
+  $('autonext-btn').hidden = true;
   $('live-sources').hidden = true;
   $('sources-overlay').hidden = true;
 }
@@ -105,6 +107,7 @@ function open(url, track = true) {
   setActiveRail(null);
   webview.hidden = false;
   webview.src = url;
+  autoAdvanced = false; // each opened episode may auto-advance once
   if (track) {
     lastPlayed = { url, live: false };  // a generic watch; live picks / openOn enrich right after open()
     store('lastPlayed', lastPlayed);
@@ -130,6 +133,7 @@ function resumeLast() {
     playing = lp.playing;
     intendedMedia = { title: lp.playing.title, poster: lp.playing.poster, id: lp.playing.id };
     renderSourceSwitch();
+    renderEpisodeSwitch();
   }
 }
 

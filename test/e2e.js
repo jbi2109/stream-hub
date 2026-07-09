@@ -89,8 +89,8 @@ const tmdb = http.createServer((req, res) => {
       id: 42, title: 'Fixture Title', name: 'Fixture Title', overview: 'A fixture overview.',
       poster_path: '/x.jpg', backdrop_path: '/b.jpg', vote_average: 7.9, tagline: 'Twist.',
       release_date: '2026-01-01', first_air_date: '2026-01-01', runtime: 70,
-      number_of_seasons: 1, number_of_episodes: 6, genres: [{ id: 18, name: 'Drama' }],
-      seasons: [{ season_number: 1, name: 'Season 1' }],
+      number_of_seasons: 2, number_of_episodes: 10, genres: [{ id: 18, name: 'Drama' }],
+      seasons: [{ season_number: 1, name: 'Season 1', episode_count: 6 }, { season_number: 2, name: 'Season 2', episode_count: 4 }],
       credits: { cast: [{ id: 1, name: 'Actor One', character: 'Hero', profile_path: '/a.jpg' }] },
       videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abc123' }] },
       external_ids: { imdb_id: 'tt123' },
@@ -1260,6 +1260,67 @@ async function main() {
   assert.deepStrictEqual(msFile.extraAuthHosts, [UA_ECHO_HOST], 'extraAuthHosts should persist as an array');
   stGuest.close();
   ok('⚙ settings: changes persist to userData/settings.json for the next launch');
+
+  // ---------- v0.3.2 topbar episode switcher + auto-play next ----------
+
+  // 38. episode switcher: appears for TV, seasons/episodes from the TMDB fixture, same-source deep-link
+  await page.eval(`tmdbKey = 'k'; sources.length = 0; store('sources', sources); addSource({ name: 'EpTest', url: '${PLAYER}', category: 'vod' }); addSource({ name: 'OtherSrc', url: '${SITE}', category: 'vod' });`);
+  await page.eval(`openOn(sources.find(s => s.name === 'EpTest'), 'tv', 'tv', 42, 1, 1, 'Fixture Title', '')`);
+  await until(() => page.eval(`!document.getElementById('ep-switch').hidden`), 'episode switcher appears');
+  assert.strictEqual(await page.eval(`document.getElementById('ep-switch').value`), '1:1', 'current episode should be selected');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#ep-switch optgroup').length`), 2, 'two season groups');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#ep-switch option').length`), 10, '6+4 episode options');
+  await page.eval(`(() => { const s = document.getElementById('ep-switch'); s.value = '1:2'; s.dispatchEvent(new Event('change')); })()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/embed/tv/42/1/2'`), 'episode change deep-links on the same source');
+  ok('episodes: topbar switcher lists seasons/episodes and deep-links on change');
+
+  // 39. movie playback hides the switcher
+  await page.eval(`openOn(sources.find(s => s.name === 'EpTest'), 'movie', 'movie', 42, null, null, 'Fixture Title', '')`);
+  await sleep(400); // renderEpisodeSwitch is async
+  assert.strictEqual(await page.eval(`document.getElementById('ep-switch').hidden`), true, 'ep switcher hidden for movies');
+  ok('episodes: switcher hidden for movie playback');
+
+  // 40. autoplay next: near-end progress advances; S1 finale rolls into S2; series finale stops; toggle off no-ops
+  await page.eval(`settings.autoplayNext = true; saveSettings();`);
+  await page.eval(`openOn(sources.find(s => s.name === 'EpTest'), 'tv', 'tv', 42, 1, 6, 'Fixture Title', '')`);
+  await until(() => page.eval(`!document.getElementById('ep-switch').hidden`), 'switcher ready (seasons cached)');
+  await page.eval(`maybeAutoAdvance({ position: 590, duration: 600 })`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/embed/tv/42/2/1'`), 'S1 finale rolls into S2E1');
+  await page.eval(`openOn(sources.find(s => s.name === 'EpTest'), 'tv', 'tv', 42, 2, 4, 'Fixture Title', '')`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/embed/tv/42/2/4'`), 'on the series finale');
+  await page.eval(`maybeAutoAdvance({ position: 590, duration: 600 })`);
+  await sleep(300);
+  assert.strictEqual(await page.eval(`document.getElementById('webview').getURL()`), `${PLAYER}/embed/tv/42/2/4`, 'the series finale must not advance');
+  await page.eval(`settings.autoplayNext = false; saveSettings();`);
+  await page.eval(`openOn(sources.find(s => s.name === 'EpTest'), 'tv', 'tv', 42, 1, 1, 'Fixture Title', '')`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/embed/tv/42/1/1'`), 'back on S1E1');
+  await page.eval(`maybeAutoAdvance({ position: 590, duration: 600 })`);
+  await sleep(300);
+  assert.strictEqual(await page.eval(`document.getElementById('webview').getURL()`), `${PLAYER}/embed/tv/42/1/1`, 'toggle off must not advance');
+  ok('autoplay: advances near the end, rolls seasons, stops at the finale, respects the toggle');
+
+  // 41. ⏭ topbar toggle flips + persists settings.autoplayNext
+  await until(() => page.eval(`!document.getElementById('autonext-btn').hidden`), 'autonext button visible');
+  await page.eval(`document.getElementById('autonext-btn').click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).autoplayNext`), true, '⏭ on should persist');
+  assert.ok(await page.eval(`document.getElementById('autonext-btn').classList.contains('active')`), '⏭ should show active');
+  await page.eval(`document.getElementById('autonext-btn').click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).autoplayNext`), false, '⏭ off should persist');
+  ok('autoplay: ⏭ toggle flips + persists');
+
+  // 42. library continue (R1+R6): a card click enables the switchers, and an episode change stays on
+  //     the CARD's source even when the last-used player was a different one.
+  await page.eval(`openOn(sources.find(s => s.name === 'OtherSrc'), 'movie', 'movie', 42, null, null, 'X', '')`); // lastSourceUrl -> OtherSrc
+  // NB: a 3+ digit TMDB id — tmdbIdOf ignores short digit runs by design (host/port digits)
+  await page.eval(`(() => { cont.length = 0; cont.push({ key: 'tv#428', title: 'Fixture Title', url: '${PLAYER}/embed/tv/428/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now(), position: null, duration: null, note: '' }); store('continue', cont); })()`);
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await clickTab('.tabs', 'Continue Watching'); // an earlier test left the library on Watch Later
+  await until(() => page.eval(`!!document.querySelector('#home .grid .card')`), 'library card for the R1 path');
+  await page.eval(`document.querySelector('#home .grid .card').click()`);
+  await until(() => page.eval(`!document.getElementById('ep-switch').hidden`), 'ep switcher appears from a library card');
+  await page.eval(`(() => { const s = document.getElementById('ep-switch'); s.value = '1:3'; s.dispatchEvent(new Event('change')); })()`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/embed/tv/428/1/3'`), 'episode change stays on the card source');
+  ok('library: continue card enables the switchers; episode change pins the card source');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

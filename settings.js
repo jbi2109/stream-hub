@@ -13,6 +13,7 @@ const SETTINGS_DEFAULTS = {
   trackContinue: true,      // auto-add to Continue Watching as you watch
   autoAdvanceLater: true,   // Watch Later follows the episode you're on
   autoplayTrailers: true,   // trailer opens with autoplay
+  autoplayNext: false,      // ⏭ auto-play the next episode near the end (topbar toggle is the control)
   liveLanguage: '',         // '' = any; floats this language to the top of the live source picker
   captureDebounce: 600,     // ms before a watched page is captured
   // ⚙ main-process settings (mirrored to userData/settings.json via sh.setSetting; live-applied)

@@ -141,8 +141,36 @@ async function captureCurrent() {
   }
 }
 
+// ---------- auto-play next episode ----------
+
+// Near the end of a TV episode (⏭ on), advance to the next one on the same source. Single-fire per
+// open (open() resets the flag); between the src change and the new player loading, readVideo returns
+// null, so a stale near-end position can't double-advance.
+// ponytail: only works where the player exposes progress (same best-effort as the progress bars);
+// 45s-from-end threshold, tune if it fires into credits too early/late.
+let autoAdvanced = false;
+function maybeAutoAdvance({ position, duration }) {
+  if (autoAdvanced || settings.autoplayNext !== true) return;
+  if (!playing || playing.type !== 'tv' || playing.season == null) return;
+  if (!(duration >= 300 && position >= duration - 45)) return;
+  autoAdvanced = true;
+  let s = playing.season, e = (playing.episode ?? 1) + 1;
+  const seasons = seasonsCache.get(playing.id); // may be empty pre-fetch -> naive +1; capture heals
+  if (seasons && seasons.length) {
+    const cur = seasons.find((x) => x.n === s);
+    if (cur && e > cur.count) {
+      const idx = seasons.indexOf(cur);
+      if (idx + 1 >= seasons.length) return; // finale of the last season — stop
+      s = seasons[idx + 1].n; e = 1;
+    }
+  }
+  const src = playingSource();
+  if (src) openOn(src, playing.kind, playing.type, playing.id, s, e, playing.title, playing.poster);
+}
+
 // player position, pushed from main over the preload bridge
 window.sh?.onVideoProgress(({ position, duration }) => {
+  maybeAutoAdvance({ position, duration }); // before the activeKey guard: autoplay works with tracking off
   if (!activeKey) return;
   const item = cont.find((c) => c.key === activeKey);
   if (!item) return;

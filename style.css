@@ -107,7 +107,7 @@ body {
   cursor: pointer;
 }
 #watch-later:hover { filter: brightness(1.12); }
-#src-switch {
+#src-switch, #ep-switch, #autonext-btn {
   font-size: 12px;
   padding: 5px 8px;
   max-width: 160px;
@@ -117,6 +117,8 @@ body {
   color: var(--text);
   cursor: pointer;
 }
+#autonext-btn:hover { border-color: var(--accent); }
+#autonext-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 #view { flex: 1; position: relative; }
 webview { width: 100%; height: 100%; }

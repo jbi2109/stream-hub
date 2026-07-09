@@ -37,6 +37,17 @@ $('src-switch').onchange = () => {
   const src = sourcesFor(playing.kind).find((s) => s.url === $('src-switch').value);
   if (src) openOn(src, playing.kind, playing.type, playing.id, playing.season, playing.episode, playing.title, playing.poster);
 };
+$('ep-switch').onchange = () => {
+  if (!playing) return;
+  const [s, e] = $('ep-switch').value.split(':').map(Number);
+  const src = playingSource();
+  if (src) openOn(src, playing.kind, playing.type, playing.id, s, e, playing.title, playing.poster);
+};
+$('autonext-btn').onclick = () => {
+  settings.autoplayNext = settings.autoplayNext !== true;
+  saveSettings();
+  $('autonext-btn').classList.toggle('active', settings.autoplayNext);
+};
 $('live-sources').onclick = () => { if (currentLiveMatch) showLivePicker(currentLiveMatch); }; // reopen the live source page
 $('sources-overlay').onclick = () => { if (currentLiveMatch) showLivePicker(currentLiveMatch); }; // same, from the player overlay
 

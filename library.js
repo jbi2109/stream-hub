@@ -99,6 +99,19 @@ function card(item, isCont) {
     activeKey = item.key;
     open(item.url);
     intendedMedia = { title: item.title, poster: item.poster, live: item.type === 'live' || undefined };
+    // Rebuildable entries also set `playing` so the topbar episode/source switchers + auto-play-next
+    // work when continuing from the library — not just from the detail page's Watch.
+    const id = tmdbIdOf(item.url);
+    const t = typeOf(item);
+    if (id && t !== 'live') {
+      const src = sources.find((s) => hostOf(s.url) === hostOf(item.url));
+      if (src) { currentSource = src.url; lastSourceUrl = src.url; store('lastSource', lastSourceUrl); } // stay on the card's player
+      playing = { kind: t === 'movie' ? 'movie' : 'tv', type: t === 'movie' ? 'movie' : 'tv', id,
+        season: item.season, episode: item.episode, title: item.title, poster: item.poster };
+      lastPlayed.playing = playing; store('lastPlayed', lastPlayed);
+      renderSourceSwitch();
+      renderEpisodeSwitch();
+    }
   };
   return el;
 }

@@ -5,6 +5,20 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.3.2 — Episode switcher & auto-play next (July 2026)
+
+- **Switch episodes without leaving the player** — a new top-bar dropdown beside the source switcher
+  lists every season and episode (`S2 E5` style); picking one reloads the same source deep-linked to
+  that episode. No more backing out to the detail page between episodes.
+- **⏭ Auto-play next episode** — a top-bar toggle that, near the end of an episode, automatically rolls
+  into the next one (crossing season boundaries, stopping at the series finale) on the same source.
+  Works wherever the player exposes playback progress — the same best-effort as the progress bars.
+- **Continue Watching cards now light up the full player toolbar** — continuing a show from the library
+  enables the episode + source switchers and auto-play, exactly like starting from the detail page, and
+  episode switching stays on the card's own source.
+
+---
+
 ## v0.3.1 — Settings that reach the engine (July 2026)
 
 The Settings screen gains a **Privacy & blocking** tab and new Updates/Advanced rows whose switches now
