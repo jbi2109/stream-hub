@@ -5,6 +5,17 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.3.3 — Persistent filters & live match badges (July 2026)
+
+- **Your filter selections now stick** — the Movies/TV/Anime filter pills (Genre, Year, Language,
+  Country, Sort, Provider) are remembered **per tab**, and the Live TV sort + "Live now" toggle are
+  remembered too — across tab switches *and* app restarts.
+- **LIVE & kickoff badges on the live grid** — every match card shows a red **LIVE** chip when it has
+  started, **"in 34m"** when kickoff is close, or the kickoff time/date. The default ordering puts
+  live matches first, then upcoming by kickoff.
+
+---
+
 ## v0.3.2 — Episode switcher & auto-play next (July 2026)
 
 - **Switch episodes without leaving the player** — a new top-bar dropdown beside the source switcher

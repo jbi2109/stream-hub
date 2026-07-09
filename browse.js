@@ -4,7 +4,10 @@ let browseTab = 'movie'; // 'movie' | 'tv' | 'anime' | 'live' | 'youtube'
 let browseQuery = '';
 let browseTimer = null;
 let browsePage = 1;
-let browseFilters = { genre: '', year: '', sort: '', provider: '', language: '', country: '' };
+// Filter selections persist per tab (movie/tv/anime keep separate sets — genre ids differ per media type).
+let browseFiltersAll = load('browseFilters', {});
+const loadFiltersFor = (tab) => ({ genre: '', year: '', sort: '', provider: '', language: '', country: '', ...(browseFiltersAll[tab] || {}) });
+let browseFilters = loadFiltersFor('movie');
 const debouncedBrowse = () => { clearTimeout(browseTimer); browseTimer = setTimeout(renderBrowse, 350); };
 
 // Full TMDB object (details/season/discover), not just the .results list.
@@ -134,7 +137,7 @@ function browseTabBar() {
     browseTab = id;
     browseQuery = '';
     browsePage = 1;
-    browseFilters = { genre: '', year: '', sort: '', provider: '', language: '', country: '' }; // genre lists differ per media type
+    browseFilters = loadFiltersFor(id); // each tab remembers its own selections
     renderBrowse();
   }, 'tabs');
 }
@@ -181,7 +184,13 @@ async function renderBrowse() {
   const [genres, providers, languages, countries] = await Promise.all(
     [ensureGenres(mt), ensureProviders(mt), ensureLanguages(), ensureCountries()]);
   if (browseTab !== tabAtRender) return; // user switched tabs mid-fetch
-  const setFilter = (key, v) => { browseFilters[key] = v; browsePage = 1; renderBrowse(); };
+  const setFilter = (key, v) => {
+    browseFilters[key] = v;
+    browseFiltersAll[browseTab] = browseFilters;
+    store('browseFilters', browseFiltersAll); // selections persist across visits + restarts
+    browsePage = 1;
+    renderBrowse();
+  };
   filterBar.replaceChildren(
     pillSelect('All Genres', '', genres, browseFilters.genre, (v) => setFilter('genre', v)),
     pillSelect('All Years', '', browseYears(), browseFilters.year, (v) => setFilter('year', v)),

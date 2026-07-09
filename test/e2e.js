@@ -121,7 +121,7 @@ const catalog = http.createServer((req, res) => {
     // Alpha's embed has a 3-digit id so it passes isMediaUrl — proves the `live` flag (not isMediaUrl)
     // is what keeps a live stream out of Continue Watching (v15.2 test 32k).
     // viewers/date drive the "Most watched" sort + "Live now" filter (date in seconds; 1000 = past).
-    { name: 'Alpha Match', category: 'soccer', embed_url: `${PLAYER}/live/700`, thumbnail_url: '', viewers: 5000, date: 1000 },
+    { name: 'Alpha Match', category: 'soccer', embed_url: `${PLAYER}/live/700`, thumbnail_url: '', viewers: 5000, date: Date.now() - 600000 }, // started 10 min ago -> LIVE chip
     { name: 'Beta Match', category: 'soccer', embed_url: `${PLAYER}/live/8`, viewers: 100, date: 1000 },
     { name: 'Gamma Match', category: 'tennis', embed_url: `${PLAYER}/live/9` },
     { name: 'Future Match', category: 'soccer', embed_url: `${PLAYER}/live/50`, date: 4102444800 }, // year 2100 -> upcoming
@@ -752,6 +752,22 @@ async function main() {
   await until(() => page.eval(`document.querySelector('#browse .match-grid .match-card .match-title').textContent.includes('Alpha')`), 'Most watched sorts Alpha (5000 viewers) to the top');
   ok('live: Live-now hides upcoming; Most-watched sorts by popularity');
 
+  // 32f3. v0.3.3: live sort + Live-now persist across visits; EPG chips + default kickoff ordering
+  await page.eval(`document.getElementById('browse-btn').click()`); // leave the Live tab…
+  await page.eval(`document.getElementById('live-btn').click()`);   // …and come back
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Alpha'))`), 'live grid re-rendered');
+  assert.strictEqual(await page.eval(`document.querySelector('#browse .live-filter-row select').value`), 'popular', 'sort selection should persist across visits');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#browse .live-filter-row .pill-toggle')].find(b => b.textContent === 'Live now').classList.contains('active')`), 'Live-now should persist across visits');
+  assert.ok(await page.eval(`![...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Future'))`), 'persisted Live-now still hides upcoming');
+  // reset to defaults, then check the EPG chips + default ordering
+  await page.eval(`[...document.querySelectorAll('#browse .live-filter-row .pill-toggle')].find(b => b.textContent === 'Live now').click()`);
+  await page.eval(`(() => { const s = document.querySelector('#browse .live-filter-row select'); s.value = 'default'; s.dispatchEvent(new Event('change')); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(t => t.textContent.includes('Future'))`), 'upcoming match visible again');
+  assert.strictEqual(await page.eval(`(() => { const c = [...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Alpha')); const chip = c.querySelector('.match-time'); return chip && chip.classList.contains('live') ? chip.textContent : null; })()`), 'LIVE', 'a started match should show a red LIVE chip');
+  assert.ok(await page.eval(`(() => { const c = [...document.querySelectorAll('#browse .match-grid .match-card')].find(t => t.textContent.includes('Future')); const chip = c.querySelector('.match-time'); return chip && !chip.classList.contains('live') && chip.textContent.length > 0; })()`), 'an upcoming match should show a kickoff chip');
+  assert.ok(await page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .match-grid .match-card')].map(t => t.textContent); return ts.findIndex(x => x.includes('Alpha')) < ts.findIndex(x => x.includes('Future')); })()`), 'default order should put LIVE before upcoming');
+  ok('live: sort/Live-now persist; LIVE + kickoff chips render; live-first default order');
+
   // 32g. auto-update banner: hidden at boot; showUpdate drives it; Restart calls install (stubbed)
   assert.strictEqual(await page.eval(`document.getElementById('update-banner').hidden`), true, 'update banner should be hidden at boot');
   await page.eval(`showUpdate({ type: 'progress', percent: 42 })`);
@@ -1102,6 +1118,15 @@ async function main() {
   await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P2'))`), 'Next loads page 2');
   assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .pager-btn')].find(b => b.textContent.includes('Prev')).disabled`), false, 'Prev enabled on page 2');
   ok('browse: pager Prev/Next walks pages (Prev disabled on page 1)');
+
+  // 32F2b. v0.3.3: browse filter selections persist per tab (Movies keeps its set; TV has its own)
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'tv').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .browse-filters select').length === 6`), 'TV filter bar rendered');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .browse-filters select')[0].value`), '', 'TV tab should start with its own (empty) genre');
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'movie').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .browse-filters select').length === 6 && document.querySelectorAll('#browse .browse-filters select')[0].value === '28'`), 'Movies genre selection restored after a tab round-trip');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('G28'))`), 'restored genre still drives the discover query');
+  ok('browse: filter selections persist per tab');
 
   // 32F3. v0.2.10 fix: opening the YouTube tab must NOT wipe the Resume target (untracked open).
   await page.eval(`document.getElementById('home-btn').click(); sources.length = 0; store('sources', sources); addSource({ name: 'TwoHop', category: 'live', catalogUrl: '${CATALOG_TWOHOP}/api/matches/live' }); renderSources();`);

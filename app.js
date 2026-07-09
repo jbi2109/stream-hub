@@ -140,5 +140,6 @@ wireSettingsControls();
 rekeyLibrary();          // host-independent keys + merge duplicate cards (before capture/heal)
 renderSources();
 if (settings.defaultBrowseTab) browseTab = settings.defaultBrowseTab;
+browseFilters = loadFiltersFor(browseTab); // restore the landing tab's saved filter selections
 if (settings.landingView === 'library') showHome(); else showBrowse();
 healLibrary();           // one-time: re-title old entries from TMDB (no-op once done / without a key)

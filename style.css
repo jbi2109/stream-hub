@@ -515,6 +515,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 #browse .grid.match-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 .match-card { cursor: pointer; }
 .match-thumb {
+  position: relative; /* anchors the .match-time chip */
   aspect-ratio: 16 / 9;
   border-radius: 10px;
   overflow: hidden;
@@ -526,6 +527,13 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 .match-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .match-thumb.noimg::after { content: "📺"; font-size: 30px; opacity: .35; }
 .match-title { margin-top: 8px; font-size: 13px; font-weight: 600; text-align: center; line-height: 1.3; }
+.match-time {
+  position: absolute; top: 6px; left: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: .3px;
+  padding: 2px 7px; border-radius: 999px;
+  background: rgba(0, 0, 0, .65); color: #fff;
+}
+.match-time.live { background: #dc2626; }
 
 /* source-selection page (live picker) + "Watch on" list */
 .live-pick-head { display: flex; align-items: center; gap: 14px; padding: 8px 24px 0; }

@@ -269,6 +269,8 @@ function matchCard(m) {
   const thumb = document.createElement('div'); thumb.className = 'match-thumb';
   if (m.logo) { const img = document.createElement('img'); img.loading = 'lazy'; img.src = m.logo; img.onerror = () => { img.remove(); thumb.classList.add('noimg'); }; thumb.append(img); }
   else thumb.classList.add('noimg');
+  const chip = liveTimeChip(m.startsAt);
+  if (chip) thumb.append(chip);
   const t = document.createElement('div'); t.className = 'match-title'; t.textContent = m.title;
   el.append(thumb, t);
   // Always open the source page (never auto-jump a single source) — the same show often has sources in
@@ -282,6 +284,31 @@ function matchCard(m) {
 // the TTL so a dead catalog isn't hammered on every entry. ↻ Refresh clears it.
 const LIVE_CACHE_TTL = 90000; // ms
 const liveCatalogCache = new Map(); // catalogUrl -> { rows, at } | { error: true, at }
+
+// The live view's sort + Live-now selections persist across visits + restarts.
+let liveView = load('liveView', { sort: 'default', liveOnly: false });
+
+// EPG chip for a match card: red LIVE (started, ≤8h ago), "in 34m", today's kickoff time, or a short
+// date. Long-started entries (24/7 channels with a stale date) get no chip.
+function liveTimeChip(startsAt) {
+  if (!startsAt) return null;
+  const now = Date.now(), delta = startsAt - now;
+  const el = document.createElement('span');
+  el.className = 'match-time';
+  if (delta <= 60000) {
+    if (now - startsAt > 8 * 3600000) return null;
+    el.classList.add('live');
+    el.textContent = 'LIVE';
+  } else if (delta < 60 * 60000) {
+    el.textContent = 'in ' + Math.round(delta / 60000) + 'm';
+  } else {
+    const t = new Date(startsAt);
+    el.textContent = t.toDateString() === new Date().toDateString()
+      ? t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : t.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  return el;
+}
 
 // Live TV tab: ONE grid amalgamating every catalog source (matches pooled + merged across catalogs) +
 // plain "open the site" tiles for non-catalog live sources.
@@ -319,25 +346,38 @@ function renderLiveTab(container) {
   nodes.push(controls, grid);
   container.replaceChildren(...nodes);
 
-  let all = [], cat = 'all', allRows = [], liveSort = 'default', liveOnly = false;
+  let all = [], cat = 'all', allRows = [];
   const draw = () => {
     const q = search.value.trim().toLowerCase();
     let items = cat === 'all' ? all : all.filter((it) => it.category === cat);
     if (q) items = items.filter((it) => (it.title || '').toLowerCase().includes(q));
-    if (liveOnly) items = items.filter((it) => !it.startsAt || it.startsAt <= Date.now() + 60000); // hide upcoming (60s grace)
-    if (liveSort === 'popular') items = items.slice().sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+    if (liveView.liveOnly) items = items.filter((it) => !it.startsAt || it.startsAt <= Date.now() + 60000); // hide upcoming (60s grace)
+    if (liveView.sort === 'popular') {
+      items = items.slice().sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+    } else {
+      // default: live first, then upcoming by kickoff; undated keep their arrival order at the end
+      const rank = (it) => (it.startsAt == null ? 2 : (it.startsAt <= Date.now() + 60000 ? 0 : 1));
+      items = items.slice().sort((a, b) => rank(a) - rank(b) || (a.startsAt || 0) - (b.startsAt || 0));
+    }
     if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
     grid.replaceChildren(...items.slice(0, 400).map(matchCard));
   };
 
-  // Most-watched sort + Live-now filter (both operate on the already-fetched matches; no extra network)
+  // Most-watched sort + Live-now filter (both operate on the already-fetched matches; no extra network).
+  // Both selections persist (liveView -> localStorage).
   filterRow.append(
-    pillSelect('Default order', 'default', [['popular', 'Most watched']], liveSort, (v) => { liveSort = v; draw(); }),
+    pillSelect('Default order', 'default', [['popular', 'Most watched']], liveView.sort,
+      (v) => { liveView.sort = v; store('liveView', liveView); draw(); }),
   );
   const liveNowBtn = document.createElement('button');
-  liveNowBtn.className = 'pill-toggle';
+  liveNowBtn.className = 'pill-toggle' + (liveView.liveOnly ? ' active' : '');
   liveNowBtn.textContent = 'Live now';
-  liveNowBtn.onclick = () => { liveOnly = !liveOnly; liveNowBtn.classList.toggle('active', liveOnly); draw(); };
+  liveNowBtn.onclick = () => {
+    liveView.liveOnly = !liveView.liveOnly;
+    store('liveView', liveView);
+    liveNowBtn.classList.toggle('active', liveView.liveOnly);
+    draw();
+  };
   filterRow.append(liveNowBtn);
   const refreshBtn = document.createElement('button');
   refreshBtn.className = 'pill-toggle';
