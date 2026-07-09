@@ -911,7 +911,7 @@ async function main() {
   await page.eval(`document.getElementById('settings-btn').click()`);
   assert.strictEqual(await page.eval(`document.getElementById('settings').hidden`), false, 'settings should open from the rail');
   assert.strictEqual(await page.eval(`document.getElementById('browse').hidden`), true, 'browse should hide when settings opens');
-  assert.strictEqual(await page.eval(`document.querySelectorAll('#settings .settings-tabs .tab').length`), 8, 'settings should have 8 tabs');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#settings .settings-tabs .tab').length`), 9, 'settings should have 9 tabs (incl. Privacy & blocking)');
   await page.eval(`[...document.querySelectorAll('#settings .settings-tabs .tab')].find(t => t.textContent === 'Appearance').click()`);
   assert.ok(await page.eval(`!!document.querySelector('#settings .set-panel:not([hidden]) .swatches')`), 'Appearance tab should show the accent swatches');
   ok('settings: rail opens the screen; tabs switch panels');
@@ -1211,6 +1211,55 @@ async function main() {
   assert.strictEqual(pk, 'undefined', 'WebAuthn not neutered in guest');
   waGuest.close();
   ok('webauthn: passkey API neutered in guest pages');
+
+  // ---------- v0.3.1 ⚙ main-process settings (live toggles — placed last; they flip global behavior) ----------
+
+  // 34. ad-block toggles live from Settings → Privacy & blocking (no restart)
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/settings-live-check'`);
+  const stTarget = await until(async () =>
+    (await targets()).find((t) => t.url === `${SITE}/settings-live-check` && t.webSocketDebuggerUrl), 'guest for settings toggles');
+  const stGuest = await CDP.connect(stTarget.webSocketDebuggerUrl);
+  assert.strictEqual(await stGuest.eval(`fetch('${SITE}/ads-test-marker.js').then(() => 'loaded', () => 'blocked')`), 'blocked', 'ad request should start blocked');
+  await page.eval(`document.getElementById('settings-btn').click()`); // webview hides; the guest stays alive
+  const adToggle = `[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Ad-blocking')).querySelector('input[type=checkbox]')`;
+  await page.eval(`${adToggle}.click()`);
+  await until(async () => (await stGuest.eval(`fetch('${SITE}/ads-test-marker.js').then(() => 'loaded', () => 'blocked')`)) === 'loaded', 'ad-block off: ad request loads');
+  await page.eval(`${adToggle}.click()`);
+  await until(async () => (await stGuest.eval(`fetch('${SITE}/ads-test-marker.js').then(() => 'loaded', () => 'blocked')`)) === 'blocked', 'ad-block on: blocked again');
+  ok('⚙ settings: ad-blocking toggles live (off → ad loads, on → blocked)');
+
+  // 35. extra login pop-up hosts apply live: a cross-host popup is denied by default (test 5), allowed
+  //     after adding the host through the Privacy input.
+  await page.eval(`(() => { const i = document.getElementById('extra-auth-hosts'); i.value = '${UA_ECHO_HOST}'; i.dispatchEvent(new Event('change')); })()`);
+  await sleep(400); // let the set-setting IPC land
+  await stGuest.eval(`window.open('${UA_ECHO}/popup-live'); true`);
+  const extraPop = await until(async () =>
+    (await targets()).find((t) => t.type === 'page' && t.url.startsWith(`${UA_ECHO}/popup-live`)), 'popup to the user-added host opened');
+  await closeTarget(extraPop.id);
+  ok('⚙ settings: user-added login host allows its pop-up (live)');
+
+  // 36. Google sign-in fix gate: off → the login-host fixture sees the Chrome UA; on → Firefox again.
+  const uaToggle = `[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Google sign-in fix')).querySelector('input[type=checkbox]')`;
+  await page.eval(`${uaToggle}.click()`); // off
+  await sleep(400);
+  const uaOff = await stGuest.eval(`fetch('${UA_ECHO}/').then(r => r.text())`);
+  assert.ok(!uaOff.includes('Firefox') && uaOff.includes('Chrome'), 'gate off: the login host should see the normal Chrome UA');
+  await page.eval(`${uaToggle}.click()`); // back on
+  await sleep(400);
+  const uaOn = await stGuest.eval(`fetch('${UA_ECHO}/').then(r => r.text())`);
+  assert.ok(uaOn.includes('Firefox'), 'gate on: Firefox UA restored');
+  ok('⚙ settings: Google-UA spoof gates live (Chrome when off, Firefox when on)');
+
+  // 37. settings.json roundtrip: an Advanced change lands in the main process file with the full ⚙ subset
+  await page.eval(`(() => { const i = [...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Live catalog timeout')).querySelector('input'); i.value = '42'; i.dispatchEvent(new Event('change')); })()`);
+  await sleep(400);
+  const msFile = JSON.parse(fs.readFileSync(path.join(PROFILE, 'settings.json'), 'utf8'));
+  assert.strictEqual(msFile.catalogTimeoutSec, 42, 'catalogTimeoutSec should persist to settings.json');
+  assert.strictEqual(msFile.adblock, true, 'adblock state should persist');
+  assert.strictEqual(msFile.googleUaSpoof, true, 'googleUaSpoof state should persist');
+  assert.deepStrictEqual(msFile.extraAuthHosts, [UA_ECHO_HOST], 'extraAuthHosts should persist as an array');
+  stGuest.close();
+  ok('⚙ settings: changes persist to userData/settings.json for the next launch');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

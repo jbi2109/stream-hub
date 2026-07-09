@@ -15,9 +15,31 @@ const SETTINGS_DEFAULTS = {
   autoplayTrailers: true,   // trailer opens with autoplay
   liveLanguage: '',         // '' = any; floats this language to the top of the live source picker
   captureDebounce: 600,     // ms before a watched page is captured
+  // ⚙ main-process settings (mirrored to userData/settings.json via sh.setSetting; live-applied)
+  adblock: true,            // ad-blocking on/off
+  extraAuthHosts: '',       // comma-separated extra hosts allowed to open login pop-ups
+  googleUaSpoof: true,      // present Google sign-in as Firefox ("browser not secure" fix)
+  autoUpdateCheck: true,    // check for updates on launch
+  progressPollMs: 5000,     // playback-position poll interval (new players)
+  adlistRefreshHours: 24,   // ad-list cache age before re-download (next launch)
+  catalogTimeoutSec: 60,    // live-catalog fetch abort
 };
 let settings = { ...SETTINGS_DEFAULTS, ...load('settings', {}) };
 function saveSettings() { store('settings', settings); }
+
+// The ⚙ subset in the shape main.js wants (extraAuthHosts: comma string -> array of hosts).
+function mainSubset(s) {
+  return {
+    adblock: s.adblock !== false,
+    progressPollMs: +s.progressPollMs || 5000,
+    adlistRefreshHours: +s.adlistRefreshHours || 24,
+    extraAuthHosts: String(s.extraAuthHosts || '').split(',').map((x) => x.trim()).filter(Boolean),
+    googleUaSpoof: s.googleUaSpoof !== false,
+    autoUpdateCheck: s.autoUpdateCheck !== false,
+    catalogTimeoutSec: +s.catalogTimeoutSec || 60,
+  };
+}
+const pushMain = () => window.sh?.setSetting?.(mainSubset(settings));
 
 const ACCENTS = ['#4c8dff', '#8b5cf6', '#22c55e', '#f97316', '#ef4444', '#14b8a6'];
 const REGIONS = [['US', 'United States'], ['GB', 'United Kingdom'], ['CA', 'Canada'],
@@ -45,13 +67,13 @@ function settingRow(label, hint, control) {
   return row;
 }
 
-// A checkbox styled as a switch, bound to settings[key].
-function toggleControl(key) {
+// A checkbox styled as a switch, bound to settings[key]. `after` runs post-save (⚙ rows push to main).
+function toggleControl(key, after) {
   const wrap = mk('label', 'switch');
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.checked = settings[key] !== false;
-  cb.onchange = () => { settings[key] = cb.checked; saveSettings(); };
+  cb.onchange = () => { settings[key] = cb.checked; saveSettings(); if (after) after(); };
   wrap.append(cb, mk('span', 'slider'));
   return wrap;
 }
@@ -164,6 +186,25 @@ function buildPlayback() {
   return p;
 }
 
+function buildPrivacy() {
+  const p = mk('div', 'set-panel');
+
+  p.append(settingRow('Ad-blocking', 'Full uBlock-style lists (network + cosmetic). Applies immediately.',
+    toggleControl('adblock', pushMain)));
+
+  const hosts = document.createElement('input');
+  hosts.className = 'set-input'; hosts.id = 'extra-auth-hosts';
+  hosts.placeholder = 'login.example.com, auth.other.com';
+  hosts.value = settings.extraAuthHosts || '';
+  hosts.onchange = () => { settings.extraAuthHosts = hosts.value.trim(); saveSettings(); pushMain(); };
+  p.append(settingRow('Extra login pop-up hosts', 'Hosts allowed to open sign-in pop-ups, comma-separated. Applies immediately.', hosts));
+
+  p.append(settingRow('Google sign-in fix', 'Presents Google login as Firefox so it isn’t blocked as an "insecure browser". Turn off only if sign-in misbehaves.',
+    toggleControl('googleUaSpoof', pushMain)));
+
+  return p;
+}
+
 function buildLibrary() {
   const p = mk('div', 'set-panel');
 
@@ -205,7 +246,18 @@ function buildUpdates() {
   const check = actionButton('Check now', null, () => $('version').click());
   const line = mk('div', 'set-btn-row'); line.append(ver, check, status);
   p.append(settingRow('Version', 'Updates install on quit, or via the Restart banner.', line));
+  p.append(settingRow('Check for updates on launch', 'Off = updates only when you press Check now.',
+    toggleControl('autoUpdateCheck', pushMain)));
   return p;
+}
+
+// A numeric ⚙ input bound to settings[key]; clamps to min, saves + pushes to main.
+function numControl(key, min) {
+  const inp = document.createElement('input');
+  inp.className = 'set-input'; inp.type = 'number'; inp.min = String(min); inp.step = '1';
+  inp.value = settings[key];
+  inp.onchange = () => { const n = +inp.value; if (n >= min) { settings[key] = n; saveSettings(); pushMain(); } };
+  return inp;
 }
 
 function buildAdvanced() {
@@ -218,11 +270,18 @@ function buildAdvanced() {
   deb.onchange = () => { const n = +deb.value; if (n >= 100) { settings.captureDebounce = n; saveSettings(); } };
   p.append(settingRow('Capture debounce (ms)', 'Delay before a watched page is saved to Continue Watching.', deb));
 
+  p.append(settingRow('Progress poll interval (ms)', 'How often playback position is read. Applies to newly opened players.',
+    numControl('progressPollMs', 1000)));
+  p.append(settingRow('Ad-list refresh (hours)', 'Ad-block list cache age before re-downloading. Applies on next launch.',
+    numControl('adlistRefreshHours', 1)));
+  p.append(settingRow('Live catalog timeout (s)', 'How long a slow live catalog may load before it is marked failed.',
+    numControl('catalogTimeoutSec', 5)));
+
   p.append(settingRow('Reset settings', 'Restore these settings to defaults (sources & library are kept).',
     actionButton('Reset settings', 'danger', () => {
       if (!confirm('Reset all settings to defaults? Sources and library are kept.')) return;
       settings = { ...SETTINGS_DEFAULTS };
-      saveSettings(); applyThemeVars(settings); rebuildSettings();
+      saveSettings(); applyThemeVars(settings); pushMain(); rebuildSettings();
     })));
 
   return p;
@@ -245,12 +304,12 @@ function rowOf(...btns) { const r = mk('div', 'set-btn-row'); r.append(...btns);
 
 const SETTINGS_TABS = [
   ['general', 'General'], ['appearance', 'Appearance'], ['sources', 'Sources'],
-  ['playback', 'Playback'], ['library', 'Library'], ['updates', 'Updates'],
-  ['advanced', 'Advanced'], ['about', 'About'],
+  ['playback', 'Playback'], ['privacy', 'Privacy & blocking'], ['library', 'Library'],
+  ['updates', 'Updates'], ['advanced', 'Advanced'], ['about', 'About'],
 ];
 const SETTINGS_BUILDERS = {
   general: buildGeneral, appearance: buildAppearance, sources: buildSources, playback: buildPlayback,
-  library: buildLibrary, updates: buildUpdates, advanced: buildAdvanced, about: buildAbout,
+  privacy: buildPrivacy, library: buildLibrary, updates: buildUpdates, advanced: buildAdvanced, about: buildAbout,
 };
 
 function showSettingsTab(id) {

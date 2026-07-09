@@ -124,6 +124,7 @@ function importSettings(obj) {
 
 // ---- bootstrap ----
 if (lastPlayed && lastPlayed.url) $('resume-btn').hidden = false; // ⏯ Resume survives a restart
+pushMain(); // sync main's settings.json with the renderer ⚙ subset (covers Import/Reset drift)
 wireSettingsControls();
 rekeyLibrary();          // host-independent keys + merge duplicate cards (before capture/heal)
 renderSources();

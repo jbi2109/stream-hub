@@ -29,6 +29,23 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 app.userAgentFallback = app.userAgentFallback.replace(/(Electron|stream-hub)\/\S+\s?/g, '');
 const DEFAULT_UA = app.userAgentFallback;
 
+// ⚙ main-process settings, mirrored from the renderer's Settings screen via the set-setting IPC and
+// persisted to userData/settings.json (read here at startup; the renderer re-pushes at boot so an
+// Import/Reset stays in sync). Everything except progressPollMs (new players only) and
+// adlistRefreshHours (next launch) applies live.
+const MAIN_DEFAULTS = {
+  adblock: true,           // network+cosmetic ad-blocking on the whole session
+  progressPollMs: 5000,    // playback-position poll (per webview, set at attach)
+  adlistRefreshHours: 24,  // ad-list cache age before a re-download
+  extraAuthHosts: [],      // extra hosts allowed to open login pop-ups
+  googleUaSpoof: true,     // present Google sign-in as Firefox ("browser not secure" fix)
+  autoUpdateCheck: true,   // check for updates on launch
+  catalogTimeoutSec: 60,   // live-catalog fetch abort
+};
+const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+let ms = { ...MAIN_DEFAULTS };
+try { ms = { ...MAIN_DEFAULTS, ...JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) }; } catch {}
+
 // Kill the "Choose a passkey" (WebAuthn/Windows Hello) prompt Google auto-triggers on its
 // login page — it spams and derails password login. This media app needs no passkeys.
 app.commandLine.appendSwitch('disable-features',
@@ -45,7 +62,13 @@ const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20
 const GOOGLE_LOGIN_HOSTS = ['accounts.google.com', 'accounts.youtube.com'];
 const hostOf = (u) => { try { return new URL(u).host; } catch { return ''; } };
 if (process.env.SH_TEST_UA_HOST) GOOGLE_LOGIN_HOSTS.push(process.env.SH_TEST_UA_HOST);
-const isGoogleLoginHost = (url) => { try { return GOOGLE_LOGIN_HOSTS.includes(new URL(url).host); } catch { return false; } };
+// Single choke point for the whole Google-UA spoof (header rewrite, hint strip, pop-out window, per-nav
+// setUserAgent): gated on the ⚙ googleUaSpoof setting. The guest preload's navigator spoof can't read
+// main state and stays on — harmless alone, since the header spoof is what Google keys on.
+const isGoogleLoginHost = (url) => {
+  if (ms.googleUaSpoof === false) return false;
+  try { return GOOGLE_LOGIN_HOSTS.includes(new URL(url).host); } catch { return false; }
+};
 
 // Read playback position from the player, walking into cross-origin subframes.
 // WebFrameMain.executeJavaScript runs from the privileged main process, so it is
@@ -72,11 +95,11 @@ app.on('web-contents-created', (_e, contents) => {
     return;
   }
   // poll the player and push position to the host renderer
-  // ponytail: 5s poll, tighten if progress feels laggy
+  // ponytail: interval is the ⚙ progressPollMs setting; applies to players opened after a change
   const timer = setInterval(async () => {
     const v = await readVideo(contents);
     if (v) contents.hostWebContents?.send('video-progress', v);
-  }, 5000);
+  }, ms.progressPollMs || 5000);
   contents.on('destroyed', () => clearInterval(timer));
   // Google's client JS checks navigator.userAgent (not just the header) — present Firefox
   // on its login hosts so it doesn't block the embedded browser; restore default elsewhere.
@@ -84,7 +107,7 @@ app.on('web-contents-created', (_e, contents) => {
     if (isMainFrame) contents.setUserAgent(isGoogleLoginHost(url) ? FIREFOX_UA : DEFAULT_UA);
   });
   // every window we allow is a login popup — make its JS environment report Firefox too
-  contents.on('did-create-window', (win) => win.webContents.setUserAgent(FIREFOX_UA));
+  contents.on('did-create-window', (win) => { if (ms.googleUaSpoof !== false) win.webContents.setUserAgent(FIREFOX_UA); });
   // In-place login navigations (e.g. YouTube → accounts.google.com in the main frame) are popped out
   // to a standalone top-level window — Google blocks its embedded-browser check on <webview> guests.
   contents.on('will-navigate', (e, url) => {
@@ -97,7 +120,8 @@ app.on('web-contents-created', (_e, contents) => {
         contents.loadURL(url); // same-site _blank link navigates in place
         return { action: 'deny' };
       }
-      if (AUTH_HOSTS.some((h) => host === h || host.endsWith('.' + h))) {
+      const allowed = [...AUTH_HOSTS, ...(ms.extraAuthHosts || [])]; // ⚙ user-added login hosts
+      if (allowed.some((h) => host === h || host.endsWith('.' + h))) {
         return {
           action: 'allow',
           overrideBrowserWindowOptions: { width: 500, height: 700, autoHideMenuBar: true },
@@ -111,15 +135,16 @@ app.on('web-contents-created', (_e, contents) => {
 // Network + cosmetic + scriptlet ad-blocking (Ghostery engine, uBlock-style full lists).
 // Full lists (not just network rules) are what block YouTube ads, which are served from
 // the video domain and need cosmetic/scriptlet injection.
+let blocker = null;          // kept so the ⚙ ad-block toggle can disable/re-enable live
+let blockingEnabled = false;
 async function enableAdblock() {
-  let blocker;
   if (process.env.SH_TEST_BLOCK_PATTERN) {
     blocker = ElectronBlocker.parse(process.env.SH_TEST_BLOCK_PATTERN); // deterministic e2e rule
   } else {
     const cachePath = path.join(app.getPath('userData'), 'adblock-full.bin');
-    // ponytail: 24h refresh; YouTube fights blockers so stale lists rot
+    // ponytail: refresh age is the ⚙ adlistRefreshHours setting; YouTube fights blockers so stale lists rot
     let fresh = false;
-    try { fresh = (Date.now() - fs.statSync(cachePath).mtimeMs) < 24 * 3600 * 1000; } catch {}
+    try { fresh = (Date.now() - fs.statSync(cachePath).mtimeMs) < (ms.adlistRefreshHours || 24) * 3600 * 1000; } catch {}
     const cache = fresh
       ? { path: cachePath, read: fs.promises.readFile, write: fs.promises.writeFile }
       : { path: cachePath, write: fs.promises.writeFile }; // missing/stale -> fetch latest lists
@@ -164,6 +189,21 @@ async function enableAdblock() {
   };
 
   blocker.enableBlockingInSession(session.defaultSession); // webview shares default session
+  blockingEnabled = true;
+}
+
+// Sync blocking with the ⚙ adblock setting — live, no restart. First enable builds the engine lazily
+// (covers launching with ad-block off, then turning it on).
+async function applyAdblock() {
+  const want = ms.adblock !== false;
+  if (want === blockingEnabled) return;
+  if (want) {
+    if (blocker) { blocker.enableBlockingInSession(session.defaultSession); blockingEnabled = true; }
+    else await enableAdblock();
+  } else if (blocker) {
+    blocker.disableBlockingInSession(session.defaultSession);
+    blockingEnabled = false;
+  }
 }
 
 // Open a Google login URL in a standalone top-level window (not the embedded <webview>), with the same
@@ -237,13 +277,13 @@ function initUpdater() {
   autoUpdater.on('download-progress', (p) => send('update-progress', { percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => send('update-ready', { version: info.version }));
   autoUpdater.on('error', (e) => { console.error('updater:', e && e.message); status('error', { message: e && e.message }); }); // offline / no release yet
-  autoUpdater.checkForUpdates().catch(() => {});
+  if (ms.autoUpdateCheck !== false) autoUpdater.checkForUpdates().catch(() => {}); // ⚙ check-on-launch
 }
 
 app.whenReady().then(() => {
   session.defaultSession.webRequest.onBeforeSendHeaders((details, cb) => {
     try {
-      if (GOOGLE_LOGIN_HOSTS.includes(new URL(details.url).host)) {
+      if (isGoogleLoginHost(details.url)) { // gated on the ⚙ googleUaSpoof setting
         details.requestHeaders['User-Agent'] = FIREFOX_UA;
         // Real Firefox sends no UA Client Hints; leaving Chromium's Sec-CH-UA* headers on a Firefox
         // UA is what Google now flags as "browser may not be secure". Strip them so it's consistent.
@@ -254,7 +294,7 @@ app.whenReady().then(() => {
     } catch {}
     cb({ requestHeaders: details.requestHeaders });
   });
-  enableAdblock().catch((e) => console.error('adblock init failed:', e.message));
+  if (ms.adblock !== false) enableAdblock().catch((e) => console.error('adblock init failed:', e.message));
 
   // TMDB catalog fetch (runs here to avoid the renderer CSP). Renderer passes api_key.
   const TMDB_BASE = process.env.SH_TEST_TMDB_BASE || 'https://api.themoviedb.org';
@@ -270,6 +310,15 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('install-update', () => { if (app.isPackaged) autoUpdater.quitAndInstall(); });
+
+  // ⚙ settings sync from the renderer: merge, persist for the next launch, live-apply what can be.
+  ipcMain.handle('set-setting', async (_e, patch) => {
+    if (!patch || typeof patch !== 'object') return { error: 'bad patch' };
+    Object.assign(ms, patch);
+    try { fs.writeFileSync(settingsPath(), JSON.stringify(ms, null, 2)); } catch (e) { console.error('settings write:', e.message); }
+    await applyAdblock().catch((e) => console.error('adblock toggle:', e.message));
+    return { ok: true };
+  });
 
   // Version string for the sidebar footer, and a manual "check for updates" trigger.
   ipcMain.handle('app-version', () => app.getVersion());
@@ -288,7 +337,7 @@ app.whenReady().then(() => {
       if (!okScheme) return { error: 'https only' };
       // Send a browser User-Agent — many live-catalog APIs 403 the default Node/undici UA. Abort after
       // 60s so a dead/hanging catalog is skipped (the live grid renders the others incrementally).
-      const r = await fetch(u, { headers: { 'User-Agent': DEFAULT_UA, 'Accept': 'application/json,text/plain,*/*' }, signal: AbortSignal.timeout(60000) });
+      const r = await fetch(u, { headers: { 'User-Agent': DEFAULT_UA, 'Accept': 'application/json,text/plain,*/*' }, signal: AbortSignal.timeout((ms.catalogTimeoutSec || 60) * 1000) });
       return { ok: r.ok, status: r.status, body: await r.text() };
     } catch (e) {
       return { error: e.message };

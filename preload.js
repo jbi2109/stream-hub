@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('sh', {
   getVersion: () => ipcRenderer.invoke('app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-update'),
   onAuthReload: (cb) => ipcRenderer.on('auth-reload', () => cb()), // reload the webview after a standalone login
+  setSetting: (patch) => ipcRenderer.invoke('set-setting', patch), // ⚙ main-process settings sync (live-apply)
 });

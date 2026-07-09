@@ -5,6 +5,26 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.3.1 — Settings that reach the engine (July 2026)
+
+The Settings screen gains a **Privacy & blocking** tab and new Updates/Advanced rows whose switches now
+control the main process — nearly all of them **apply immediately, no restart**:
+
+- **Ad-blocking on/off** — flips the whole blocking engine live.
+- **Extra login pop-up hosts** — add your own sites' sign-in hosts (comma-separated) so their login
+  pop-ups are allowed; everything else stays blocked.
+- **Google sign-in fix on/off** — the Firefox-presentation workaround for Google's "browser not secure"
+  block, now optional in case it ever misbehaves.
+- **Check for updates on launch** — off means updates only happen when you press *Check now*.
+- **Advanced:** playback progress poll interval (applies to newly opened players), ad-list refresh age
+  (next launch), and live catalog timeout (how long a slow catalog may load before it's marked ✕).
+
+Settings are mirrored to the app's own `settings.json` so they're honored from the moment the app starts,
+and a settings **Import/Reset** re-syncs them automatically. Update-check failures now show the actual
+error reason instead of a bare "Check failed".
+
+---
+
 ## v0.3.0 — Performance & quality-of-life (July 2026)
 
 ### Performance
