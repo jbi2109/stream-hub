@@ -13,12 +13,13 @@ const typing = () => {
 
 // ---------- modals (palette / help / wizard) ----------
 
-let paletteEl = null, helpEl = null;
+let paletteEl = null, helpEl = null, whatsNewEl = null;
 
-const modalOpen = () => !!paletteEl || !!helpEl || !$('wizard').hidden;
+const modalOpen = () => !!paletteEl || !!helpEl || !!whatsNewEl || !$('wizard').hidden;
 function closeTopModal() {
   if (paletteEl) { closePalette(); return true; }
   if (helpEl) { closeHelp(); return true; }
+  if (whatsNewEl) { closeWhatsNew(); return true; }
   if (!$('wizard').hidden) { $('wizard').hidden = true; $('wizard').replaceChildren(); return true; } // wizard close() is a private closure
   return false;
 }
@@ -124,6 +125,53 @@ function openHelp() {
   helpEl = overlay;
 }
 function closeHelp() { if (helpEl) { helpEl.remove(); helpEl = null; } }
+
+// ---------- "What's New" modal (post-update, once per version) ----------
+
+// One changelog line -> DOM: "- " lines become bullet rows; inline **x** becomes <strong>.
+// textContent only — the notes come from a fetched release body, never trust it into innerHTML.
+function notesLine(text) {
+  const bullet = text.startsWith('- ');
+  const line = mk('div', bullet ? 'wn-bullet' : 'wn-text');
+  (bullet ? text.slice(2) : text).split('**')
+    .forEach((p, i) => line.append(i % 2 ? mk('strong', null, p) : document.createTextNode(p)));
+  return line;
+}
+
+// notes = the markdown release body (or null -> a short fallback + link). Shown by the app.js
+// bootstrap when the stored lastSeenVersion differs from the running version.
+function openWhatsNew(version, notes) {
+  if (whatsNewEl) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay palette';
+  const card = mk('div', 'palette-card help-card whats-new');
+  card.append(mk('h3', null, `What's new in v${version}`));
+  if (notes) {
+    // drop headings/rules; re-join a wrapped bullet's indented continuation lines
+    const lines = [];
+    for (const raw of notes.split('\n')) {
+      const t = raw.trim();
+      if (!t || t.startsWith('#') || t === '---') continue;
+      if (/^\s+\S/.test(raw) && lines.length) lines[lines.length - 1] += ' ' + t;
+      else lines.push(t);
+    }
+    card.append(...lines.map(notesLine));
+  } else {
+    card.append(mk('div', 'wn-text', `Updated to v${version}.`));
+    const a = mk('a', 'about-link', 'Read the full release notes on GitHub');
+    a.href = `https://github.com/jbi2109/stream-hub/releases/tag/v${version}`;
+    a.target = '_blank';
+    card.append(a);
+  }
+  const okBtn = mk('button', 'set-btn wn-ok', 'Got it');
+  okBtn.onclick = () => closeWhatsNew();
+  card.append(okBtn);
+  overlay.append(card);
+  overlay.onclick = (e) => { if (e.target === overlay) closeWhatsNew(); };
+  document.body.append(overlay);
+  whatsNewEl = overlay;
+}
+function closeWhatsNew() { if (whatsNewEl) { whatsNewEl.remove(); whatsNewEl = null; } }
 
 // ---------- grid navigation ----------
 

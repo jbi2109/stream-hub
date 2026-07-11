@@ -1518,6 +1518,33 @@ async function main() {
   assert.strictEqual(await page.eval(`document.getElementById('settings').hidden`), false, 'onboarding should route to Settings for the key');
   ok('onboarding: buttons open the wizard and Settings');
 
+  // ---------- v0.3.6 "What's New" modal ----------
+
+  // 56. rendering: bullets + **bold**, heading stripped, wrapped continuations joined; Esc closes
+  await page.eval(`openWhatsNew('9.9.9', '## v9.9.9 — Big (July 2026)\\n\\n- **Bold** item one\\n- Item two\\n  wrapped continuation\\n')`);
+  await until(() => page.eval(`!!document.querySelector('.whats-new')`), "What's New modal renders");
+  assert.ok(await page.eval(`document.querySelector('.whats-new h3').textContent.includes('9.9.9')`), 'modal heading shows the version');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('.whats-new .wn-bullet').length`), 2, 'two bullet rows expected');
+  assert.strictEqual(await page.eval(`document.querySelector('.whats-new .wn-bullet strong').textContent`), 'Bold', '**bold** should render as <strong>');
+  assert.ok(await page.eval(`[...document.querySelectorAll('.whats-new .wn-bullet')][1].textContent.includes('wrapped continuation')`), 'indented continuation should join its bullet');
+  assert.ok(!(await page.eval(`[...document.querySelectorAll('.whats-new .wn-bullet, .whats-new .wn-text')].some(n => n.textContent.includes('##'))`)), 'headings should be stripped');
+  await kd('Escape');
+  assert.ok(await page.eval(`!document.querySelector('.whats-new')`), 'Esc should close the modal');
+  ok("what's new: renders bullets/bold, Esc closes");
+
+  // 57. trigger: a stored lastSeenVersion older than the running version shows the modal once at boot
+  //     (no release exists for the dev version -> the 404/fallback path, so no live notes needed)
+  await page.eval(`localStorage.setItem('lastSeenVersion', JSON.stringify('0.0.1'))`);
+  await page.eval(`location.reload()`);
+  await until(() => page.eval(`!!document.querySelector('.whats-new')`), 'upgrade detected on boot', 30000);
+  assert.notStrictEqual(await page.eval(`JSON.parse(localStorage.getItem('lastSeenVersion'))`), '0.0.1', 'lastSeenVersion should advance to the running version');
+  await page.eval(`closeWhatsNew()`);
+  await page.eval(`location.reload()`);
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'reloaded on the same version');
+  await sleep(800); // the trigger is async — give a would-be modal time to (not) appear
+  assert.ok(await page.eval(`!document.querySelector('.whats-new')`), 'same version -> no modal on the next boot');
+  ok("what's new: shows once per version bump");
+
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);
 }

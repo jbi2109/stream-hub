@@ -20,6 +20,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # a tag must not publish a red build
+      - run: npm test
       # electron-builder spins up one publisher per artifact; if the release doesn't
       # exist yet they race to POST /releases and one 422s ("already_exists"), killing
       # the upload mid-flight. Pre-creating the release makes both publishers GET it.

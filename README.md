@@ -1,5 +1,7 @@
 # Stream Hub
 
+[![CI](https://github.com/jbi2109/stream-hub/actions/workflows/pr-ci.yml/badge.svg)](https://github.com/jbi2109/stream-hub/actions/workflows/pr-ci.yml)
+
 A minimal desktop app that turns any set of streaming websites into a single, tidy
 media library. Point it at the sites you use, and Stream Hub gives you one window with
 **bookmarks, automatic watch-progress tracking, and built-in ad-blocking** on top of them.
@@ -7,6 +9,8 @@ media library. Point it at the sites you use, and Stream Hub gives you one windo
 It is a thin browser shell — an Electron [`<webview>`](https://www.electronjs.org/docs/latest/api/webview-tag)
 wrapped in a small UI. It scrapes nothing, extracts no video, and bundles no content or
 sources of its own. You add your own sites; the app just makes them nicer to use.
+
+![Stream Hub first-run dashboard](docs/hero.png)
 
 ---
 
@@ -144,7 +148,8 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 110-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 112-test end-to-end suite
+(also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, single- and two-hop live catalogs, the add-player wizard, the tabbed library, the
@@ -157,6 +162,14 @@ Stream Hub is a general-purpose web browser wrapper. It hosts, streams, indexes,
 **you** choose to add. You are solely responsible for the sites you use and for accessing only
 content you are legally entitled to. Respect copyright law and the terms of service of any site
 you visit. The software is provided "as is", without warranty, under the MIT License.
+
+## Trademark & attribution
+
+The **Stream Hub** name and logo identify this project. They are not licensed for uses that suggest
+endorsement or for confusingly similar forks — nominative references ("built on Stream Hub") are fine.
+
+Movie & TV metadata from [TMDB](https://www.themoviedb.org/). This product uses the TMDB API but is
+not endorsed or certified by TMDB.
 
 ## License
 

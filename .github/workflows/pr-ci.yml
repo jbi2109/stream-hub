@@ -1,0 +1,25 @@
+name: CI
+
+# Run the full e2e suite on every PR and on pushes to main. The suite launches the real Electron app
+# (windows-latest has a desktop session) and needs no network: ad-block uses an inline test rule, the
+# updater is gated off under --test-profile, and TMDB/catalogs are local fixture servers.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test

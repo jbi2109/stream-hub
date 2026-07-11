@@ -851,3 +851,10 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 }
 @keyframes sh-spin { to { transform: rotate(360deg); } }
 #view .error { color: #ef6a6a; font-size: 13px; }
+
+/* "What's New" modal content (on top of the palette/help card) */
+.whats-new { max-width: 560px; max-height: 70vh; overflow-y: auto; }
+.wn-text { font-size: 13px; color: var(--muted); margin: 6px 0; line-height: 1.5; }
+.wn-bullet { font-size: 13px; margin: 6px 0 6px 16px; line-height: 1.5; position: relative; }
+.wn-bullet::before { content: '•'; position: absolute; left: -12px; color: var(--accent); }
+.wn-ok { margin-top: 12px; }

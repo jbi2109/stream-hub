@@ -5,6 +5,20 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.3.6 — Repo polish: CI, What's New & docs (July 2026)
+
+- **"What's New" after updates** — the first launch after an auto-update opens a card with that
+  release's changelog (pulled from the GitHub release notes; falls back to a link when offline).
+  Shows once per version; Esc or **Got it** closes it.
+- **Every pull request and push to main now runs the full 112-test e2e suite** on a Windows runner,
+  and **releases run the suite before building** — a tag can no longer publish a broken installer.
+  The README carries the CI badge.
+- **README** gained a first-run screenshot, the TMDB attribution notice, and a short trademark &
+  attribution note. (`test/screenshots.js` regenerates the screenshots over the same CDP harness the
+  tests use.)
+
+---
+
 ## v0.3.5 — Dashboard home, first-run setup & polished states (July 2026)
 
 - **A new Dashboard is the landing page** (🏠 on the rail, `0` on the keyboard, or Ctrl+K → "Open
