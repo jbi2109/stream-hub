@@ -149,7 +149,10 @@ async function renderBrowse() {
 
   // Movies / TV / Anime need a TMDB key
   if (!tmdbKey) {
-    nodes.push(emptyMsg('Add your free TMDB API key in Settings (left) to browse. Get one at themoviedb.org → Settings → API.'));
+    nodes.push(emptyMsg('Add your free TMDB API key to browse. Get one at themoviedb.org → Settings → API.'));
+    const toSettings = mk('button', 'set-btn', 'Open Settings');
+    toSettings.onclick = () => { showSettings(); showSettingsTab('general'); };
+    nodes.push(toSettings);
     $('browse').replaceChildren(...nodes);
     return;
   }
@@ -171,7 +174,7 @@ async function renderBrowse() {
 
   const grid = document.createElement('div');
   grid.className = 'grid';
-  grid.textContent = 'Loading…';
+  grid.replaceChildren(stateNode('loading', 'Loading…'));
   nodes.push(grid);
 
   const pager = document.createElement('div');
@@ -205,9 +208,8 @@ async function renderBrowse() {
   const data = await fetchBrowse(browseTab, browseQuery, browseFilters, browsePage);
   if (browseTab !== tabAtRender) return;
   const results = (data && data.results) || [];
-  grid.textContent = '';
-  if (!results.length) grid.textContent = 'No results (check your TMDB key / filters).';
-  else grid.append(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(browseTab, r)));
+  if (!results.length) grid.replaceChildren(stateNode('empty', 'No results (check your TMDB key / filters).'));
+  else grid.replaceChildren(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(browseTab, r)));
 
   // pager: 20 per page, Prev disabled on page 1, Next disabled at the last page (TMDB caps at 500)
   const totalPages = Math.min(data?.total_pages || 1, 500);

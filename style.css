@@ -809,3 +809,45 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   cursor: pointer;
   font-size: 13px;
 }
+
+/* ---------- dashboard (landing view) ---------- */
+#dashboard { overflow-y: auto; }
+.dash-section { margin-bottom: 20px; }
+.dash-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.dash-head h2 { margin: 0; font-size: 16px; }
+.dash-seeall { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+.dash-seeall:hover { color: var(--accent); }
+/* horizontal card rail (same scroller pattern as .cast-row) */
+.rail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 8px; }
+.rail .card { flex: 0 0 var(--poster-min, 160px); }
+.rail .match-card { flex: 0 0 240px; }
+.dash-live-hint { align-self: flex-start; }
+
+/* first-run onboarding card */
+.onboard-card {
+  max-width: 540px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 26px;
+}
+.onboard-card h2 { margin: 0 0 6px; }
+.onboard-step { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.onboard-num {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: var(--on-accent);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; flex: none;
+}
+
+/* shared loading / error states (stateNode; .empty already styled above) */
+#view .loading { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+#view .loading::before {
+  content: '';
+  width: 14px; height: 14px; flex: none;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: sh-spin .8s linear infinite;
+}
+@keyframes sh-spin { to { transform: rotate(360deg); } }
+#view .error { color: #ef6a6a; font-size: 13px; }

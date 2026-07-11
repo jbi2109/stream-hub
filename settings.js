@@ -7,7 +7,7 @@ const SETTINGS_DEFAULTS = {
   theme: 'dark',            // 'dark' | 'light'
   accent: '#4c8dff',        // one of ACCENTS
   posterSize: 160,          // grid minmax min, px
-  landingView: 'browse',    // 'browse' | 'library' — first view on launch
+  landingView: 'dashboard', // 'dashboard' | 'browse' | 'library' — first view on launch
   defaultBrowseTab: 'movie',// 'movie' | 'tv' | 'anime'
   watchRegion: 'US',        // TMDB "where to watch" region
   trackContinue: true,      // auto-add to Continue Watching as you watch
@@ -135,7 +135,7 @@ function buildGeneral() {
     selectControl(settings.watchRegion, REGIONS, (v) => { settings.watchRegion = v; saveSettings(); })));
 
   p.append(settingRow('Landing view', 'Which screen opens on launch.',
-    segmented(settings.landingView, [['browse', 'Browse'], ['library', 'Library']],
+    segmented(settings.landingView, [['dashboard', 'Dashboard'], ['browse', 'Browse'], ['library', 'Library']],
       (v) => { settings.landingView = v; saveSettings(); })));
 
   p.append(settingRow('Default Browse tab', 'Which tab Browse opens on.',

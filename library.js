@@ -5,6 +5,13 @@ function seLabel(item) {
   return '';
 }
 
+// The dashboard's Continue rail reuses these cards, so a mutation (✕ / category / note) must refresh
+// whichever of the two card views is showing — renderHome alone would leave a visible rail stale.
+function refreshCards() {
+  renderHome();
+  if (!$('dashboard').hidden) renderDashboard();
+}
+
 function card(item, isCont) {
   const el = document.createElement('div');
   el.className = 'card';
@@ -61,7 +68,7 @@ function card(item, isCont) {
     e.stopPropagation();
     item.type = typeSel.value;
     store(isCont ? 'continue' : 'watchlater', isCont ? cont : later);
-    renderHome();
+    refreshCards();
   };
   actions.append(typeSel);
 
@@ -79,7 +86,7 @@ function card(item, isCont) {
     e.stopPropagation();
     if (isCont) { cont = cont.filter((c) => c.key !== item.key); store('continue', cont); }
     else { later = later.filter((c) => c.key !== item.key); store('watchlater', later); }
-    renderHome();
+    refreshCards();
   };
   actions.append(del);
   wrap.append(actions);
@@ -161,7 +168,7 @@ function editNote(item, sub) {
   input.onblur = () => {
     item.note = input.value.trim();
     store('continue', cont);
-    renderHome();
+    refreshCards();
   };
   sub.replaceWith(input);
   input.focus();
@@ -186,12 +193,9 @@ function renderHome() {
   ];
 
   if (list.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = isCont
+    nodes.push(emptyMsg(isCont
       ? 'Play something — it shows up here automatically.'
-      : 'Hit “+ Watch Later” on a show or movie to save it here.';
-    nodes.push(empty);
+      : 'Hit “+ Watch Later” on a show or movie to save it here.'));
   } else {
     const grid = document.createElement('div');
     grid.className = 'grid';

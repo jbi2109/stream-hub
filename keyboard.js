@@ -28,6 +28,7 @@ function closeTopModal() {
 // Curated actions, rebuilt on open (Resume only shows once something is resumable).
 function paletteActions() {
   const acts = [
+    ['Open Dashboard', showDashboard],
     ['Browse Movies', () => { browseTab = 'movie'; showBrowse(); }],
     ['Browse TV', () => { browseTab = 'tv'; showBrowse(); }],
     ['Browse Anime', () => { browseTab = 'anime'; showBrowse(); }],
@@ -94,6 +95,7 @@ function closePalette() { if (paletteEl) { paletteEl.remove(); paletteEl = null;
 // ---------- "?" shortcuts overlay ----------
 
 const SHORTCUTS = [
+  ['0', 'Open the dashboard'],
   ['1 / 2 / 3', 'Browse Movies / TV / Anime'],
   ['4', 'Open Live TV'],
   ['5', 'Open YouTube'],
@@ -130,16 +132,29 @@ function moveGrid(key) {
   const onItem = active && active.matches && active.matches(NAV_SEL);
   if (!onItem) {
     // seed: focus the first item in the visible view
-    const view = ['browse', 'detail', 'home', 'settings'].map((id) => $(id)).find((el) => el && !el.hidden);
+    const view = ['dashboard', 'browse', 'detail', 'home', 'settings'].map((id) => $(id)).find((el) => el && !el.hidden);
     const first = view && view.querySelector(NAV_SEL);
     if (!first) return false;
     first.focus();
     first.scrollIntoView({ block: 'nearest' });
     return true;
   }
-  const container = active.closest('.grid, .episodes, .src-list') || active.parentElement;
+  const container = active.closest('.grid, .episodes, .src-list, .rail') || active.parentElement;
   const items = [...container.querySelectorAll(NAV_SEL)];
   const i = items.indexOf(active);
+  if (container.classList.contains('rail')) {
+    // dashboard rails are flex rows, not grids: ←/→ walk the rail, ↑/↓ hop to the neighbouring rail
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+      const next = Math.max(0, Math.min(items.length - 1, i + (key === 'ArrowRight' ? 1 : -1)));
+      if (next !== i) { items[next].focus(); items[next].scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+    } else {
+      const rails = [...$('dashboard').querySelectorAll('.rail')];
+      const target = rails[rails.indexOf(container) + (key === 'ArrowDown' ? 1 : -1)];
+      const first = target && target.querySelector(NAV_SEL);
+      if (first) { first.focus(); first.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+    }
+    return true;
+  }
   const style = getComputedStyle(container);
   // one px token per track in the used value; non-grid containers (src-list) navigate as a column
   const cols = style.display === 'grid' ? style.gridTemplateColumns.split(' ').length : 1;
@@ -171,7 +186,8 @@ function exitPlayer() {
   if (closeTopModal()) return;
   if (webview.classList.contains('fullscreen')) return;
   if (webview.hidden) return;
-  if (openedFrom === 'home') showHome();
+  if (openedFrom === 'dashboard') showDashboard();
+  else if (openedFrom === 'home') showHome();
   else if (openedFrom === 'live') { browseTab = 'live'; showBrowse(); }
   else showBrowse();
 }
@@ -192,8 +208,9 @@ document.addEventListener('keydown', (e) => {
   if (modalOpen() || typing()) return; // palette input / wizard / form controls own their keys
   if (e.key === '?') { openHelp(); return; }
   if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) { e.preventDefault(); focusSearch(); return; }
-  if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '5') {
-    if (e.key === '4') { browseTab = 'live'; showBrowse(); }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '0' && e.key <= '5') {
+    if (e.key === '0') showDashboard();
+    else if (e.key === '4') { browseTab = 'live'; showBrowse(); }
     else if (e.key === '5') open('https://www.youtube.com', false);
     else { browseTab = ['movie', 'tv', 'anime'][+e.key - 1]; showBrowse(); }
     return;

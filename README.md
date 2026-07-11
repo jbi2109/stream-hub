@@ -12,7 +12,12 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 
 ## Features
 
-- **Browse home (TMDB)** — the app's own landing page: discover Movies, TV, and Anime
+- **Dashboard home** — the landing page: rails for **Continue Watching** (resume the exact episode on
+  its own source), **Trending** (TMDB), and **Live now** (from your live catalogs, most-watched
+  first), each with a "See all →" into the full view. Empty rails hide; a fresh install shows a
+  two-step **setup card** (TMDB key → first source) instead. The landing view is configurable
+  (Dashboard / Browse / Library).
+- **Browse (TMDB)** — discover Movies, TV, and Anime
   from [TMDB](https://www.themoviedb.org/), **filter by genre / year / language / country / provider and sort**,
   **page** through the whole catalog (20 at a time), search, and open a title's **native detail page**
   (overview, genres, rating, cast, seasons + episode picker with stills, in-app trailer,
@@ -60,9 +65,10 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 
 | Key | Action |
 |-----|--------|
+| `0` | Open the Dashboard |
 | `1` / `2` / `3` | Browse Movies / TV / Anime |
 | `4` / `5` | Open Live TV / YouTube |
-| `← ↑ → ↓` | Move around a grid |
+| `← ↑ → ↓` | Move around a grid (on the Dashboard: ←/→ walk a rail, ↑/↓ hop rails) |
 | `Enter` | Open the focused item |
 | `/` | Focus search |
 | `Ctrl+K` | Command palette (works while watching too) |
@@ -122,6 +128,7 @@ one and **Import** in the other to carry your setup over.
 | `live.js` | Live TV engine: catalog fetching/parsing (single- + two-hop), match grouping, source pages. |
 | `detail.js` | Native TMDB detail page + episode picker. |
 | `library.js` | Continue Watching / Watch Later grid. |
+| `dashboard.js` | Landing dashboard: Continue/Trending/Live-now rails + first-run onboarding. |
 | `wizard.js` | Guided "Add player / source" modal. |
 | `settings.js` | The tabbed Settings screen: settings object + defaults, theme/accent/poster, and library actions. |
 | `app.js` | Rail/top-bar wiring, auto-update banner, settings export/import, bootstrap. |
@@ -137,7 +144,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 103-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 110-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, single- and two-hop live catalogs, the add-player wizard, the tabbed library, the

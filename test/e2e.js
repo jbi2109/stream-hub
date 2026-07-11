@@ -245,15 +245,18 @@ async function main() {
   // ---------- boot ----------
   let pageTarget = await launchApp();
   let page = await CDP.connect(pageTarget.webSocketDebuggerUrl);
-  await until(() => page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 'browse rendered');
+  await until(() => page.eval(`!!document.querySelector('#dashboard .onboard-card')`), 'dashboard onboarding rendered');
 
-  // 1. UI boots on Browse (ships with no default sources; no TMDB key -> prompt)
+  // 1. UI boots on the Dashboard: a fresh profile (no key AND no sources) shows the onboarding card
   assert.strictEqual(await page.eval(`document.querySelectorAll('#sources li').length`), 0, 'expected no seeded sources');
-  assert.strictEqual(await page.eval(`document.getElementById('browse').hidden`), false, 'browse should be the landing view');
+  assert.strictEqual(await page.eval(`document.getElementById('dashboard').hidden`), false, 'dashboard should be the landing view');
   assert.strictEqual(await page.eval(`document.getElementById('home').hidden`), true, 'library should be hidden at boot');
+  assert.ok(await page.eval(`!!document.getElementById('onboard-add')`), 'onboarding should offer the add-source wizard');
+  await page.eval(`document.getElementById('browse-btn').click()`); // Browse keeps its own no-key prompt
+  await until(() => page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 'browse rendered');
   assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 3, 'expected 3 browse tabs (Movies/TV/Anime — Live+YouTube moved to the rail)');
   assert.ok(await page.eval(`(document.querySelector('#browse .empty')||{}).textContent?.includes('TMDB')`), 'no-key prompt should mention TMDB');
-  ok('UI boots on Browse: 3 tabs, no-key prompt, no default sources');
+  ok('boot: dashboard landing + onboarding card; Browse shows 3 tabs + no-key prompt');
 
   // 2. add local test source + click it -> interaction regression check
   await page.eval(`addSource({ name: 'LocalTest', url: '${SITE}', category: 'vod' })`);
@@ -530,8 +533,8 @@ async function main() {
   await quitApp();
   pageTarget = await launchApp();
   page = await CDP.connect(pageTarget.webSocketDebuggerUrl);
-  await until(() => page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 'app rendered after restart');
-  await page.eval(`document.getElementById('home-btn').click()`); // Browse is now the landing; open Library
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'app rendered after restart (dashboard landing)');
+  await page.eval(`document.getElementById('home-btn').click()`); // Dashboard is the landing; open Library
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('sources'))`)).length, 1, 'sources lost after restart');
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('continue'))`)).length, 1, 'continue lost after restart');
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, 2, 'watchlater lost after restart');
@@ -1063,7 +1066,7 @@ async function main() {
   // 32w8. v0.2.7: a YouTube-host Continue entry is purged on load (clears the leaked junk)
   await page.eval(`(() => { const c = JSON.parse(localStorage.getItem('continue') || '[]'); c.push({ key: 'yt#1', title: 'Some Video', url: 'https://www.youtube.com/watch?v=abc123', type: 'movie', season: null, episode: null, updatedAt: Date.now(), position: null, duration: null, note: '' }); localStorage.setItem('continue', JSON.stringify(c)); })()`);
   await page.eval(`location.reload()`);
-  await until(() => page.eval(`!!document.querySelector('#browse .tabs .tab')`), 'reloaded after seeding a youtube entry');
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'reloaded after seeding a youtube entry');
   assert.ok(!(await page.eval(`JSON.parse(localStorage.getItem('continue'))`)).some((c) => c.url.includes('youtube.com')), 'youtube-host entry purged from Continue Watching on load');
   ok('migration: youtube entries purged from Continue Watching on load');
 
@@ -1170,7 +1173,7 @@ async function main() {
 
   // 32Q4. v0.3.0: ⏯ Resume survives a restart (lastPlayed persisted) and restores the live UI
   await page.eval(`location.reload()`);
-  await until(() => page.eval(`!!document.querySelector('#browse .tabs .tab')`), 'reloaded for resume persistence');
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'reloaded for resume persistence');
   assert.strictEqual(await page.eval(`document.getElementById('resume-btn').hidden`), false, 'resume-btn should be visible after a restart');
   await page.eval(`resumeLast()`);
   await until(() => page.eval(`document.getElementById('webview').getURL().startsWith('${PLAYER}/live/900')`), 'resume reloads the last-watched live embed after restart');
@@ -1429,6 +1432,91 @@ async function main() {
   await kd('Escape'); // closes the wizard
   assert.strictEqual(await page.eval(`document.getElementById('wizard').hidden`), true, 'Esc should close the wizard');
   ok('keyboard: Esc model — Settings, live source page, wizard');
+
+  // ---------- v0.3.5 dashboard + onboarding + shared states ----------
+
+  // 49. dashboard: Continue / Trending / Live-now rails from existing state (live rail = warm cache)
+  await page.eval(`document.getElementById('dash-btn').click()`);
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'dashboard shown from the rail');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#dashboard .rail .card')].some(c => c.textContent.includes('Fixture Title'))`), 'Continue rail should reuse the library card');
+  await until(() => page.eval(`[...document.querySelectorAll('#dashboard .rail .card')].some(c => c.textContent.includes('Disc P1'))`), 'Trending rail fills from /discover (popularity)');
+  assert.ok(await page.eval(`document.querySelectorAll('#dashboard .rail .match-card').length >= 1`), 'Live-now rail should render match cards from the warm cache');
+  ok('dashboard: Continue / Trending / Live-now rails render');
+
+  // 50. See-all routes; a card launched from the dashboard enables the switchers and Esc-returns to it
+  await page.eval(`[...document.querySelectorAll('#dashboard .dash-seeall')][0].click()`); // Continue -> Library
+  assert.strictEqual(await page.eval(`document.getElementById('home').hidden`), false, 'Continue See-all should open the Library');
+  await page.eval(`document.getElementById('dash-btn').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#dashboard .rail .card')].some(c => c.textContent.includes('Fixture Title'))`), 'back on the dashboard');
+  await page.eval(`[...document.querySelectorAll('#dashboard .rail .card')].find(c => c.textContent.includes('Fixture Title')).click()`);
+  await until(() => page.eval(`!document.getElementById('webview').hidden && !document.getElementById('ep-switch').hidden`), 'dashboard card plays + enables the switchers (library card reuse)');
+  await page.eval(`exitPlayer()`);
+  assert.strictEqual(await page.eval(`document.getElementById('dashboard').hidden`), false, 'exitPlayer should return to the dashboard it launched from');
+  ok('dashboard: See-all routes; card reuse + Esc returns to the dashboard');
+
+  // 51. mutating a card from the dashboard refreshes the visible rail (not just the hidden Library)
+  await page.eval(`document.querySelector('#dashboard .rail .card button[title="Remove"]').click()`);
+  await until(() => page.eval(`![...document.querySelectorAll('#dashboard .rail .card')].some(c => c.textContent.includes('Fixture Title'))`), '✕ from the dashboard removes the card from the rail');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 0, 'the entry should be gone from storage');
+  ok('dashboard: card mutations refresh the visible rail');
+
+  // 52. the Live-now rail NEVER fetches: cold cache -> hint; the hint opens Live TV (which fetches)
+  await page.eval(`sources = sources.filter(s => s.category !== 'live'); sources.push({ name: 'DashHop', category: 'live', catalogUrl: '${CATALOG_TWOHOP}/api/matches/live' }); store('sources', sources); liveCatalogCache.clear();`);
+  const dashHits = twoHopHits;
+  await page.eval(`document.getElementById('dash-btn').click()`);
+  await until(() => page.eval(`!!document.querySelector('#dashboard .dash-live-hint')`), 'cold cache shows the Open-Live-TV hint');
+  await sleep(600);
+  assert.strictEqual(twoHopHits, dashHits, 'the dashboard must not fetch catalogs');
+  await page.eval(`document.querySelector('#dashboard .dash-live-hint').click()`);
+  await until(() => Promise.resolve(twoHopHits === dashHits + 1), 'the hint opens Live TV, which fetches');
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(c => c.textContent.includes('Hop Match'))`), 'live grid renders after the hint');
+  ok('dashboard: live rail is cache-only; the hint routes to Live TV');
+
+  // 53. rail keyboard nav (←/→ walk the rail, ↑/↓ hop rails), digit 0, and the palette entry
+  await page.eval(`(() => { cont.length = 0;
+    cont.push({ key: 'tv#428', title: 'Fixture Title', url: '${PLAYER}/embed/tv/428/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: 2, position: null, duration: null, note: '' });
+    cont.push({ key: 'movie#500', title: 'Second Card', url: '${PLAYER}/embed/movie/500', poster: '', season: null, episode: null, type: 'movie', updatedAt: 1, position: null, duration: null, note: '' });
+    store('continue', cont); })()`);
+  await page.eval(`document.getElementById('dash-btn').click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#dashboard .rail .card')].some(c => c.textContent.includes('Disc P1'))`), 'dashboard rails ready for keyboard nav');
+  await page.eval(`document.activeElement && document.activeElement.blur()`);
+  await kd('ArrowRight'); // seeds focus on the first rail item
+  assert.ok(await page.eval(`!!document.activeElement.closest('#dashboard .rail')`), 'arrow should seed focus on a rail item');
+  const r0 = await page.eval(`[...document.activeElement.closest('.rail').querySelectorAll('.card')].indexOf(document.activeElement)`);
+  await kd('ArrowRight');
+  const r1 = await page.eval(`[...document.activeElement.closest('.rail').querySelectorAll('.card')].indexOf(document.activeElement)`);
+  assert.strictEqual(r1, r0 + 1, 'ArrowRight should walk the rail');
+  await kd('ArrowDown');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#dashboard .rail')].indexOf(document.activeElement.closest('.rail'))`), 1, 'ArrowDown should hop to the next rail');
+  await page.eval(`showBrowse(); document.activeElement && document.activeElement.blur()`);
+  await kd('0');
+  assert.strictEqual(await page.eval(`document.getElementById('dashboard').hidden`), false, 'digit 0 should open the dashboard');
+  await page.eval(`showBrowse()`);
+  await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))`);
+  await until(() => page.eval(`!!document.querySelector('.palette-input')`), 'palette for the dashboard action');
+  await page.eval(`(() => { const i = document.querySelector('.palette-input'); i.value = 'dashboard'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))`);
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden && !document.querySelector('.palette-input')`), 'palette Open Dashboard runs');
+  ok('dashboard: rail arrows, digit 0, palette entry');
+
+  // 54. shared stateNode classes; the 3-option landing control; landingView 'library' still boots there
+  assert.strictEqual(await page.eval(`stateNode('empty', 'x').className`), 'empty', "stateNode('empty') must keep the .empty class");
+  assert.strictEqual(await page.eval(`stateNode('loading', 'x').className`), 'loading', 'stateNode loading class');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Landing view')).querySelectorAll('.segmented button').length`), 3, 'Landing view should offer Dashboard/Browse/Library');
+  await page.eval(`settings.landingView = 'library'; saveSettings(); location.reload()`);
+  await until(() => page.eval(`!document.getElementById('home').hidden`), "landingView 'library' boots to the Library");
+  await page.eval(`settings.landingView = 'dashboard'; saveSettings();`);
+  ok('states + settings: stateNode classes; landing control; library landing intact');
+
+  // 55. onboarding actions: the wizard + Settings buttons work (empty profile simulated in-memory)
+  await page.eval(`tmdbKey = ''; sources = []; showDashboard();`);
+  await until(() => page.eval(`!!document.getElementById('onboard-add')`), 'onboarding card renders for an empty profile');
+  await page.eval(`document.getElementById('onboard-add').click()`);
+  await until(() => page.eval(`!document.getElementById('wizard').hidden`), 'onboarding opens the add-source wizard');
+  await page.eval(`document.getElementById('wizard').hidden = true; document.getElementById('wizard').replaceChildren();`);
+  await page.eval(`showDashboard(); [...document.querySelectorAll('#dashboard .onboard-card .set-btn')].find(b => b.textContent.includes('Settings')).click()`);
+  assert.strictEqual(await page.eval(`document.getElementById('settings').hidden`), false, 'onboarding should route to Settings for the key');
+  ok('onboarding: buttons open the wizard and Settings');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

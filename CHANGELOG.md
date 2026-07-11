@@ -5,6 +5,29 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.3.5 — Dashboard home, first-run setup & polished states (July 2026)
+
+- **A new Dashboard is the landing page** (🏠 on the rail, `0` on the keyboard, or Ctrl+K → "Open
+  Dashboard"): horizontal rails for **Continue Watching** (the same cards as the Library — click one
+  and it resumes the exact episode on its own source, with the episode/source switchers lit),
+  **Trending** (TMDB's most popular, straight to the detail page), and **Live now** (live matches from
+  your catalogs, most-watched first). Each rail has a **See all →** into the full view, empty rails
+  hide themselves, and **Esc from the player returns to the Dashboard** when you launched from it.
+  Prefer the old behavior? Settings → General → **Landing view** now offers Dashboard / Browse /
+  Library.
+- **The Dashboard never slows you down**: Continue Watching and Live now render instantly from local
+  state (the live rail reads the existing 90-second catalog cache — it never fetches; when the cache
+  is cold it shows an "Open Live TV to load matches" shortcut), and Trending fills in behind a spinner.
+- **First-run onboarding** — a fresh install (no TMDB key, no sources) now gets a friendly two-step
+  setup card (get/paste a TMDB key → add your first source, straight into the wizard) instead of bare
+  prompts. It disappears on its own once you've set either up. The Browse and Live TV empty states also
+  gained buttons that jump straight to Settings / the add-source wizard.
+- **Consistent loading/empty/error states** — a real spinner replaces the bare "Loading…" text across
+  Browse, Live TV, and the detail page, with shared styling for empty and error messages.
+- Arrow keys work on the Dashboard too: ←/→ walk a rail, ↑/↓ hop between rails.
+
+---
+
 ## v0.3.4 — Keyboard control & command palette (July 2026)
 
 The whole native UI is now drivable without a mouse:

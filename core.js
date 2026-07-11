@@ -66,6 +66,11 @@ function emptyMsg(text) {
   return mk('div', 'empty', text);
 }
 
+// Shared view-state node: 'empty' (keeps the .empty class), 'loading' (CSS spinner), or 'error'.
+function stateNode(kind, text) {
+  return mk('div', kind === 'empty' ? 'empty' : kind, text);
+}
+
 function tabBar(tabs, current, onPick, cls) {
   const bar = mk('div', cls);
   for (const [id, label] of tabs) {
@@ -85,6 +90,7 @@ function setActiveRail(id) {
 }
 
 function hideAll() {
+  $('dashboard').hidden = true;
   $('home').hidden = true;
   $('browse').hidden = true;
   $('detail').hidden = true;
@@ -107,7 +113,8 @@ function open(url, track = true) {
   // Record the launching view for Esc-exit — but only on a fresh open; an in-player episode/source
   // switch (webview already visible) keeps the original origin.
   if (webview.hidden) {
-    openedFrom = !$('home').hidden ? 'home'
+    openedFrom = !$('dashboard').hidden ? 'dashboard'
+      : !$('home').hidden ? 'home'
       : ((browseTab === 'live' && !$('browse').hidden) || currentLiveMatch) ? 'live' : 'browse';
   }
   hideAll();
@@ -142,6 +149,13 @@ function resumeLast() {
     renderSourceSwitch();
     renderEpisodeSwitch();
   }
+}
+
+function showDashboard() {
+  hideAll();
+  setActiveRail('dash-btn');
+  $('dashboard').hidden = false;
+  renderDashboard();
 }
 
 function showHome() {

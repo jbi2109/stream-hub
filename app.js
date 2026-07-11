@@ -24,6 +24,7 @@ $('watch-later').onclick = async () => {
 // ---- rail + topbar navigation ----
 // 🔎 Browse shows Movies/TV/Anime only; if we're on Live (its tab bar was removed) reset to a VOD tab.
 $('browse-btn').onclick = () => { if (browseTab === 'live') browseTab = settings.defaultBrowseTab || 'movie'; showBrowse(); };
+$('dash-btn').onclick = showDashboard;
 $('home-btn').onclick = showHome;
 $('live-btn').onclick = () => { browseTab = 'live'; showBrowse(); };
 $('youtube-btn').onclick = () => open('https://www.youtube.com', false); // untracked: don't clobber Resume
@@ -141,5 +142,7 @@ rekeyLibrary();          // host-independent keys + merge duplicate cards (befor
 renderSources();
 if (settings.defaultBrowseTab) browseTab = settings.defaultBrowseTab;
 browseFilters = loadFiltersFor(browseTab); // restore the landing tab's saved filter selections
-if (settings.landingView === 'library') showHome(); else showBrowse();
+if (settings.landingView === 'library') showHome();
+else if (settings.landingView === 'browse') showBrowse();
+else showDashboard();
 healLibrary();           // one-time: re-title old entries from TMDB (no-op once done / without a key)

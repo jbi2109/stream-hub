@@ -7,14 +7,14 @@ function detailBackTo() { showBrowse(); }
 async function showDetail(kind, id) {
   hideAll();
   $('detail').hidden = false;
-  $('detail').replaceChildren(emptyMsg('Loading…'));
+  $('detail').replaceChildren(stateNode('loading', 'Loading…'));
   const type = kind === 'movie' ? 'movie' : 'tv';
   let d;
   try {
     d = await tmdbGet(`/${type}/${id}`, { append_to_response: 'credits,videos,external_ids,watch/providers' });
   } catch { d = null; }
   if (!d || d.error || (!d.title && !d.name)) {
-    $('detail').replaceChildren(detailHeaderBar(), emptyMsg('Could not load details (check your TMDB key).'));
+    $('detail').replaceChildren(detailHeaderBar(), stateNode('error', 'Could not load details (check your TMDB key).'));
     return;
   }
   renderDetail(kind, type, id, d);
@@ -141,7 +141,7 @@ function renderDetail(kind, type, id, d) {
 
     const loadSeason = async (n) => {
       curSeason = +n;
-      epGrid.replaceChildren(emptyMsg('Loading…'));
+      epGrid.replaceChildren(stateNode('loading', 'Loading…'));
       let s;
       try { s = await tmdbGet(`/tv/${id}/season/${n}`, {}); } catch { s = null; }
       epGrid.replaceChildren(...(s?.episodes || []).map((ep) => episodeCard(kind, type, id, ep, () => { curSeason = ep.season_number; curEpisode = ep.episode_number; }, title, posterUrl)));

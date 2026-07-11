@@ -254,12 +254,12 @@ async function showLivePicker(match) {
   if (match.logo) { const img = document.createElement('img'); img.className = 'live-pick-logo'; img.src = match.logo; img.onerror = () => img.remove(); head.append(img); }
   const h = document.createElement('h1'); h.textContent = match.title; head.append(h);
   const sec = document.createElement('div'); sec.className = 'detail-section';
-  sec.textContent = 'Loading sources…';
+  sec.replaceChildren(stateNode('loading', 'Loading sources…'));
   el.replaceChildren(back, head, sec);
   el.hidden = false;
   const srcs = await resolveMatchSources(match);
   if (currentLiveMatch !== match || el.hidden) return; // user navigated away while resolving
-  if (!srcs.length) { sec.textContent = 'No playable sources.'; return; }
+  if (!srcs.length) { sec.replaceChildren(stateNode('empty', 'No playable sources.')); return; }
   sec.replaceChildren(sourceList(liveMatchGroups(match, srcs)));
 }
 
@@ -319,7 +319,10 @@ function renderLiveTab(container) {
   const nodes = []; // no browse tab bar here — the Live view is reached via the 📺 rail button
 
   if (!live.length) {
-    nodes.push(emptyMsg('Add a Live TV source in Settings → + Add player / source.'));
+    nodes.push(emptyMsg('Add a Live TV source — a site, or a live-streams JSON catalog you paste by URL.'));
+    const addBtn = mk('button', 'set-btn', '+ Add player / source');
+    addBtn.onclick = () => openAddWizard();
+    nodes.push(addBtn);
     container.replaceChildren(...nodes);
     return;
   }
@@ -342,7 +345,8 @@ function renderLiveTab(container) {
   const search = document.createElement('input'); search.className = 'browse-search'; search.placeholder = 'Search live…';
   filterRow.append(search);
   controls.append(catBar, filterRow);
-  const grid = document.createElement('div'); grid.className = 'grid match-grid'; grid.textContent = 'Loading…';
+  const grid = document.createElement('div'); grid.className = 'grid match-grid';
+  grid.replaceChildren(stateNode('loading', 'Loading…'));
   nodes.push(controls, grid);
   container.replaceChildren(...nodes);
 
@@ -359,7 +363,7 @@ function renderLiveTab(container) {
       const rank = (it) => (it.startsAt == null ? 2 : (it.startsAt <= Date.now() + 60000 ? 0 : 1));
       items = items.slice().sort((a, b) => rank(a) - rank(b) || (a.startsAt || 0) - (b.startsAt || 0));
     }
-    if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
+    if (!items.length) { grid.replaceChildren(stateNode('empty', all.length ? 'No matches.' : 'Nothing live right now.')); return; }
     // catalogs stream in and rebuild this grid with no user input — keep keyboard focus by index
     const focusIdx = [...grid.children].indexOf(document.activeElement);
     grid.replaceChildren(...items.slice(0, 400).map(matchCard));
