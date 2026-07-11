@@ -90,7 +90,8 @@ per-user (no admin) and launches automatically, then **auto-updates** itself.
 
 ## Build from source / run in dev
 
-- [Node.js](https://nodejs.org/) 18+ (developed on v24); Windows / macOS / Linux (Electron).
+- [Node.js](https://nodejs.org/) 22+ (developed on v24; the test harness uses the built-in WebSocket);
+  Windows / macOS / Linux (Electron).
 
 ```bash
 git clone https://github.com/jbi2109/stream-hub.git
