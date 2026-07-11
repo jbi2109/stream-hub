@@ -230,7 +230,7 @@ async function quitApp() {
 }
 
 async function main() {
-  setTimeout(() => { console.error('GLOBAL TIMEOUT'); process.exit(1); }, 180000).unref();
+  setTimeout(() => { console.error('GLOBAL TIMEOUT'); process.exit(1); }, 240000).unref();
   fs.rmSync(PROFILE, { recursive: true, force: true }); // deterministic start
   site.listen(9310);
   uaEcho.listen(9311);
@@ -1346,6 +1346,89 @@ async function main() {
   await page.eval(`(() => { const s = document.getElementById('ep-switch'); s.value = '1:3'; s.dispatchEvent(new Event('change')); })()`);
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/embed/tv/428/1/3'`), 'episode change stays on the card source');
   ok('library: continue card enables the switchers; episode change pins the card source');
+
+  // ---------- v0.3.4 keyboard navigation + command palette ----------
+  const kd = (key, extra = '') => page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}'${extra} }))`);
+
+  // 43. exitPlayer: returns to the LAUNCHING view (library, from test 42's card); no-op while fullscreen
+  await page.eval(`document.getElementById('webview').classList.add('fullscreen'); exitPlayer();`);
+  assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), false, 'exitPlayer must no-op while the guest is fullscreen');
+  await page.eval(`document.getElementById('webview').classList.remove('fullscreen'); exitPlayer();`);
+  assert.strictEqual(await page.eval(`document.getElementById('home').hidden`), false, 'exitPlayer should return to the launching view (Library)');
+  ok('keyboard: exitPlayer honors the launching view + fullscreen guard');
+
+  // 44. arrow navigation across the live match grid (stride derived from computed style, clamped)
+  await page.eval(`sources.push({ name: 'KbCat', category: 'live', catalogUrl: '${CATALOG}/api/streams' }); store('sources', sources); renderSources();`);
+  await page.eval(`document.getElementById('live-btn').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .match-grid .match-card').length >= 3`), 'live grid for keyboard nav');
+  await page.eval(`document.activeElement && document.activeElement.blur()`);
+  await kd('ArrowRight'); // seeds focus on the first item
+  assert.ok(await page.eval(`document.activeElement.classList.contains('match-card')`), 'ArrowRight should seed focus on a match card');
+  const kIdx0 = await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].indexOf(document.activeElement)`);
+  await kd('ArrowRight');
+  const kIdx1 = await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].indexOf(document.activeElement)`);
+  assert.strictEqual(kIdx1, kIdx0 + 1, 'ArrowRight should move one card right');
+  const kClamp = await page.eval(`(() => { const g = document.querySelector('#browse .match-grid'); const cols = getComputedStyle(g).gridTemplateColumns.split(' ').length; const items = [...g.querySelectorAll('.match-card')]; const i = items.indexOf(document.activeElement); return Math.max(0, Math.min(items.length - 1, i + cols)); })()`);
+  await kd('ArrowDown');
+  const kIdx2 = await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].indexOf(document.activeElement)`);
+  assert.strictEqual(kIdx2, kClamp, 'ArrowDown should move by the derived column stride (clamped)');
+  ok('keyboard: arrow navigation across the live grid');
+
+  // 45. Enter opens a focused match; Enter on a focused source row plays it
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(c => c.textContent.includes('Beta')).focus()`);
+  await kd('Enter');
+  await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelectorAll('#detail .src-row').length >= 1`), 'Enter opens the source page');
+  await page.eval(`document.querySelector('#detail .src-row').focus()`);
+  await kd('Enter');
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/8'`), 'Enter on a source row plays it');
+  ok('keyboard: Enter opens a match and starts a source row');
+
+  // 46. digit tabs, / search focus, untracked YouTube (digit 5 must not clobber Resume)
+  await page.eval(`showBrowse()`);
+  await page.eval(`document.activeElement && document.activeElement.blur()`);
+  await kd('2');
+  assert.strictEqual(await page.eval(`browseTab`), 'tv', 'digit 2 should switch to the TV tab');
+  await kd('4');
+  await until(() => page.eval(`browseTab === 'live' && !!document.querySelector('#browse .match-grid')`), 'digit 4 opens the live grid');
+  await kd('/');
+  assert.ok(await page.eval(`document.activeElement.classList.contains('browse-search')`), '/ should focus the visible search');
+  await kd('Escape'); // blurs the search
+  const lpBefore = await page.eval(`localStorage.getItem('lastPlayed')`);
+  await kd('5');
+  await until(() => page.eval(`document.getElementById('webview').src.includes('youtube.com')`), 'digit 5 opens YouTube');
+  assert.strictEqual(await page.eval(`localStorage.getItem('lastPlayed')`), lpBefore, 'digit 5 must not clobber the Resume target');
+  ok('keyboard: digit tabs, / focuses search, YouTube stays untracked');
+
+  // 47. Esc exits the player to its launching view; ? overlay; Ctrl+K palette runs an action
+  await kd('Escape'); // player (launched from the live grid) -> back to live
+  await until(() => page.eval(`!document.getElementById('browse').hidden && browseTab === 'live'`), 'Esc exits the player to the launching view');
+  await kd('?');
+  assert.ok(await page.eval(`!!document.querySelector('.modal-overlay.palette .help-key')`), '? should open the shortcuts overlay');
+  await kd('Escape');
+  assert.ok(await page.eval(`!document.querySelector('.modal-overlay.palette')`), 'Esc should close the overlay');
+  await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))`);
+  await until(() => page.eval(`!!document.querySelector('.palette-input')`), 'Ctrl+K opens the palette');
+  await page.eval(`(() => { const i = document.querySelector('.palette-input'); i.value = 'library'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))`);
+  await until(() => page.eval(`!document.getElementById('home').hidden && !document.querySelector('.palette-input')`), 'palette action runs and closes');
+  ok('keyboard: Esc-to-origin, ? overlay, Ctrl+K palette');
+
+  // 48. Esc model: Settings -> Browse; live source page -> live grid; wizard closes (blur, then close)
+  await page.eval(`document.getElementById('settings-btn').click()`);
+  await kd('Escape');
+  assert.strictEqual(await page.eval(`document.getElementById('browse').hidden`), false, 'Esc on Settings should return to Browse');
+  await page.eval(`document.getElementById('live-btn').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .match-grid .match-card').length >= 1`), 'live grid for the Esc test');
+  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')][0].click()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden`), 'source page open for the Esc test');
+  await kd('Escape');
+  await until(() => page.eval(`!document.getElementById('browse').hidden && !!document.querySelector('#browse .match-grid')`), 'Esc on the live source page returns to the live grid');
+  await page.eval(`document.getElementById('settings-btn').click(); document.getElementById('add-source-btn').click()`);
+  await until(() => page.eval(`!document.getElementById('wizard').hidden`), 'wizard open for the Esc test');
+  await kd('Escape'); // blurs the auto-focused input
+  await kd('Escape'); // closes the wizard
+  assert.strictEqual(await page.eval(`document.getElementById('wizard').hidden`), true, 'Esc should close the wizard');
+  ok('keyboard: Esc model — Settings, live source page, wizard');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

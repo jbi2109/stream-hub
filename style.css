@@ -535,6 +535,40 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 }
 .match-time.live { background: #dc2626; }
 
+/* ---- keyboard navigation + command palette ---- */
+.card:focus-visible, .tile:focus-visible, .episode:focus-visible,
+.match-card:focus-visible, .src-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.modal-overlay.palette { z-index: 1300; align-items: flex-start; padding-top: 12vh; } /* base overlay (1000) sits under the update banner (1200) */
+.palette-card {
+  width: min(520px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.palette-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.palette-list { max-height: 320px; overflow-y: auto; padding: 6px; }
+.palette-row { padding: 8px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--text); }
+.palette-row:hover { background: var(--panel-2); }
+.palette-row.on { background: var(--accent); color: var(--on-accent); }
+.help-card { padding: 14px 16px; }
+.help-card h3 { margin-bottom: 10px; font-size: 15px; }
+.help-row { display: flex; gap: 14px; padding: 5px 4px; font-size: 13px; color: var(--text); }
+.help-key { min-width: 92px; font-weight: 700; color: var(--accent); }
+
 /* source-selection page (live picker) + "Watch on" list */
 .live-pick-head { display: flex; align-items: center; gap: 14px; padding: 8px 24px 0; }
 .live-pick-logo { height: 46px; max-width: 120px; object-fit: contain; border-radius: 6px; }

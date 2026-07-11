@@ -189,6 +189,7 @@ function renderDetail(kind, type, id, d) {
 function episodeCard(kind, type, id, ep, onPick, title, poster) {
   const el = document.createElement('div');
   el.className = 'episode';
+  el.tabIndex = 0;
   const still = document.createElement('img');
   still.loading = 'lazy';
   still.src = IMG(ep.still_path, 'w300');

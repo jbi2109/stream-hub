@@ -199,7 +199,7 @@ function sourceList(groups) {
     const group = document.createElement('div'); group.className = 'src-group';
     if (g.name) { const gh = document.createElement('div'); gh.className = 'src-group-name'; gh.textContent = g.name; group.append(gh); }
     for (const r of g.rows) {
-      const row = document.createElement('div'); row.className = 'src-row';
+      const row = document.createElement('div'); row.className = 'src-row'; row.tabIndex = 0;
       if (r.quality) { const qc = document.createElement('span'); qc.className = 'src-q'; qc.textContent = r.quality; row.append(qc); }
       const name = document.createElement('span'); name.className = 'src-name'; name.textContent = r.label;
       row.append(name);
@@ -265,7 +265,7 @@ async function showLivePicker(match) {
 
 // photo-2 style match card: 16:9 image (cover) + title below, no source count.
 function matchCard(m) {
-  const el = document.createElement('div'); el.className = 'match-card';
+  const el = document.createElement('div'); el.className = 'match-card'; el.tabIndex = 0;
   const thumb = document.createElement('div'); thumb.className = 'match-thumb';
   if (m.logo) { const img = document.createElement('img'); img.loading = 'lazy'; img.src = m.logo; img.onerror = () => { img.remove(); thumb.classList.add('noimg'); }; thumb.append(img); }
   else thumb.classList.add('noimg');
@@ -327,7 +327,7 @@ function renderLiveTab(container) {
   if (siteSrcs.length) {
     const siteGrid = document.createElement('div'); siteGrid.className = 'grid tiles';
     siteGrid.append(...siteSrcs.map((s) => {
-      const el = document.createElement('div'); el.className = 'tile'; el.textContent = s.name;
+      const el = document.createElement('div'); el.className = 'tile'; el.textContent = s.name; el.tabIndex = 0;
       el.onclick = () => { currentSource = s.url; open(s.url); };
       return el;
     }));
@@ -360,7 +360,10 @@ function renderLiveTab(container) {
       items = items.slice().sort((a, b) => rank(a) - rank(b) || (a.startsAt || 0) - (b.startsAt || 0));
     }
     if (!items.length) { grid.textContent = all.length ? 'No matches.' : 'Nothing live right now.'; return; }
+    // catalogs stream in and rebuild this grid with no user input — keep keyboard focus by index
+    const focusIdx = [...grid.children].indexOf(document.activeElement);
     grid.replaceChildren(...items.slice(0, 400).map(matchCard));
+    if (focusIdx >= 0 && grid.children[focusIdx]) grid.children[focusIdx].focus();
   };
 
   // Most-watched sort + Live-now filter (both operate on the already-fetched matches; no extra network).

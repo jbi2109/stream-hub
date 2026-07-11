@@ -5,6 +5,23 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.3.4 — Keyboard control & command palette (July 2026)
+
+The whole native UI is now drivable without a mouse:
+
+- **Arrow-key navigation** across every grid (browse posters, live matches, library cards, episodes,
+  source rows) with a visible focus ring; **Enter** opens the focused item — including starting playback
+  from a source row.
+- **Ctrl+K command palette** — jump anywhere (Browse tabs, Live TV, YouTube, Library, Settings), Resume
+  watching, add a source, refresh live catalogs, or focus search. Works **while watching** too.
+- **Digit keys** `1–3` for Movies/TV/Anime, `4` Live TV, `5` YouTube; `/` focuses search; `?` shows a
+  shortcuts overlay.
+- **Esc does the right thing everywhere**: closes the topmost modal, backs out of Settings/detail/the
+  live source page, and exits the player **back to wherever you launched it from** (Library, Live, or
+  Browse) — without fighting fullscreen-exit.
+
+---
+
 ## v0.3.3 — Persistent filters & live match badges (July 2026)
 
 - **Your filter selections now stick** — the Movies/TV/Anime filter pills (Genre, Year, Language,

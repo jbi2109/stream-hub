@@ -56,6 +56,19 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   Releases (a Restart banner appears when a new version is downloaded; updates also apply on quit).
 - **Settings backup** — **Export / Import** all your data (sources, TMDB key, library) as a JSON file.
 
+## Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `1` / `2` / `3` | Browse Movies / TV / Anime |
+| `4` / `5` | Open Live TV / YouTube |
+| `← ↑ → ↓` | Move around a grid |
+| `Enter` | Open the focused item |
+| `/` | Focus search |
+| `Ctrl+K` | Command palette (works while watching too) |
+| `Esc` | Close / back / exit the player (returns to where you launched from) |
+| `?` | Shortcuts overlay |
+
 ## Download (Windows)
 
 Grab the latest **`Stream Hub Setup <version>.exe`** from the
@@ -124,7 +137,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 97-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 103-test end-to-end suite
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
 picker/switcher, single- and two-hop live catalogs, the add-player wizard, the tabbed library, the

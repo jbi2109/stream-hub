@@ -35,6 +35,7 @@ let currentLiveMatch = null;         // the live match being watched (for the to
 // ⏯ Resume target — persisted so Resume survives a restart. { url, live, match?, playing? }:
 // live picks attach the match (Sources page restore); VOD attaches `playing` (source-switcher restore).
 let lastPlayed = load('lastPlayed', null);
+let openedFrom = 'browse';           // which view launched the player ('home'|'live'|'browse') — Esc returns there
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
@@ -103,6 +104,12 @@ function hideAll() {
 // track=true records the ⏯ Resume target. The YouTube rail button opens untracked (track=false) so browsing
 // to YouTube doesn't clobber the show you were watching (it navigates the webview but leaves Resume intact).
 function open(url, track = true) {
+  // Record the launching view for Esc-exit — but only on a fresh open; an in-player episode/source
+  // switch (webview already visible) keeps the original origin.
+  if (webview.hidden) {
+    openedFrom = !$('home').hidden ? 'home'
+      : ((browseTab === 'live' && !$('browse').hidden) || currentLiveMatch) ? 'live' : 'browse';
+  }
   hideAll();
   setActiveRail(null);
   webview.hidden = false;

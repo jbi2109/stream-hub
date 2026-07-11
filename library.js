@@ -8,6 +8,7 @@ function seLabel(item) {
 function card(item, isCont) {
   const el = document.createElement('div');
   el.className = 'card';
+  el.tabIndex = 0;
   el.dataset.key = item.key;
 
   const wrap = document.createElement('div');

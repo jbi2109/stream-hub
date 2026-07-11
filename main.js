@@ -101,6 +101,13 @@ app.on('web-contents-created', (_e, contents) => {
     if (v) contents.hostWebContents?.send('video-progress', v);
   }, ms.progressPollMs || 5000);
   contents.on('destroyed', () => clearInterval(timer));
+  // While the guest owns the keyboard, document keydowns never reach the host renderer — forward the
+  // two in-player shortcuts from here: Esc (exit player) and Ctrl/Cmd+K (command palette).
+  contents.on('before-input-event', (_ev, input) => {
+    if (input.type !== 'keyDown') return;
+    if (input.key === 'Escape') contents.hostWebContents?.send('exit-player');
+    else if ((input.control || input.meta) && String(input.key).toLowerCase() === 'k') contents.hostWebContents?.send('open-palette');
+  });
   // Google's client JS checks navigator.userAgent (not just the header) — present Firefox
   // on its login hosts so it doesn't block the embedded browser; restore default elsewhere.
   contents.on('did-start-navigation', (_ev, url, _inPage, isMainFrame) => {

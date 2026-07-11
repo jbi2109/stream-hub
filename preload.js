@@ -16,4 +16,6 @@ contextBridge.exposeInMainWorld('sh', {
   checkForUpdates: () => ipcRenderer.invoke('check-update'),
   onAuthReload: (cb) => ipcRenderer.on('auth-reload', () => cb()), // reload the webview after a standalone login
   setSetting: (patch) => ipcRenderer.invoke('set-setting', patch), // ⚙ main-process settings sync (live-apply)
+  onExitPlayer: (cb) => ipcRenderer.on('exit-player', () => cb()),   // Esc pressed inside the guest player
+  onOpenPalette: (cb) => ipcRenderer.on('open-palette', () => cb()), // Ctrl/Cmd+K pressed inside the guest
 });

@@ -1,0 +1,210 @@
+// Keyboard navigation, the Ctrl+K command palette, and the "?" shortcuts overlay.
+// One document-level dispatcher; grid arrow-nav over the focusable item classes; Esc follows a single
+// precedence chain (modal → settings → detail/live-picker → player) shared with exitPlayer, which is
+// also reachable from the main process while the guest webview owns the keyboard.
+
+const NAV_SEL = '.card, .tile, .episode, .match-card, .src-row';
+
+// True while a form control owns the keyboard — native select arrows / text entry / wizard Enter win.
+const typing = () => {
+  const el = document.activeElement;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+};
+
+// ---------- modals (palette / help / wizard) ----------
+
+let paletteEl = null, helpEl = null;
+
+const modalOpen = () => !!paletteEl || !!helpEl || !$('wizard').hidden;
+function closeTopModal() {
+  if (paletteEl) { closePalette(); return true; }
+  if (helpEl) { closeHelp(); return true; }
+  if (!$('wizard').hidden) { $('wizard').hidden = true; $('wizard').replaceChildren(); return true; } // wizard close() is a private closure
+  return false;
+}
+
+// ---------- command palette ----------
+
+// Curated actions, rebuilt on open (Resume only shows once something is resumable).
+function paletteActions() {
+  const acts = [
+    ['Browse Movies', () => { browseTab = 'movie'; showBrowse(); }],
+    ['Browse TV', () => { browseTab = 'tv'; showBrowse(); }],
+    ['Browse Anime', () => { browseTab = 'anime'; showBrowse(); }],
+    ['Open Live TV', () => { browseTab = 'live'; showBrowse(); }],
+    ['Open YouTube', () => open('https://www.youtube.com', false)], // untracked: never clobbers ⏯ Resume
+    ['Open Library', showHome],
+    ['Open Settings', showSettings],
+  ];
+  if (lastPlayed && lastPlayed.url) acts.push(['Resume watching', resumeLast]);
+  acts.push(
+    ['Add player / source', () => openAddWizard()],
+    ['Refresh live catalogs', () => { liveCatalogCache.clear(); resolvedCache.clear(); browseTab = 'live'; showBrowse(); }],
+    ['Focus search', focusSearch],
+  );
+  return acts;
+}
+
+function focusSearch() {
+  const s = [...document.querySelectorAll('.browse-search')].find((el) => el.offsetParent !== null);
+  if (s) s.focus();
+}
+
+function openPalette() {
+  if (paletteEl) return;
+  closeTopModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay palette';
+  const card = mk('div', 'palette-card');
+  const input = document.createElement('input');
+  input.className = 'palette-input';
+  input.placeholder = 'Type a command…';
+  const list = mk('div', 'palette-list');
+  card.append(input, list);
+  overlay.append(card);
+  overlay.onclick = (e) => { if (e.target === overlay) closePalette(); };
+
+  let idx = 0, shown = [];
+  const draw = () => {
+    const q = input.value.trim().toLowerCase();
+    shown = paletteActions().filter(([label]) => label.toLowerCase().includes(q));
+    if (idx >= shown.length) idx = Math.max(0, shown.length - 1);
+    list.replaceChildren(...shown.map(([label], i) => {
+      const row = mk('div', 'palette-row' + (i === idx ? ' on' : ''), label);
+      row.onclick = () => run(i);
+      return row;
+    }));
+  };
+  const run = (i) => { const a = shown[i]; closePalette(); if (a) a[1](); };
+  input.oninput = () => { idx = 0; draw(); };
+  input.onkeydown = (e) => {
+    if (e.key === 'ArrowDown') { idx = Math.min(idx + 1, shown.length - 1); draw(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { idx = Math.max(idx - 1, 0); draw(); e.preventDefault(); }
+    else if (e.key === 'Enter') run(idx);
+    else if (e.key === 'Escape') { e.stopPropagation(); closePalette(); }
+  };
+
+  document.body.append(overlay);
+  paletteEl = overlay;
+  draw();
+  input.focus();
+}
+function closePalette() { if (paletteEl) { paletteEl.remove(); paletteEl = null; } }
+
+// ---------- "?" shortcuts overlay ----------
+
+const SHORTCUTS = [
+  ['1 / 2 / 3', 'Browse Movies / TV / Anime'],
+  ['4', 'Open Live TV'],
+  ['5', 'Open YouTube'],
+  ['← ↑ → ↓', 'Move around a grid'],
+  ['Enter', 'Open the focused item'],
+  ['/', 'Focus search'],
+  ['Ctrl+K', 'Command palette (works while watching too)'],
+  ['Esc', 'Close / back / exit the player'],
+  ['?', 'This overlay'],
+];
+
+function openHelp() {
+  if (helpEl) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay palette';
+  const card = mk('div', 'palette-card help-card');
+  card.append(mk('h3', null, 'Keyboard shortcuts'));
+  for (const [key, what] of SHORTCUTS) {
+    const row = mk('div', 'help-row');
+    row.append(mk('span', 'help-key', key), mk('span', null, what));
+    card.append(row);
+  }
+  overlay.append(card);
+  overlay.onclick = (e) => { if (e.target === overlay) closeHelp(); };
+  document.body.append(overlay);
+  helpEl = overlay;
+}
+function closeHelp() { if (helpEl) { helpEl.remove(); helpEl = null; } }
+
+// ---------- grid navigation ----------
+
+function moveGrid(key) {
+  const active = document.activeElement;
+  const onItem = active && active.matches && active.matches(NAV_SEL);
+  if (!onItem) {
+    // seed: focus the first item in the visible view
+    const view = ['browse', 'detail', 'home', 'settings'].map((id) => $(id)).find((el) => el && !el.hidden);
+    const first = view && view.querySelector(NAV_SEL);
+    if (!first) return false;
+    first.focus();
+    first.scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+  const container = active.closest('.grid, .episodes, .src-list') || active.parentElement;
+  const items = [...container.querySelectorAll(NAV_SEL)];
+  const i = items.indexOf(active);
+  const style = getComputedStyle(container);
+  // one px token per track in the used value; non-grid containers (src-list) navigate as a column
+  const cols = style.display === 'grid' ? style.gridTemplateColumns.split(' ').length : 1;
+  const delta = key === 'ArrowRight' ? 1 : key === 'ArrowLeft' ? -1 : key === 'ArrowDown' ? cols : -cols;
+  const next = Math.max(0, Math.min(items.length - 1, i + delta)); // clamp — auto-fill counts empty tracks
+  if (next !== i) { items[next].focus(); items[next].scrollIntoView({ block: 'nearest' }); }
+  return true;
+}
+
+// ---------- Esc model ----------
+
+function goBack() {
+  if (closeTopModal()) return;
+  if (!$('settings').hidden) { showBrowse(); return; }
+  if (!$('detail').hidden) {
+    // #detail doubles as the live source page — go back to the Live grid there (its Back button's path);
+    // the stream stays loaded, ⏯ Resume returns to it.
+    if (currentLiveMatch) { browseTab = 'live'; showBrowse(); } else showBrowse();
+    return;
+  }
+  if (!webview.hidden) exitPlayer();
+}
+
+// Exit the player back to WHERE IT WAS LAUNCHED FROM (core.js records openedFrom in open()).
+// Reachable from the main process (guest owns the keyboard) — so re-run the modal check here too:
+// one Esc never both closes a modal and tears down the player. No-op while the guest is fullscreen
+// (that Esc is the fullscreen exit).
+function exitPlayer() {
+  if (closeTopModal()) return;
+  if (webview.classList.contains('fullscreen')) return;
+  if (webview.hidden) return;
+  if (openedFrom === 'home') showHome();
+  else if (openedFrom === 'live') { browseTab = 'live'; showBrowse(); }
+  else showBrowse();
+}
+
+// ---------- dispatcher ----------
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    if (paletteEl) closePalette(); else openPalette();
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (typing()) { document.activeElement.blur(); return; } // first Esc leaves the field
+    goBack();
+    return;
+  }
+  if (modalOpen() || typing()) return; // palette input / wizard / form controls own their keys
+  if (e.key === '?') { openHelp(); return; }
+  if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) { e.preventDefault(); focusSearch(); return; }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '5') {
+    if (e.key === '4') { browseTab = 'live'; showBrowse(); }
+    else if (e.key === '5') open('https://www.youtube.com', false);
+    else { browseTab = ['movie', 'tv', 'anime'][+e.key - 1]; showBrowse(); }
+    return;
+  }
+  if (e.key.startsWith('Arrow')) { if (moveGrid(e.key)) e.preventDefault(); return; }
+  if (e.key === 'Enter') {
+    const el = document.activeElement;
+    if (el && el.matches && el.matches(NAV_SEL)) el.click();
+  }
+});
+
+// main-process routes: the only keys that reach us while the guest webview is focused
+window.sh?.onExitPlayer?.(() => exitPlayer());
+window.sh?.onOpenPalette?.(() => { if (!paletteEl) openPalette(); });

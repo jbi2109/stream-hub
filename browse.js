@@ -110,6 +110,7 @@ function pillSelect(firstLabel, firstValue, pairs, value, onChange) {
 function posterCard(kind, item) {
   const el = document.createElement('div');
   el.className = 'card';
+  el.tabIndex = 0;
   const wrap = document.createElement('div');
   wrap.className = 'poster-wrap';
   if (item.poster_path) {
