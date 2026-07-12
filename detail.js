@@ -11,7 +11,8 @@ async function showDetail(kind, id) {
   const type = kind === 'movie' ? 'movie' : 'tv';
   let d;
   try {
-    d = await tmdbGet(`/${type}/${id}`, { append_to_response: 'credits,videos,external_ids,watch/providers' });
+    // include_image_language is required or TMDB omits logos from the images append
+    d = await tmdbGet(`/${type}/${id}`, { append_to_response: 'credits,videos,external_ids,watch/providers,images', include_image_language: 'en,null' });
   } catch { d = null; }
   if (!d || d.error || (!d.title && !d.name)) {
     $('detail').replaceChildren(detailHeaderBar(), stateNode('error', 'Could not load details (check your TMDB key).'));
@@ -40,10 +41,23 @@ function renderDetail(kind, type, id, d) {
   const trailer = (d.videos?.results || []).find((v) => v.site === 'YouTube' && /Trailer|Teaser/i.test(v.type))
     || (d.videos?.results || []).find((v) => v.site === 'YouTube');
 
-  // hero
+  // cinematic backdrop: a sticky full-bleed layer the content scrolls over. It lives INSIDE
+  // renderDetail's children (never on #detail itself) so the live source page — which shares this
+  // container — replaceChildren's it away for free. #detail is the scroll box (body never scrolls).
+  const backdrop = mk('div', 'detail-backdrop');
+  if (d.backdrop_path) {
+    const bimg = document.createElement('img');
+    bimg.src = IMG(d.backdrop_path, 'w1280');
+    bimg.alt = '';
+    bimg.onerror = () => { bimg.style.display = 'none'; }; // hide, don't remove — the panel bg covers
+    backdrop.append(bimg);
+  }
+  const cover = mk('div', 'detail-cover'); // fades in with scroll, settling the page onto --bg
+  backdrop.append(cover);
+
+  // hero content block (scrolls over the backdrop)
   const hero = document.createElement('div');
   hero.className = 'detail-hero';
-  if (d.backdrop_path) hero.style.backgroundImage = `linear-gradient(to right, rgba(20,22,26,.96), rgba(20,22,26,.55)), url(${IMG(d.backdrop_path, 'w1280')})`;
 
   const poster = document.createElement('img');
   poster.className = 'detail-poster';
@@ -52,6 +66,16 @@ function renderDetail(kind, type, id, d) {
 
   const info = document.createElement('div');
   info.className = 'detail-info';
+  // TMDB logo art over the (kept, visually-hidden) h1 — the h1 is the fallback + accessible title
+  const logo = (d.images?.logos || []).find((l) => l.iso_639_1 === 'en') || (d.images?.logos || [])[0];
+  if (logo && logo.file_path) {
+    const li = document.createElement('img');
+    li.className = 'detail-logo';
+    li.src = IMG(logo.file_path, 'w500');
+    li.alt = title;
+    li.onerror = () => { li.classList.add('dead'); li.style.display = 'none'; }; // sibling CSS un-hides the h1
+    info.append(li);
+  }
   const h = document.createElement('h1');
   h.textContent = title;
   info.append(h);
@@ -77,7 +101,7 @@ function renderDetail(kind, type, id, d) {
   actions.className = 'detail-actions';
   if (trailer) {
     const tb = document.createElement('button');
-    tb.textContent = '🎬 Trailer';
+    tb.append(icon('play'), document.createTextNode(' Trailer')); // word kept — selected by text (users + e2e)
     tb.onclick = () => open(`https://www.youtube.com/embed/${trailer.key}?autoplay=${settings.autoplayTrailers === false ? 0 : 1}`);
     actions.append(tb);
   }
@@ -90,14 +114,25 @@ function renderDetail(kind, type, id, d) {
     later = later.filter((c) => c.key !== key);
     later.unshift({ key, title, url, poster: posterUrl, season: curSeason, episode: curEpisode, type: kind === 'anime' ? 'tv' : type, addedAt: Date.now() });
     store('watchlater', later);
-    wl.textContent = '✓ Added';
-    setTimeout(() => { wl.textContent = '+ Watch Later'; }, 1500);
+    toast(`Added to Watch Later — ${title}`);
   };
   actions.append(wl);
   info.append(actions);
 
   hero.append(poster, info);
-  el.replaceChildren(detailHeaderBar(), hero);
+  el.replaceChildren(backdrop, detailHeaderBar(), hero);
+
+  // scroll-linked cover + topbar blend — self-cleaning: the next render (or the live picker)
+  // replaceChildren's the backdrop away, and the handler unhooks itself when that happens.
+  const topbar = $('topbar');
+  const onDetailScroll = () => {
+    if (!backdrop.isConnected) { el.onscroll = null; topbar.classList.remove('at-top'); return; }
+    cover.style.opacity = Math.min(el.scrollTop / 500, 1);
+    topbar.classList.toggle('at-top', el.scrollTop < 40);
+  };
+  el.onscroll = onDetailScroll;
+  el.scrollTop = 0;
+  onDetailScroll();
 
   // "Watch on" source list (replaces the source dropdown): pick a player to watch the current title/episode.
   const watchSec = document.createElement('div'); watchSec.className = 'detail-section';
@@ -141,7 +176,7 @@ function renderDetail(kind, type, id, d) {
 
     const loadSeason = async (n) => {
       curSeason = +n;
-      epGrid.replaceChildren(stateNode('loading', 'Loading…'));
+      epGrid.replaceChildren(...skeletonCards(4, 'skel-episode'));
       let s;
       try { s = await tmdbGet(`/tv/${id}/season/${n}`, {}); } catch { s = null; }
       epGrid.replaceChildren(...(s?.episodes || []).map((ep) => episodeCard(kind, type, id, ep, () => { curSeason = ep.season_number; curEpisode = ep.episode_number; }, title, posterUrl)));

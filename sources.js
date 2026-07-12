@@ -5,17 +5,20 @@ function sourceItem(src) {
   const grow = mk('div', 'grow');
   grow.append(mk('div', 'title', src.name), mk('div', 'meta', CAT_LABEL[src.category || 'vod']));
 
-  const edit = mk('button', null, '✎');
+  const edit = mk('button');
+  edit.append(icon('edit'));
   edit.title = 'Edit source'; // full-facet edit via the wizard (name, URL, category, catalog, pattern)
   edit.onclick = (e) => { e.stopPropagation(); openAddWizard(src); };
 
-  const del = mk('button', null, '✕');
+  const del = mk('button');
+  del.append(icon('close'));
   del.title = 'Remove source';
   del.onclick = (e) => {
     e.stopPropagation();
     sources = sources.filter((s) => s !== src);
     store('sources', sources);
     renderSources();
+    toast(`Source removed — ${src.name}`);
   };
 
   li.append(grow, edit, del);

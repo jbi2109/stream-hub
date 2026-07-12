@@ -5,6 +5,35 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.4.0 — The cinematic pass (July 2026)
+
+The first release of the v0.4 series — a visual overhaul informed by a 5-agent study of the best
+open-source media apps. No behavior changes to sources or playback; the engine underneath is untouched.
+
+- **A hero banner tops the Dashboard** — your most recent Continue Watching item (with backdrop art,
+  TMDB logo art, and a **▶ Resume** button that jumps straight back in, plus "min left"), or the top
+  trending title when there's nothing to resume.
+- **Cinematic detail pages** — a full-bleed backdrop sits behind the page and fades away as you
+  scroll; titles render as **TMDB logo art** when available; the top bar blends into the page at the
+  top of a detail view.
+- **Continue Watching cards are now 16:9 mini-posters** on the Dashboard, with backdrop art, a
+  timestamp chip (or a green **Completed** chip), your progress bar, and "3 days ago" recency — the
+  Library grid keeps the denser poster layout.
+- **Real icons** — the emoji glyphs across the rail, top bar, and buttons are replaced with a crisp
+  SVG icon set that recolors with your theme and accent.
+- **Poster hover** — browse/trending posters get a subtle zoom, accent ring, play glyph, and an
+  always-on title/year/★ gradient.
+- **Skeleton loading** — grids and rails now load as shaped placeholders instead of a spinner, so
+  nothing jumps; rails fade at the edges when there's more to scroll.
+- **Light theme actually looks right** — every hardcoded dark color (tiles, match cards, chips, the
+  detail hero) now follows the theme.
+- **Toasts** — small top-right notifications replace the old button-flash for Watch Later, source
+  removal, and settings import/export feedback.
+- **Motion, politely** — subtle entrance animations throughout, all disabled automatically when your
+  OS asks for reduced motion.
+
+---
+
 ## v0.3.6 — Repo polish: CI, What's New & docs (July 2026)
 
 - **"What's New" after updates** — the first launch after an auto-update opens a card with that

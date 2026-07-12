@@ -1,6 +1,7 @@
 /* ---- theme tokens (dark default; theme.js sets data-theme + --accent + --poster-min pre-paint) ---- */
 :root {
   --bg: #14161a;
+  --bg-rgb: 20, 22, 26;   /* --bg as r,g,b for gradients/scrims that need alpha */
   --panel: #1c1f26;
   --panel-2: #262a33;
   --panel-3: #323847;
@@ -10,9 +11,17 @@
   --accent: #4c8dff;      /* overridden inline from settings */
   --on-accent: #ffffff;
   --poster-min: 160px;    /* overridden inline from settings */
+  /* design tokens (v0.4.0): the scrim stays dark in BOTH themes — it only ever sits over imagery */
+  --scrim: rgba(0, 0, 0, .72);
+  --danger: #b3261e;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 12px; --r-pill: 999px;
+  --z-fs: 999; --z-modal: 1000; --z-banner: 1200; --z-palette: 1300; --z-toast: 1400;
+  --dur-fast: 120ms; --dur-mid: 180ms;
+  --focus-ring: 2px solid var(--accent);
 }
 [data-theme="light"] {
   --bg: #f4f5f7;
+  --bg-rgb: 244, 245, 247;
   --panel: #ffffff;
   --panel-2: #eceff3;
   --panel-3: #dde2e9;
@@ -122,7 +131,7 @@ body {
 
 #view { flex: 1; position: relative; }
 webview { width: 100%; height: 100%; }
-webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
+webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 
 #home, #browse, #detail, #settings {
   position: absolute;
@@ -217,13 +226,13 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   justify-content: center;
   aspect-ratio: 16 / 9;
   border-radius: 10px;
-  background: linear-gradient(135deg, #3a2f2f, #1a1414);
+  background: linear-gradient(135deg, var(--panel-3), var(--panel)); /* theme-aware (was a hardcoded dark pair) */
   cursor: pointer;
   font-weight: 600;
   text-align: center;
   padding: 8px;
-  color: #fff;
-  transition: transform .12s ease;
+  color: var(--text);
+  transition: transform var(--dur-fast) ease;
 }
 #browse .tile:hover { transform: translateY(-3px); }
 
@@ -300,7 +309,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   cursor: pointer;
 }
 .set-btn:hover { background: var(--panel-3); }
-.set-btn.danger:hover { background: #b3261e; color: #fff; border-color: #b3261e; }
+.set-btn.danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
 .set-btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .set-val { font-size: 13px; color: var(--text); cursor: pointer; }
 .set-val:hover { filter: brightness(1.15); }
@@ -409,7 +418,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 .wiz-card {
   width: 460px;
@@ -519,9 +528,9 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   aspect-ratio: 16 / 9;
   border-radius: 10px;
   overflow: hidden;
-  background: linear-gradient(135deg, #3a2f2f, #1a1414);
+  background: linear-gradient(135deg, var(--panel-3), var(--panel));
   display: flex; align-items: center; justify-content: center;
-  transition: transform .12s ease;
+  transition: transform var(--dur-fast) ease;
 }
 .match-card:hover .match-thumb { transform: translateY(-3px); }
 .match-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -531,7 +540,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   position: absolute; top: 6px; left: 6px;
   font-size: 10px; font-weight: 700; letter-spacing: .3px;
   padding: 2px 7px; border-radius: 999px;
-  background: rgba(0, 0, 0, .65); color: #fff;
+  background: var(--scrim); color: #fff;
 }
 .match-time.live { background: #dc2626; }
 
@@ -542,7 +551,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   outline-offset: 2px;
   border-radius: 8px;
 }
-.modal-overlay.palette { z-index: 1300; align-items: flex-start; padding-top: 12vh; } /* base overlay (1000) sits under the update banner (1200) */
+.modal-overlay.palette { z-index: var(--z-palette); align-items: flex-start; padding-top: 12vh; } /* base overlay sits under the update banner */
 .palette-card {
   width: min(520px, 92vw);
   background: var(--panel);
@@ -583,7 +592,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   cursor: pointer;
 }
 .src-row:hover { background: var(--panel-2); }
-.src-q { font-size: 10px; font-weight: 700; color: var(--on-accent); background: #b3261e; border-radius: 4px; padding: 2px 6px; }
+.src-q { font-size: 10px; font-weight: 700; color: #fff; background: var(--danger); border-radius: 4px; padding: 2px 6px; }
 .src-name { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .src-lang { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
@@ -597,8 +606,8 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 #sources-overlay {
   position: absolute;
   top: 12px; right: 12px;
-  z-index: 1000;
-  background: rgba(0, 0, 0, .72);
+  z-index: var(--z-modal);
+  background: var(--scrim);
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -697,7 +706,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   position: absolute;
   top: 8px;
   left: 8px;
-  background: rgba(0, 0, 0, .72);
+  background: var(--scrim);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
@@ -720,7 +729,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 }
 .card:hover .card-actions { display: flex; }
 .card .card-actions button {
-  background: rgba(0, 0, 0, .72);
+  background: var(--scrim);
   border: none;
   color: #fff;
   cursor: pointer;
@@ -731,7 +740,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 }
 .card .card-actions button:hover { background: rgba(220, 60, 60, .9); }
 .card .card-actions .type-select {
-  background: rgba(0, 0, 0, .72);
+  background: var(--scrim);
   border: none;
   color: #fff;
   cursor: pointer;
@@ -788,7 +797,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
   position: fixed;
   right: 16px;
   bottom: 16px;
-  z-index: 1200;
+  z-index: var(--z-banner);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -858,3 +867,193 @@ webview.fullscreen { position: fixed; inset: 0; z-index: 999; }
 .wn-bullet { font-size: 13px; margin: 6px 0 6px 16px; line-height: 1.5; position: relative; }
 .wn-bullet::before { content: '•'; position: absolute; left: -12px; color: var(--accent); }
 .wn-ok { margin-top: 12px; }
+
+/* ---------- v0.4.0: inline SVG icons ---------- */
+button svg { vertical-align: -2px; pointer-events: none; }
+.rail-btn svg { width: 20px; height: 20px; display: block; }
+#topbar button svg { display: block; }
+#live-sources svg { vertical-align: -2px; display: inline; }
+.card .card-actions button svg { width: 13px; height: 13px; display: block; margin: auto; }
+#sources li button svg { display: block; }
+.detail-actions button svg { margin-right: 2px; }
+
+/* ---------- v0.4.0: skeleton loaders ---------- */
+.skel { background: var(--panel-2); border-radius: var(--r-md); position: relative; overflow: hidden; }
+.skel::after {
+  content: '';
+  position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .06), transparent);
+  animation: sh-shimmer 1.2s infinite;
+}
+@keyframes sh-shimmer { to { transform: translateX(100%); } }
+.skel-poster { aspect-ratio: 2 / 3; }
+.skel-wide { aspect-ratio: 16 / 9; }
+.skel-episode { height: 82px; }
+.skel-row { height: 42px; margin: 6px 0; }
+.skel-hero { height: 320px; border-radius: var(--r-lg); }
+.rail .skel-poster { flex: 0 0 var(--poster-min, 160px); }
+.rail .skel-wide { flex: 0 0 280px; }
+
+/* ---------- v0.4.0: dashboard hero ---------- */
+.dash-hero { position: relative; border-radius: var(--r-lg); overflow: hidden; margin-bottom: 22px; }
+.hero-inner { position: relative; min-height: 320px; display: flex; align-items: flex-end; }
+.hero-bg { position: absolute; inset: 0; background: var(--panel-2); }
+.hero-bg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hero-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to top, rgba(var(--bg-rgb), .92), rgba(var(--bg-rgb), .25) 55%, rgba(var(--bg-rgb), .05)),
+    linear-gradient(to right, rgba(var(--bg-rgb), .55), transparent 60%);
+}
+.hero-body { position: relative; padding: 26px 28px; max-width: 640px; }
+.hero-logo {
+  max-height: 90px; max-width: 320px;
+  object-fit: contain; display: block;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .5));
+}
+.hero-logo:not(.dead) + .hero-title { display: none; } /* text title returns automatically if the logo 404s */
+.hero-title { font-size: 30px; margin-bottom: 6px; }
+.hero-meta { color: var(--text); opacity: .85; font-size: 13px; margin-bottom: 14px; }
+.hero-cta { display: flex; gap: 10px; }
+.hero-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hero-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.hero-btn:hover { filter: brightness(1.1); }
+.hero-btn:focus-visible, .dash-seeall:focus-visible, .onboard-card button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---------- v0.4.0: 16:9 resume cards (dashboard Continue rail) ---------- */
+.rail .resume-card { flex: 0 0 280px; }
+.resume-card .poster-wrap { aspect-ratio: 16 / 9; }
+.resume-chip {
+  position: absolute;
+  right: 8px; bottom: 10px;
+  background: var(--scrim);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+.resume-chip.done { background: #16a34a; }
+
+/* ---------- v0.4.0: cinematic detail header ---------- */
+.detail-backdrop {
+  position: sticky; top: 0;
+  height: 52vh;
+  margin-bottom: -52vh; /* content scrolls over it */
+  z-index: 0;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+.detail-backdrop img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.detail-backdrop::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(var(--bg-rgb), .45), rgba(var(--bg-rgb), .12) 35%, rgba(var(--bg-rgb), 1) 97%);
+}
+.detail-cover { position: absolute; inset: 0; background: var(--bg); opacity: 0; }
+.detail-back, .detail-hero, .detail-section { position: relative; z-index: 1; }
+.detail-hero { margin-top: 20vh; }
+.detail-logo {
+  max-height: 100px; max-width: 360px;
+  object-fit: contain; display: block;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .5));
+}
+/* logo art present -> the h1 goes visually hidden but keeps its text (fallback + accessibility) */
+.detail-logo:not(.dead) + h1 {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+#topbar { transition: background var(--dur-mid) ease, border-color var(--dur-mid) ease; }
+#topbar.at-top { background: var(--bg); border-bottom-color: transparent; }
+
+/* small windows: stack the hero, shrink the backdrop (there are no other breakpoints in the app) */
+@media (max-width: 720px) {
+  .detail-backdrop { height: 35vh; margin-bottom: -35vh; }
+  .detail-hero { margin-top: 8vh; flex-direction: column; }
+  .detail-poster { width: 150px; min-width: 150px; }
+  .hero-inner { min-height: 240px; }
+  .skel-hero { height: 240px; }
+  .hero-body { padding: 18px; }
+  .hero-title { font-size: 22px; }
+}
+
+/* ---------- v0.4.0: card hover layers ---------- */
+.card:hover .poster-wrap, .card:focus-visible .poster-wrap,
+.match-card:hover .match-thumb { box-shadow: 0 0 0 2px var(--accent); }
+#browse .tile:hover { box-shadow: 0 0 0 2px var(--accent); }
+/* full overlay recipe: poster cards only (library cards keep their hover actions uncontested) */
+.poster-card .poster { transition: transform var(--dur-mid) ease, opacity var(--dur-mid) ease; }
+.poster-card:hover .poster, .poster-card:focus-visible .poster { transform: scale(1.08); opacity: .75; }
+.poster-card .poster-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .22);
+  opacity: 0;
+  transition: opacity var(--dur-mid) ease;
+  pointer-events: none;
+}
+.poster-card:hover .poster-overlay, .poster-card:focus-visible .poster-overlay { opacity: 1; }
+.poster-card .poster-overlay svg { width: 44px; height: 44px; color: #fff; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .6)); }
+.poster-info {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 26px 10px 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, .85), transparent);
+  pointer-events: none;
+}
+.poster-info-title { font-size: 12.5px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.poster-info-meta { font-size: 11px; color: rgba(255, 255, 255, .8); margin-top: 2px; }
+
+/* ---------- v0.4.0: rail edge fades ---------- */
+.rail.fade-l { mask-image: linear-gradient(to right, transparent, #000 6%); }
+.rail.fade-r { mask-image: linear-gradient(to right, #000 94%, transparent); }
+.rail.fade-l.fade-r { mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent); }
+
+/* ---------- v0.4.0: toast ---------- */
+.toast {
+  position: fixed;
+  top: 14px; right: 16px;
+  z-index: var(--z-toast);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: 13px;
+  padding: 10px 14px 12px;
+  max-width: 340px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+  animation: sh-toast-in var(--dur-mid) ease;
+}
+.toast.error { border-color: var(--danger); }
+.toast .toast-bar {
+  position: absolute; left: 0; bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  animation: sh-toast-bar 3s linear forwards;
+}
+@keyframes sh-toast-in { from { opacity: 0; transform: translateX(12px); } }
+@keyframes sh-toast-bar { from { width: 100%; } to { width: 0; } }
+
+/* ---------- v0.4.0: entrance motion + reduced-motion gate ---------- */
+@keyframes sh-enter { from { opacity: 0; transform: translateY(8px); } }
+body:not(.reduced-motion) .anim-in > * { animation: sh-enter var(--dur-mid) ease backwards; }
+/* one kill switch: OS "reduce motion" (live-synced to this class) silences everything */
+body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::after { animation: none !important; transition: none !important; }

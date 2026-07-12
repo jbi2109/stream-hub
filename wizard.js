@@ -73,7 +73,7 @@ function openAddWizard(existing) {
     const dots = document.createElement('div'); dots.className = 'wiz-dots';
     for (let d = 0; d < total; d++) { const dot = document.createElement('span'); if (d === i) dot.className = 'on'; dots.append(dot); }
     const count = document.createElement('span'); count.className = 'wiz-count'; count.textContent = `Step ${i + 1} of ${total}`;
-    const x = document.createElement('button'); x.type = 'button'; x.className = 'wiz-x'; x.textContent = '✕'; x.onclick = close;
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'wiz-x'; x.title = 'Close'; x.append(icon('close')); x.onclick = close;
     head.append(dots, count, x);
     const h = document.createElement('h3'); h.textContent = step.title;
     const label = document.createElement('div'); label.className = 'wiz-label'; label.textContent = step.label;

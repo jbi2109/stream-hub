@@ -254,7 +254,7 @@ async function showLivePicker(match) {
   if (match.logo) { const img = document.createElement('img'); img.className = 'live-pick-logo'; img.src = match.logo; img.onerror = () => img.remove(); head.append(img); }
   const h = document.createElement('h1'); h.textContent = match.title; head.append(h);
   const sec = document.createElement('div'); sec.className = 'detail-section';
-  sec.replaceChildren(stateNode('loading', 'Loading sources…'));
+  sec.replaceChildren(...skeletonCards(3, 'skel-row'));
   el.replaceChildren(back, head, sec);
   el.hidden = false;
   const srcs = await resolveMatchSources(match);
@@ -346,7 +346,7 @@ function renderLiveTab(container) {
   filterRow.append(search);
   controls.append(catBar, filterRow);
   const grid = document.createElement('div'); grid.className = 'grid match-grid';
-  grid.replaceChildren(stateNode('loading', 'Loading…'));
+  grid.replaceChildren(...skeletonCards(8, 'skel-wide'));
   nodes.push(controls, grid);
   container.replaceChildren(...nodes);
 
@@ -390,7 +390,7 @@ function renderLiveTab(container) {
   refreshBtn.className = 'pill-toggle';
   refreshBtn.id = 'live-refresh';
   refreshBtn.title = 'Refresh catalogs';
-  refreshBtn.textContent = '↻';
+  refreshBtn.append(icon('refresh'));
   refreshBtn.onclick = () => {
     for (const s of catalogSrcs) liveCatalogCache.delete(s.catalogUrl);
     resolvedCache.clear();

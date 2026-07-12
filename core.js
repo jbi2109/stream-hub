@@ -71,6 +71,39 @@ function stateNode(kind, text) {
   return mk('div', kind === 'empty' ? 'empty' : kind, text);
 }
 
+// Skeleton loaders shaped like the layout they replace (poster cards by default) — they occupy the
+// final layout's space immediately, so content arriving never shifts the page.
+function skeletonCards(n, cls = 'skel-poster') {
+  return Array.from({ length: n }, () => mk('div', 'skel ' + cls));
+}
+
+// Single replace-in-place toast (top-right); a new message resets the timer. No stacking — the app
+// doesn't emit enough events to earn a queue.
+let toastTimer = null;
+function toast(text, kind) {
+  let t = $('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.setAttribute('role', 'status');
+    t.setAttribute('aria-live', 'polite');
+    document.body.append(t);
+  }
+  t.className = 'toast' + (kind ? ' ' + kind : '');
+  t.replaceChildren(document.createTextNode(text), mk('div', 'toast-bar')); // fresh bar restarts its countdown animation
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.remove(), 3000);
+}
+
+// prefers-reduced-motion → a live-synced body class; one CSS rule kills all animation behind it.
+// (A class, not a media query in every rule, so the e2e suite can toggle it deterministically.)
+(function motionPref() {
+  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const apply = () => document.body.classList.toggle('reduced-motion', mq.matches);
+  mq.addEventListener('change', apply);
+  apply();
+})();
+
 function tabBar(tabs, current, onPick, cls) {
   const bar = mk('div', cls);
   for (const [id, label] of tabs) {
@@ -90,6 +123,7 @@ function setActiveRail(id) {
 }
 
 function hideAll() {
+  $('topbar').classList.remove('at-top'); // detail's scroll-blend must not linger on other views
   $('dashboard').hidden = true;
   $('home').hidden = true;
   $('browse').hidden = true;

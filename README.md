@@ -16,16 +16,17 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 
 ## Features
 
-- **Dashboard home** — the landing page: rails for **Continue Watching** (resume the exact episode on
-  its own source), **Trending** (TMDB), and **Live now** (from your live catalogs, most-watched
-  first), each with a "See all →" into the full view. Empty rails hide; a fresh install shows a
-  two-step **setup card** (TMDB key → first source) instead. The landing view is configurable
-  (Dashboard / Browse / Library).
+- **Dashboard home** — the landing page: a **hero banner** featuring your last-watched show (backdrop
+  + logo art + ▶ Resume) or the top trending title, over rails for **Continue Watching** (16:9 cards
+  with progress, timestamp/Completed chips, and recency), **Trending** (TMDB), and **Live now** (from
+  your live catalogs, most-watched first), each with a "See all →" into the full view. Empty rails
+  hide; a fresh install shows a two-step **setup card** (TMDB key → first source) instead. The
+  landing view is configurable (Dashboard / Browse / Library).
 - **Browse (TMDB)** — discover Movies, TV, and Anime
   from [TMDB](https://www.themoviedb.org/), **filter by genre / year / language / country / provider and sort**,
   **page** through the whole catalog (20 at a time), search, and open a title's **native detail page**
-  (overview, genres, rating, cast, seasons + episode picker with stills, in-app trailer,
-  "where to watch"). Pick which **source** to play on (defaults to your last-used), and the
+  (cinematic full-bleed backdrop with TMDB logo art, overview, genres, rating, cast, seasons +
+  episode picker with stills, in-app trailer, "where to watch"). Pick which **source** to play on (defaults to your last-used), and the
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
   top-bar switchers to swap **sources and episodes** mid-watch, plus an optional **⏭ auto-play next
   episode** near the end of each one. The left **rail** splits the views cleanly — 🔎
@@ -126,7 +127,8 @@ one and **Import** in the other to carry your setup over.
 | `preload.js` | Tiny `contextBridge` that forwards playback progress to the UI. |
 | `index.html` | App layout (icon rail, top bar, webview, and the browse/detail/library/settings views). |
 | `theme.js` | Pre-paint theme apply (runs in `<head>` so there's no flash) — sets the theme/accent/poster CSS vars. |
-| `core.js` | Renderer foundation: DOM helper, storage, shared state, view switching. |
+| `core.js` | Renderer foundation: DOM helper, storage, shared state, view switching, toasts. |
+| `icons.js` | Inline SVG icon set (`icon(name)`) for the rail/topbar/buttons. |
 | `media.js` | Page inspection + Continue-Watching capture. |
 | `sources.js` | Settings source list + play-URL building/routing. |
 | `browse.js` | TMDB browse (Movies/TV/Anime): filters, pagination, poster grid. |
@@ -149,7 +151,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 112-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 121-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source

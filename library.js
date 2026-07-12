@@ -74,13 +74,13 @@ function card(item, isCont) {
 
   if (isCont) {
     const editBtn = document.createElement('button');
-    editBtn.textContent = '✎';
+    editBtn.append(icon('edit'));
     editBtn.title = 'Edit note';
     editBtn.onclick = (e) => { e.stopPropagation(); editNote(item, sub); };
     actions.append(editBtn);
   }
   const del = document.createElement('button');
-  del.textContent = '✕';
+  del.append(icon('close'));
   del.title = 'Remove';
   del.onclick = (e) => {
     e.stopPropagation();
@@ -103,25 +103,30 @@ function card(item, isCont) {
   el.onclick = (e) => {
     // clicks on a control (✕ / category dropdown / source dropdown) must never open the show
     if (e.target.closest('.card-actions') || e.target.closest('.card-source')) return;
-    if (!/^https?:/i.test(item.url || '')) return; // placeholder entries (saved with no source) can't open
-    activeKey = item.key;
-    open(item.url);
-    intendedMedia = { title: item.title, poster: item.poster, live: item.type === 'live' || undefined };
-    // Rebuildable entries also set `playing` so the topbar episode/source switchers + auto-play-next
-    // work when continuing from the library — not just from the detail page's Watch.
-    const id = tmdbIdOf(item.url);
-    const t = typeOf(item);
-    if (id && t !== 'live') {
-      const src = sources.find((s) => hostOf(s.url) === hostOf(item.url));
-      if (src) { currentSource = src.url; lastSourceUrl = src.url; store('lastSource', lastSourceUrl); } // stay on the card's player
-      playing = { kind: t === 'movie' ? 'movie' : 'tv', type: t === 'movie' ? 'movie' : 'tv', id,
-        season: item.season, episode: item.episode, title: item.title, poster: item.poster };
-      lastPlayed.playing = playing; store('lastPlayed', lastPlayed);
-      renderSourceSwitch();
-      renderEpisodeSwitch();
-    }
+    openLibraryItem(item);
   };
   return el;
+}
+
+// Open a library entry exactly as a card click does — also used by the dashboard hero's Resume CTA.
+function openLibraryItem(item) {
+  if (!/^https?:/i.test(item.url || '')) return; // placeholder entries (saved with no source) can't open
+  activeKey = item.key;
+  open(item.url);
+  intendedMedia = { title: item.title, poster: item.poster, live: item.type === 'live' || undefined };
+  // Rebuildable entries also set `playing` so the topbar episode/source switchers + auto-play-next
+  // work when continuing from the library — not just from the detail page's Watch.
+  const id = tmdbIdOf(item.url);
+  const t = typeOf(item);
+  if (id && t !== 'live') {
+    const src = sources.find((s) => hostOf(s.url) === hostOf(item.url));
+    if (src) { currentSource = src.url; lastSourceUrl = src.url; store('lastSource', lastSourceUrl); } // stay on the card's player
+    playing = { kind: t === 'movie' ? 'movie' : 'tv', type: t === 'movie' ? 'movie' : 'tv', id,
+      season: item.season, episode: item.episode, title: item.title, poster: item.poster };
+    lastPlayed.playing = playing; store('lastPlayed', lastPlayed);
+    renderSourceSwitch();
+    renderEpisodeSwitch();
+  }
 }
 
 // Per-card source control: a dropdown to switch (and persist) which source this show continues on,
@@ -198,7 +203,7 @@ function renderHome() {
       : 'Hit “+ Watch Later” on a show or movie to save it here.'));
   } else {
     const grid = document.createElement('div');
-    grid.className = 'grid';
+    grid.className = 'grid anim-in';
     grid.append(...list.map((item) => card(item, isCont)));
     nodes.push(grid);
   }

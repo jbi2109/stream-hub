@@ -16,9 +16,7 @@ $('watch-later').onclick = async () => {
   later = later.filter((c) => c.key !== key); // dedupe
   later.unshift({ key, title, url, poster, season, episode, type, addedAt: Date.now() });
   store('watchlater', later);
-  const btn = $('watch-later');
-  btn.textContent = '✓ Added';
-  setTimeout(() => { btn.textContent = '+ Watch Later'; }, 1500);
+  toast(`Added to Watch Later — ${title}`);
 };
 
 // ---- rail + topbar navigation ----
@@ -68,12 +66,13 @@ function wireSettingsControls() {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'stream-hub-settings.json'; a.click();
     URL.revokeObjectURL(a.href);
+    toast('Settings exported');
   };
   $('import-settings').onclick = () => $('import-file').click();
   $('import-file').onchange = (e) => {
     const file = e.target.files[0]; if (!file) return;
     const r = new FileReader();
-    r.onload = () => { try { importSettings(JSON.parse(r.result)); location.reload(); } catch { alert('Invalid settings file.'); } };
+    r.onload = () => { try { importSettings(JSON.parse(r.result)); location.reload(); } catch { toast('Invalid settings file.', 'error'); } };
     r.readAsText(file);
     e.target.value = '';
   };

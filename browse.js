@@ -28,7 +28,7 @@ async function tmdbMeta(id, type) {
   try {
     const d = await tmdbGet(`/${t}/${id}`, {});
     const name = d && (d.title || d.name);
-    if (name) meta = { title: name, poster: IMG(d.poster_path, 'w342') };
+    if (name) meta = { title: name, poster: IMG(d.poster_path, 'w342'), backdrop: IMG(d.backdrop_path, 'w780') };
   } catch {}
   tmdbMetaCache.set(ck, meta);
   return meta;
@@ -109,7 +109,7 @@ function pillSelect(firstLabel, firstValue, pairs, value, onChange) {
 
 function posterCard(kind, item) {
   const el = document.createElement('div');
-  el.className = 'card';
+  el.className = 'card poster-card';
   el.tabIndex = 0;
   const wrap = document.createElement('div');
   wrap.className = 'poster-wrap';
@@ -123,10 +123,18 @@ function posterCard(kind, item) {
   } else {
     wrap.classList.add('noposter');
   }
-  const title = document.createElement('div');
-  title.className = 'card-title';
-  title.textContent = item.title || item.name || 'Untitled';
-  el.append(wrap, title);
+  // hover overlay (play glyph) + persistent gradient info — both pointer-events:none so every
+  // click lands on the card itself
+  const overlay = mk('div', 'poster-overlay');
+  overlay.append(icon('play'));
+  wrap.append(overlay);
+  const info = mk('div', 'poster-info');
+  info.append(mk('div', 'poster-info-title', item.title || item.name || 'Untitled'));
+  const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+  const meta = [year, item.vote_average ? `★ ${item.vote_average.toFixed(1)}` : ''].filter(Boolean).join('  ·  ');
+  if (meta) info.append(mk('div', 'poster-info-meta', meta));
+  wrap.append(info);
+  el.append(wrap);
   el.onclick = () => showDetail(kind, item.id);
   return el;
 }
@@ -174,7 +182,7 @@ async function renderBrowse() {
 
   const grid = document.createElement('div');
   grid.className = 'grid';
-  grid.replaceChildren(stateNode('loading', 'Loading…'));
+  grid.replaceChildren(...skeletonCards(12));
   nodes.push(grid);
 
   const pager = document.createElement('div');
@@ -209,7 +217,10 @@ async function renderBrowse() {
   if (browseTab !== tabAtRender) return;
   const results = (data && data.results) || [];
   if (!results.length) grid.replaceChildren(stateNode('empty', 'No results (check your TMDB key / filters).'));
-  else grid.replaceChildren(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(browseTab, r)));
+  else {
+    grid.classList.add('anim-in'); // fresh full render — entrance is fine here (never on live draw())
+    grid.replaceChildren(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(browseTab, r)));
+  }
 
   // pager: 20 per page, Prev disabled on page 1, Next disabled at the last page (TMDB caps at 500)
   const totalPages = Math.min(data?.total_pages || 1, 500);

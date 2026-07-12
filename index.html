@@ -11,26 +11,26 @@
 <body>
   <div id="rail">
     <div class="rail-top">
-      <button id="dash-btn" class="rail-btn" title="Home">&#127968;</button>
-      <button id="home-btn" class="rail-btn" title="Library">&#128269;</button>
-      <button id="browse-btn" class="rail-btn" title="Movies/TV Shows">&#127909;</button>
-      <button id="live-btn" class="rail-btn" title="Live TV">&#128250;</button>
-      <button id="youtube-btn" class="rail-btn" title="YouTube">&#9654;</button>
-      <button id="resume-btn" class="rail-btn" title="Resume watching" hidden>&#9199;</button>
+      <button id="dash-btn" class="rail-btn" title="Home"></button>
+      <button id="home-btn" class="rail-btn" title="Library"></button>
+      <button id="browse-btn" class="rail-btn" title="Movies/TV Shows"></button>
+      <button id="live-btn" class="rail-btn" title="Live TV"></button>
+      <button id="youtube-btn" class="rail-btn" title="YouTube"></button>
+      <button id="resume-btn" class="rail-btn" title="Resume watching" hidden></button>
     </div>
-    <button id="settings-btn" class="rail-btn rail-settings" title="Settings">&#9881;</button>
+    <button id="settings-btn" class="rail-btn rail-settings" title="Settings"></button>
   </div>
 
   <div id="content">
     <div id="topbar">
-      <button id="back" title="Back">&#8592;</button>
-      <button id="forward" title="Forward">&#8594;</button>
-      <button id="src-home" title="Source home">&#8962;</button>
+      <button id="back" title="Back"></button>
+      <button id="forward" title="Forward"></button>
+      <button id="src-home" title="Source home"></button>
       <span id="address"></span>
       <select id="ep-switch" title="Switch episode" hidden></select>
-      <button id="autonext-btn" title="Auto-play next episode" hidden>&#9197;</button>
+      <button id="autonext-btn" title="Auto-play next episode" hidden></button>
       <select id="src-switch" title="Switch source" hidden></select>
-      <button id="live-sources" title="Choose a source" hidden>&#8646; Sources</button>
+      <button id="live-sources" title="Choose a source" hidden></button>
       <button id="watch-later" title="Add this to Watch Later">+ Watch Later</button>
     </div>
     <div id="view">
@@ -49,6 +49,7 @@
 
   <!-- classic scripts sharing one global scope; load order: core first, settings before app, app (bootstrap) last -->
   <script src="core.js"></script>
+  <script src="icons.js"></script>
   <script src="media.js"></script>
   <script src="sources.js"></script>
   <script src="browse.js"></script>

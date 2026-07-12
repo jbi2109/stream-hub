@@ -95,6 +95,7 @@ const tmdb = http.createServer((req, res) => {
       videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abc123' }] },
       external_ids: { imdb_id: 'tt123' },
       'watch/providers': { results: { US: { flatrate: [{ provider_name: 'Netflix', logo_path: '/n.jpg' }] } } },
+      images: { logos: [{ file_path: '/logo.png', iso_639_1: 'en' }] }, // v0.4.0 logo art
     }));
   } else if (/\/genre\/(movie|tv)\/list$/.test(p)) {
     res.end(JSON.stringify({ genres: [{ id: 28, name: 'Action & Adventure' }, { id: 16, name: 'Animation' }, { id: 18, name: 'Drama' }] }));
@@ -108,7 +109,7 @@ const tmdb = http.createServer((req, res) => {
     // echo page + filters into the title so pagination + each filter are assertable
     const page = +(q.get('page') || 1);
     const t = `Disc P${page} G${q.get('with_genres') || 'all'} L${q.get('with_original_language') || '-'} C${q.get('with_origin_country') || '-'}`;
-    res.end(JSON.stringify({ page, total_pages: 3, results: [{ id: 42, title: t, name: t, poster_path: '/x.jpg' }] }));
+    res.end(JSON.stringify({ page, total_pages: 3, results: [{ id: 42, title: t, name: t, poster_path: '/x.jpg', backdrop_path: '/b.jpg' }] }));
   } else {
     res.end(JSON.stringify({ page: 1, total_pages: 1, results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
   }
@@ -1544,6 +1545,87 @@ async function main() {
   await sleep(800); // the trigger is async — give a would-be modal time to (not) appear
   assert.ok(await page.eval(`!document.querySelector('.whats-new')`), 'same version -> no modal on the next boot');
   ok("what's new: shows once per version bump");
+
+  // ---------- v0.4.0 cinematic pass ----------
+
+  // 58. dashboard hero: features the resume item (backdrop + logo + ▶ Resume CTA that actually plays)
+  await page.eval(`document.getElementById('dash-btn').click()`);
+  await until(() => page.eval(`!!document.querySelector('#dashboard .dash-hero .hero-inner')`), 'hero fills from the resume item');
+  assert.ok(await page.eval(`!!document.querySelector('.dash-hero .hero-btn.primary')`), 'resume-hero should offer a ▶ Resume CTA');
+  assert.ok(await page.eval(`(document.querySelector('.dash-hero .hero-bg img')||{}).src?.includes('/b.jpg')`), 'hero backdrop comes from the fixture');
+  assert.ok(await page.eval(`(document.querySelector('.dash-hero .hero-logo')||{}).src?.includes('/logo.png')`), 'hero logo art from images.logos');
+  assert.ok(await page.eval(`document.querySelector('.dash-hero .hero-title').textContent.length > 0`), 'text title kept as fallback');
+  await page.eval(`document.querySelector('.dash-hero .hero-btn.primary').click()`);
+  await until(() => page.eval(`!document.getElementById('webview').hidden && document.getElementById('webview').getURL().includes('/embed/tv/428')`), 'hero Resume plays the continue item');
+  await page.eval(`exitPlayer()`);
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'back on the dashboard');
+  ok('hero: resume-first with backdrop + logo; ▶ Resume plays');
+
+  // 59. hero falls back to trending when there is no resume item (and offers no fake Play)
+  await page.eval(`cont.length = 0; store('continue', cont); renderDashboard();`);
+  await until(() => page.eval(`!!document.querySelector('.dash-hero .hero-inner') && !document.querySelector('.dash-hero .hero-btn.primary')`), 'trending-hero has no Resume CTA');
+  assert.ok(await page.eval(`document.querySelector('.dash-hero .hero-title').textContent.includes('Disc')`), 'trending hero titled from discover');
+  ok('hero: trending fallback without a Resume CTA');
+
+  // 60. resume cards: 16:9 chips (timestamp / Completed), relative time, backdrop swap via tmdbMeta
+  await page.eval(`(() => { cont.length = 0;
+    cont.push({ key: 'tv#428', title: 'Fixture Title', url: '${PLAYER}/embed/tv/428/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now() - 3*86400000, position: 1234, duration: 6000, note: '' });
+    cont.push({ key: 'movie#500', title: 'Done Movie', url: '${PLAYER}/embed/movie/500', poster: '', season: null, episode: null, type: 'movie', updatedAt: Date.now(), position: 5900, duration: 6000, note: '' });
+    store('continue', cont); renderDashboard(); })()`);
+  await until(() => page.eval(`document.querySelectorAll('#dashboard .rail .resume-card').length === 2`), 'resume cards render');
+  assert.ok(await page.eval(`[...document.querySelectorAll('.resume-card .resume-chip')].some(c => c.textContent === '20:34')`), 'timestamp chip formats the position');
+  assert.ok(await page.eval(`[...document.querySelectorAll('.resume-card .resume-chip.done')].some(c => c.textContent === 'Completed')`), 'Completed chip at >=95%');
+  assert.ok(await page.eval(`[...document.querySelectorAll('.resume-card .card-sub')].some(s => s.textContent === '3 days ago')`), 'relative-time sub-line');
+  await until(() => page.eval(`[...document.querySelectorAll('.resume-card img')].some(i => i.src.includes('w780'))`), 'backdrop swapped in via tmdbMeta');
+  ok('resume cards: chips + relative time + backdrop swap');
+
+  // 61. skeletons occupy the layout synchronously while fetches resolve
+  assert.ok(await page.eval(`(() => { renderDashboard(); return document.querySelectorAll('#dashboard .skel').length; })()`) >= 2, 'hero + trending skeletons render before any fetch resolves');
+  assert.strictEqual(await page.eval(`skeletonCards(3, 'skel-wide')[0].className`), 'skel skel-wide', 'skeleton builder shapes');
+  ok('skeletons: reserved-shape placeholders render synchronously');
+
+  // 62. light theme: token-driven colors flip (the hardcoded dark pairs are gone)
+  await page.eval(`document.documentElement.dataset.theme = 'light'`);
+  assert.strictEqual(await page.eval(`getComputedStyle(document.documentElement).getPropertyValue('--bg-rgb').trim()`), '244, 245, 247', 'light --bg-rgb token');
+  const tileBg = await page.eval(`(() => { const t = document.createElement('div'); t.className = 'tile'; document.getElementById('browse').append(t); const v = getComputedStyle(t).backgroundImage; t.remove(); return v; })()`);
+  assert.ok(!tileBg.includes('58, 47, 47'), 'tile gradient no longer hardcodes #3a2f2f');
+  await page.eval(`document.documentElement.dataset.theme = 'dark'`);
+  ok('light theme: tokens flip, hardcoded darks gone');
+
+  // 63. toast: renders and auto-expires (single, replace-in-place)
+  await page.eval(`toast('Test toast')`);
+  assert.ok(await page.eval(`(document.getElementById('toast')||{}).textContent?.includes('Test toast')`), 'toast renders');
+  await until(() => page.eval(`!document.getElementById('toast')`), 'toast auto-expires', 8000);
+  ok('toast: shows and expires');
+
+  // 64. reduced-motion class kills animation (incl. pseudo-element shimmer)
+  await page.eval(`document.body.classList.add('reduced-motion')`);
+  assert.strictEqual(await page.eval(`(() => { const s = document.createElement('div'); s.className = 'skel'; document.body.append(s); const v = getComputedStyle(s, '::after').animationName; s.remove(); return v; })()`), 'none', 'shimmer gated off');
+  await page.eval(`document.body.classList.remove('reduced-motion')`);
+  ok('motion: reduced-motion class disables animation');
+
+  // 65. rail edge fades track scrollability
+  await page.eval(`(() => { cont.length = 0;
+    for (let i = 0; i < 12; i++) cont.push({ key: 'tv#42' + i, title: 'R' + i, url: '${PLAYER}/embed/tv/' + (420 + i) + '/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now(), position: null, duration: null, note: '' });
+    store('continue', cont); renderDashboard(); })()`);
+  await until(() => page.eval(`document.querySelectorAll('#dashboard .rail .resume-card').length >= 12`), 'wide rail rendered');
+  await until(() => page.eval(`document.querySelector('#dashboard .rail').classList.contains('fade-r')`), 'right edge fade when scrollable');
+  assert.ok(await page.eval(`!document.querySelector('#dashboard .rail').classList.contains('fade-l')`), 'no left fade at the start');
+  await page.eval(`(() => { const r = document.querySelector('#dashboard .rail'); r.scrollLeft = 200; r.dispatchEvent(new Event('scroll')); })()`);
+  assert.ok(await page.eval(`document.querySelector('#dashboard .rail').classList.contains('fade-l')`), 'left fade after scrolling');
+  ok('rails: edge fades track scroll position');
+
+  // 66. detail: cinematic backdrop + logo art + scroll-linked cover; the live picker stays plain
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-backdrop img')`), 'detail backdrop layer renders');
+  assert.ok(await page.eval(`(document.querySelector('#detail .detail-logo')||{}).src?.includes('/logo.png')`), 'logo art renders');
+  assert.ok(await page.eval(`document.querySelector('#detail h1').textContent.length > 0`), 'h1 text kept (fallback + a11y)');
+  const [dScroll, dOpacity] = await page.eval(`(() => { const d = document.getElementById('detail'); d.scrollTop = 600; d.dispatchEvent(new Event('scroll')); return [d.scrollTop, document.querySelector('#detail .detail-cover').style.opacity]; })()`);
+  assert.strictEqual(dOpacity, String(Math.min(dScroll / 500, 1)), 'cover opacity tracks #detail scrollTop');
+  await page.eval(`showLivePicker({ title: 'Plain Match', logo: '', sources: [] })`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelector('#detail h1').textContent === 'Plain Match'`), 'live picker renders in the shared container');
+  assert.ok(await page.eval(`!document.querySelector('#detail .detail-backdrop')`), 'live picker has no backdrop layer');
+  ok('detail: backdrop + logo + scroll fade; live picker stays plain');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);
