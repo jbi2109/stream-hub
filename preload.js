@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // and TMDB catalog fetches (run in main to sidestep the renderer CSP).
 contextBridge.exposeInMainWorld('sh', {
   onVideoProgress: (cb) => ipcRenderer.on('video-progress', (_e, d) => cb(d)),
+  setPlayerVisible: (v) => ipcRenderer.send('player-visible', v), // gate the main-process progress poll on player visibility
   tmdb: (path, params) => ipcRenderer.invoke('tmdb', { path, params }),
   httpGet: (url) => ipcRenderer.invoke('httpGet', url), // generic GET for live-catalog fetches
   onUpdate: (cb) => {

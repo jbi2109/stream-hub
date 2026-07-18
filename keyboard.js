@@ -57,13 +57,13 @@ function openPalette() {
   closeTopModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay palette';
-  const card = mk('div', 'palette-card');
+  const cardEl = mk('div', 'palette-card');
   const input = document.createElement('input');
   input.className = 'palette-input';
   input.placeholder = 'Type a command…';
   const list = mk('div', 'palette-list');
-  card.append(input, list);
-  overlay.append(card);
+  cardEl.append(input, list);
+  overlay.append(cardEl);
   overlay.onclick = (e) => { if (e.target === overlay) closePalette(); };
 
   let idx = 0, shown = [];
@@ -112,14 +112,14 @@ function openHelp() {
   if (helpEl) return;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay palette';
-  const card = mk('div', 'palette-card help-card');
-  card.append(mk('h3', null, 'Keyboard shortcuts'));
+  const cardEl = mk('div', 'palette-card help-card');
+  cardEl.append(mk('h3', null, 'Keyboard shortcuts'));
   for (const [key, what] of SHORTCUTS) {
     const row = mk('div', 'help-row');
     row.append(mk('span', 'help-key', key), mk('span', null, what));
-    card.append(row);
+    cardEl.append(row);
   }
-  overlay.append(card);
+  overlay.append(cardEl);
   overlay.onclick = (e) => { if (e.target === overlay) closeHelp(); };
   document.body.append(overlay);
   helpEl = overlay;
@@ -144,8 +144,8 @@ function openWhatsNew(version, notes) {
   if (whatsNewEl) return;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay palette';
-  const card = mk('div', 'palette-card help-card whats-new');
-  card.append(mk('h3', null, `What's new in v${version}`));
+  const cardEl = mk('div', 'palette-card help-card whats-new');
+  cardEl.append(mk('h3', null, `What's new in v${version}`));
   if (notes) {
     // drop headings/rules; re-join a wrapped bullet's indented continuation lines
     const lines = [];
@@ -155,18 +155,18 @@ function openWhatsNew(version, notes) {
       if (/^\s+\S/.test(raw) && lines.length) lines[lines.length - 1] += ' ' + t;
       else lines.push(t);
     }
-    card.append(...lines.map(notesLine));
+    cardEl.append(...lines.map(notesLine));
   } else {
-    card.append(mk('div', 'wn-text', `Updated to v${version}.`));
+    cardEl.append(mk('div', 'wn-text', `Updated to v${version}.`));
     const a = mk('a', 'about-link', 'Read the full release notes on GitHub');
     a.href = `https://github.com/jbi2109/stream-hub/releases/tag/v${version}`;
     a.target = '_blank';
-    card.append(a);
+    cardEl.append(a);
   }
   const okBtn = mk('button', 'set-btn wn-ok', 'Got it');
   okBtn.onclick = () => closeWhatsNew();
-  card.append(okBtn);
-  overlay.append(card);
+  cardEl.append(okBtn);
+  overlay.append(cardEl);
   overlay.onclick = (e) => { if (e.target === overlay) closeWhatsNew(); };
   document.body.append(overlay);
   whatsNewEl = overlay;

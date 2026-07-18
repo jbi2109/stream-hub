@@ -201,14 +201,10 @@ async function renderAdblockState() {
   if (!on) el.textContent = 'Ad-blocking is off';
   else if (st.engine === 'ads-only') el.textContent = '⚠ Reduced blocking — full-list download failed';
   else el.textContent = `Full lists · updated ${relTime(st.at)}`; // relTime already reads "… ago" / "just now"
-  const panel = settingsPanels.privacy;
-  if (panel) {
-    const ytCb = [...panel.querySelectorAll('.set-row')].find((r) => r.textContent.includes('YouTube ad-blocking'))
-      ?.querySelector('input[type=checkbox]');
-    const updBtn = el.closest('.set-btn-row')?.querySelector('button');
-    if (ytCb) ytCb.disabled = !on;
-    if (updBtn) updBtn.disabled = !on;
-  }
+  const ytCb = document.getElementById('yt-scriptlets');
+  const updBtn = document.getElementById('adblock-update');
+  if (ytCb) ytCb.disabled = !on;
+  if (updBtn) updBtn.disabled = !on;
 }
 
 function buildPrivacy() {
@@ -221,9 +217,11 @@ function buildPrivacy() {
   p.append(settingRow('Ad-blocking', 'Full uBlock-style lists (network + cosmetic). Applies immediately.',
     toggleControl('adblock', pushThenRender)));
 
+  const ytToggle = toggleControl('youtubeScriptlets', pushThenRender);
+  ytToggle.querySelector('input').id = 'yt-scriptlets'; // so renderAdblockState greys it by id, not a text scan
   p.append(settingRow('YouTube ad-blocking',
     'Blocks YouTube video ads (pre-roll/mid-roll) by pruning them from the player — safe, doesn\'t touch the player. On by default. If YouTube ever misbehaves, turn this off and reload.',
-    toggleControl('youtubeScriptlets', pushThenRender)));
+    ytToggle));
 
   const updRow = mk('div', 'set-btn-row');
   const updBtn = actionButton('Update ad lists now', null, async () => {
@@ -233,6 +231,7 @@ function buildPrivacy() {
     if (st && !r.ok) st.textContent = 'Update failed — still using the previous lists';
     else renderAdblockState();
   });
+  updBtn.id = 'adblock-update'; // queried by renderAdblockState to grey it while master blocking is off
   const stSpan = mk('span', 'set-status', ''); stSpan.id = 'adblock-state';
   updRow.append(updBtn, stSpan);
   p.append(settingRow('Ad-block lists', 'Downloaded uBlock-style filter lists; refreshed automatically while the app runs.', updRow));
@@ -316,7 +315,7 @@ function buildAdvanced() {
   deb.onchange = () => { const n = +deb.value; if (n >= 100) { settings.captureDebounce = n; saveSettings(); } };
   p.append(settingRow('Capture debounce (ms)', 'Delay before a watched page is saved to Continue Watching.', deb));
 
-  p.append(settingRow('Progress poll interval (ms)', 'How often playback position is read. Applies to newly opened players.',
+  p.append(settingRow('Progress poll interval (ms)', 'How often playback position is read. Applies the next time the player is shown.',
     numControl('progressPollMs', 1000)));
   p.append(settingRow('Ad-list refresh (hours)', 'Lists auto-refresh this often while the app runs.',
     numControl('adlistRefreshHours', 1)));

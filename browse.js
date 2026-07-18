@@ -16,22 +16,27 @@ async function tmdbGet(path, params) {
 }
 
 // Cached title+poster for a TMDB id (or null). Used to title Continue/Watch-Later entries from the
-// id in the embed URL instead of the provider's own og:title — correct + provider-agnostic. Caching
-// bounds the API calls (capture fires repeatedly; the library heal touches every entry).
-const tmdbMetaCache = new Map(); // `${type}:${id}` -> { title, poster } | null
-async function tmdbMeta(id, type) {
-  if (!id || !tmdbKey) return null;
+// id in the embed URL instead of the provider's own og:title — correct + provider-agnostic. Caches
+// PROMISES (not values) so concurrent callers — round-1's parallel heal, the dashboard hero/card[0]
+// single-fetch — dedupe onto one request. A null (bad payload) or rejected resolution is NOT cached:
+// the entry is deleted so a later call can retry/heal.
+const tmdbMetaCache = new Map(); // `${type}:${id}` -> Promise<{title,poster,backdrop}|null>
+function tmdbMeta(id, type) {
+  if (!id || !tmdbKey) return Promise.resolve(null);
   const t = type === 'movie' ? 'movie' : 'tv';
   const ck = t + ':' + id;
-  if (tmdbMetaCache.has(ck)) return tmdbMetaCache.get(ck);
-  let meta = null;
-  try {
-    const d = await tmdbGet(`/${t}/${id}`, {});
-    const name = d && (d.title || d.name);
-    if (name) meta = { title: name, poster: IMG(d.poster_path, 'w342'), backdrop: IMG(d.backdrop_path, 'w780') };
-  } catch {}
-  tmdbMetaCache.set(ck, meta);
-  return meta;
+  if (!tmdbMetaCache.has(ck)) {
+    const p = (async () => {
+      const d = await tmdbGet(`/${t}/${id}`, {}); // tmdbGet never throws (main returns {error}); guard on shape
+      const name = d && (d.title || d.name);
+      if (name) return { title: name, poster: IMG(d.poster_path, 'w342'), backdrop: IMG(d.backdrop_path, 'w780') };
+      return null;
+    })();
+    // Do NOT persist a null/failed resolution — let a later call retry.
+    p.then((v) => { if (!v) tmdbMetaCache.delete(ck); }, () => tmdbMetaCache.delete(ck));
+    tmdbMetaCache.set(ck, p);
+  }
+  return tmdbMetaCache.get(ck);
 }
 
 // --- browse filters (genre / year / sort / provider) ---

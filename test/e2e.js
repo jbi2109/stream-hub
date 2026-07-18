@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { CDP, sleep, until } = require('./cdp');
 
 const ROOT = path.join(__dirname, '..');
 const PORT = 9223;
@@ -23,18 +24,6 @@ const PROFILE = path.join(os.tmpdir(), 'stream-hub-test-profile');
 
 let electronProc = null;
 let passed = 0;
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function until(fn, desc, timeout = 20000) {
-  const end = Date.now() + timeout;
-  let last;
-  while (Date.now() < end) {
-    try { last = await fn(); if (last) return last; } catch (e) { last = e; }
-    await sleep(250);
-  }
-  throw new Error(`timeout waiting for: ${desc} (last: ${last})`);
-}
 
 function ok(name) { passed++; console.log(`  ok ${passed} - ${name}`); }
 
@@ -117,6 +106,16 @@ const tmdb = http.createServer((req, res) => {
 
 // Stands in for a generic live-catalog JSON API (fetched via sh.httpGet -> main).
 const catalog = http.createServer((req, res) => {
+  if (req.url === '/huge') {
+    // ~6MB with NO content-length (chunked) so the STREAMED 5MB cap trips mid-transfer, not the header check.
+    const chunk = 'x'.repeat(64 * 1024); // 64KB
+    let sent = 0;
+    const pump = () => {
+      while (sent < 6 * 1024 * 1024) { sent += chunk.length; if (!res.write(chunk)) return res.once('drain', pump); }
+      res.end();
+    };
+    return pump();
+  }
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ count: 3, streams: [
     // Alpha's embed has a 3-digit id so it passes isMediaUrl — proves the `live` flag (not isMediaUrl)
@@ -169,46 +168,16 @@ const catalogTwoHop = http.createServer((req, res) => {
   } else { res.statusCode = 404; res.end('[]'); }
 });
 
-// ---- minimal CDP client ----
-class CDP {
-  static async connect(wsUrl) {
-    const c = new CDP();
-    c.pending = new Map();
-    c.nextId = 1;
-    c.ws = new WebSocket(wsUrl);
-    c.ws.addEventListener('message', (ev) => {
-      const msg = JSON.parse(ev.data);
-      if (msg.id && c.pending.has(msg.id)) {
-        const { resolve, reject } = c.pending.get(msg.id);
-        c.pending.delete(msg.id);
-        msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
-      }
-    });
-    await new Promise((res, rej) => {
-      c.ws.addEventListener('open', res);
-      c.ws.addEventListener('error', () => rej(new Error('ws connect failed')));
-    });
-    return c;
-  }
-  send(method, params = {}) {
-    const id = this.nextId++;
-    this.ws.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
-  }
-  async eval(expression) {
-    const r = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(`eval failed: ${r.exceptionDetails.text} ${JSON.stringify(r.exceptionDetails.exception?.description || '')} in: ${expression.slice(0, 120)}`);
-    return r.result.value;
-  }
-  close() { try { this.ws.close(); } catch {} }
-}
-
 const targets = async () => (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
 const closeTarget = (id) => fetch(`http://127.0.0.1:${PORT}/json/close/${id}`);
 
 async function launchApp() {
   const electronPath = require(path.join(ROOT, 'node_modules', 'electron'));
-  electronProc = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, '--test-profile'],
+  // v0.4.3 leans on requestAnimationFrame (debounced live-grid rebuild, rail edge fades) — Chromium
+  // pauses rAF in an occluded/backgrounded window, which would hang those on CI/behind other windows.
+  // Keep the renderer un-throttled so the suite is deterministic regardless of window visibility.
+  electronProc = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, '--test-profile',
+    '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'],
     { cwd: ROOT, stdio: 'ignore', env: {
       ...process.env, SH_TEST_UA_HOST: UA_ECHO_HOST, SH_TEST_BLOCK_PATTERN: 'ads-test-marker\n###sh-cosmetic',
       SH_TEST_YT_HOST: YT_FIX_HOST, SH_TEST_TMDB_BASE: 'http://127.0.0.1:9313' } });
@@ -708,6 +677,15 @@ async function main() {
   assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${UA_ECHO}/'); return !!(r && r.body && r.body.includes('Mozilla')); })()`), 'sh.httpGet should send a browser User-Agent');
   ok('ipc: sh.httpGet sends a browser User-Agent');
 
+  // 32d3. v0.4.3: sh.httpGet caps the response at 5MB, streamed — a ~6MB body yields the too-large error
+  assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('${CATALOG}/huge'); return !!(r && r.error && /too large/.test(r.error)); })()`), 'sh.httpGet should reject an over-5MB response');
+  ok('ipc: sh.httpGet caps oversized responses (5MB, streamed)');
+
+  // 32d4. v0.4.3: sh.httpGet strips embedded URL credentials — undici rejects credentialed URLs, so a
+  //       successful fetch (Widow's Bay body) proves the strip ran before the request went out.
+  assert.ok(await page.eval(`(async () => { const r = await window.sh.httpGet('http://user:pw@127.0.0.1:9310/'); return !!(r && r.ok && r.body && r.body.includes('Widow')); })()`), 'sh.httpGet should strip embedded credentials and still fetch');
+  ok('ipc: sh.httpGet strips embedded URL credentials');
+
   // 32e. wizard adds a Live catalog (JSON API) source through the widget
   await page.eval(`document.getElementById('home-btn').click()`);
   await page.eval(`document.getElementById('add-source-btn').click()`);
@@ -913,6 +891,31 @@ async function main() {
   assert.ok(merged[0].url.includes('127.0.0.1:9312'), 'merge should keep the most-recently-updated (PLAYER, updatedAt 200)');
   ok('migration: rekeyLibrary merges duplicate cards for the same show');
 
+  // 32q2. v0.4.3: rekeyLibrary writes only when something changed (a steady-state boot writes nothing).
+  // store() is a const wrapping localStorage.setItem, so we spy on Storage.prototype.setItem to count.
+  await page.eval(`document.getElementById('home-btn').click()`);
+  const rekeyNoop = await page.eval(`(() => {
+    cont.length = 0; later.length = 0;
+    // a canonical (already mediaKey-shaped) entry + empty watchlater -> no key moves, no merge
+    cont.push({ key: mediaKey('${SITE}/embed/tv/777/1/1'), title: 'Canon', url: '${SITE}/embed/tv/777/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: 100, position: null, duration: null, note: '' });
+    const orig = Storage.prototype.setItem; let n = 0;
+    Storage.prototype.setItem = function (k, v) { if (k === 'continue' || k === 'watchlater') n++; return orig.call(this, k, v); };
+    try { rekeyLibrary(); return n; } finally { Storage.prototype.setItem = orig; }
+  })()`);
+  assert.strictEqual(rekeyNoop, 0, 'a no-op rekey (canonical keys, no dups) must not write the library');
+  const rekeyMerge = await page.eval(`(() => {
+    cont.length = 0; // legacy-keyed duplicate pair for one show -> key moves + merge -> a write must happen
+    cont.push({ key: 'siteA#888', title: 'Dup', url: '${SITE}/embed/tv/888/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: 100, position: null, duration: null, note: '' });
+    cont.push({ key: 'playerB#888', title: 'Dup', url: '${PLAYER}/embed/tv/888/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: 200, position: null, duration: null, note: '' });
+    const orig = Storage.prototype.setItem; let n = 0;
+    Storage.prototype.setItem = function (k, v) { if (k === 'continue' || k === 'watchlater') n++; return orig.call(this, k, v); };
+    try { rekeyLibrary(); return { n, len: cont.length, key: cont[0].key }; } finally { Storage.prototype.setItem = orig; }
+  })()`);
+  assert.ok(rekeyMerge.n > 0, 'a merge must write the library');
+  assert.strictEqual(rekeyMerge.len, 1, 'the duplicate pair still merges to one entry');
+  assert.strictEqual(rekeyMerge.key, 'tv#888', 'merged entry uses the host-independent key');
+  ok('rekey: writes only when a key moves or duplicates merge (no-op boot writes nothing)');
+
   // 32r. v0.1.4: live / non-rebuildable entries show a read-only source label, not a dropdown
   await page.eval(`document.getElementById('home-btn').click()`);
   await page.eval(`
@@ -1032,8 +1035,12 @@ async function main() {
   await page.eval(`document.getElementById('browse-btn').click()`);
   await page.eval(`document.getElementById('live-btn').click()`);
   await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].filter(t => /team [ab] vs team [ab]/i.test(t.textContent)).length === 1`), 'the reversed-order match merges into one card');
-  await page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].find(t => /team [ab] vs team [ab]/i.test(t.textContent)).click()`);
-  await until(() => page.eval(`document.querySelectorAll('#detail .src-group').length >= 2`), 'the source page groups sources under both catalogs');
+  // The cached catalog paints its single card one rAF before the second catalog's rows merge in (v0.4.3
+  // debounced rebuild), so re-click the current card until the merged source page (both groups) is up.
+  await until(async () => {
+    await page.eval(`(() => { const c = [...document.querySelectorAll('#browse .match-grid .match-card')].find(t => /team [ab] vs team [ab]/i.test(t.textContent)); if (c) c.click(); })()`);
+    return page.eval(`document.querySelectorAll('#detail .src-group').length >= 2`);
+  }, 'the source page groups sources under both catalogs');
   assert.ok(await page.eval(`(() => { const n = [...document.querySelectorAll('#detail .src-group-name')].map(g => g.textContent); return n.includes('NestedCat') && n.includes('BCat'); })()`), 'both catalog groups present on the source page');
   await page.eval(`document.getElementById('home-btn').click()`); // leave the source page clean for the next tests
   ok('live: cross-catalog team-order merge pools sources under both catalogs');
@@ -1382,7 +1389,24 @@ async function main() {
   assert.ok(await page.eval(`!!document.getElementById('adblock-state')`), 'Privacy panel should have the #adblock-state status node');
   await until(() => page.eval(`document.getElementById('adblock-state').textContent.includes('Full lists')`),
     '#adblock-state resolves to Full lists in test mode');
-  ok('⚙ Privacy panel: YouTube toggle + Update button + live ad-block status');
+  // v0.4.3: the YouTube toggle + Update button carry stable ids (renderAdblockState greys by id, not a text scan)
+  assert.ok(await page.eval(`!!document.getElementById('yt-scriptlets')`), 'YouTube toggle should carry id yt-scriptlets');
+  assert.ok(await page.eval(`!!document.getElementById('adblock-update')`), 'Update button should carry id adblock-update');
+  // greying: master ad-blocking off -> engine reports off -> both controls grey out (looked up by id)
+  await page.eval(`(async () => { settings.adblock = false; saveSettings(); await pushMain(); await renderAdblockState(); })()`);
+  await until(() => page.eval(`document.getElementById('yt-scriptlets').disabled && document.getElementById('adblock-update').disabled`),
+    'YouTube toggle + Update button grey out when master ad-blocking is off');
+  // a settings rebuild (the Reset path) recreates both nodes with fresh ids and re-greys them
+  await page.eval(`rebuildSettings()`);
+  assert.ok(await page.eval(`!!document.getElementById('yt-scriptlets') && !!document.getElementById('adblock-update')`),
+    'a settings rebuild recreates the yt-scriptlets + adblock-update ids');
+  await until(() => page.eval(`document.getElementById('yt-scriptlets').disabled && document.getElementById('adblock-update').disabled`),
+    'greying re-applies after a settings rebuild');
+  // restore ad-blocking on for the rest of the suite
+  await page.eval(`(async () => { settings.adblock = true; saveSettings(); await pushMain(); await renderAdblockState(); })()`);
+  await until(() => page.eval(`!document.getElementById('yt-scriptlets').disabled && !document.getElementById('adblock-update').disabled`),
+    'controls re-enable when ad-blocking is turned back on');
+  ok('⚙ Privacy panel: YouTube toggle + Update button + live ad-block status; greying by id survives a rebuild');
 
   // ---------- v0.3.2 topbar episode switcher + auto-play next ----------
 
@@ -1706,7 +1730,7 @@ async function main() {
   await until(() => page.eval(`document.querySelector('#dashboard .rail').classList.contains('fade-r')`), 'right edge fade when scrollable');
   assert.ok(await page.eval(`!document.querySelector('#dashboard .rail').classList.contains('fade-l')`), 'no left fade at the start');
   await page.eval(`(() => { const r = document.querySelector('#dashboard .rail'); r.scrollLeft = 200; r.dispatchEvent(new Event('scroll')); })()`);
-  assert.ok(await page.eval(`document.querySelector('#dashboard .rail').classList.contains('fade-l')`), 'left fade after scrolling');
+  await until(() => page.eval(`document.querySelector('#dashboard .rail').classList.contains('fade-l')`), 'left fade after scrolling'); // fades recompute is now rAF-throttled
   ok('rails: edge fades track scroll position');
 
   // 66. detail: cinematic backdrop + logo art + scroll-linked cover; the live picker stays plain
@@ -1720,6 +1744,39 @@ async function main() {
   await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelector('#detail h1').textContent === 'Plain Match'`), 'live picker renders in the shared container');
   assert.ok(await page.eval(`!document.querySelector('#detail .detail-backdrop')`), 'live picker has no backdrop layer');
   ok('detail: backdrop + logo + scroll fade; live picker stays plain');
+
+  // ---------- v0.4.3 perf/health ----------
+
+  // 67. progress poll is GATED on player visibility: it runs only while the player is shown, freezes when
+  //     hidden (video parked on another view), and re-arms on the next show using the CURRENT interval.
+  await page.eval(`(async () => { settings.progressPollMs = 1000; saveSettings(); await pushMain(); })()`);
+  await page.eval(`cont.length = 0; store('continue', cont); activeKey = null; open('${SITE}/tv/428');`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/tv/428')`), 'player shown for poll-gate test');
+  // visible -> the gated poll runs and the fixture's currentTime (42) lands in the continue entry
+  await until(() => page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).position === 42`), 'visible: gated poll reads position', 8000);
+  // hidden -> poll disarmed: settle any in-flight read, then updatedAt must freeze
+  await page.eval(`exitPlayer()`);
+  await sleep(1500);
+  const frozen = await page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).updatedAt`);
+  await sleep(2500);
+  assert.strictEqual(await page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).updatedAt`), frozen, 'hidden: progress poll must freeze (updatedAt frozen while parked)');
+  // shown again -> re-armed with the current interval: updatedAt advances again
+  await page.eval(`resumeLast()`);
+  await until(() => page.eval(`(JSON.parse(localStorage.getItem('continue'))[0] || {}).updatedAt > ${frozen}`), 're-armed: updatedAt advances again after show', 8000);
+  await page.eval(`(async () => { settings.progressPollMs = 5000; saveSettings(); await pushMain(); })()`);
+  ok('poll-gate: progress poll runs only while shown; freezes hidden; re-arms on show with the current interval');
+
+  // 68. v0.4.3: capMap bounds a Map by FIFO (oldest-first) eviction, keeping the newest `max` entries.
+  const capRes = await page.eval(`(() => {
+    const m = new Map();
+    for (let i = 0; i < 25; i++) { m.set('k' + i, i); capMap(m, 20); } // cap AFTER each set, like the real call sites
+    return { size: m.size, hasNewest: m.has('k24'), hasOldest: m.has('k0'), hasWindow: m.has('k5') };
+  })()`);
+  assert.strictEqual(capRes.size, 20, 'capMap holds the Map at the cap');
+  assert.ok(capRes.hasNewest, 'the just-written entry survives eviction');
+  assert.ok(!capRes.hasOldest, 'the oldest entry is evicted first');
+  assert.ok(capRes.hasWindow, 'entries within the cap window are kept');
+  ok('capMap: FIFO eviction keeps the newest max entries, drops the oldest');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

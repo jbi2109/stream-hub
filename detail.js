@@ -34,7 +34,7 @@ function detailHeaderBar() {
 function renderDetail(kind, type, id, d) {
   const el = $('detail');
   const title = d.title || d.name;
-  const posterUrl = IMG(d.poster_path, 'w342'); // carried into playOn so capture uses the TMDB title/poster
+  const posterUrl = IMG(d.poster_path, 'w342'); // carried into openOn so capture uses the TMDB title/poster
   const year = (d.release_date || d.first_air_date || '').slice(0, 4);
   const rating = d.vote_average ? d.vote_average.toFixed(1) : null;
   const genres = (d.genres || []).map((g) => g.name);
@@ -194,12 +194,12 @@ function renderDetail(kind, type, id, d) {
     const row = document.createElement('div');
     row.className = 'cast-row';
     row.append(...cast.map((c) => {
-      const card = document.createElement('div'); card.className = 'cast';
+      const castCard = document.createElement('div'); castCard.className = 'cast';
       const img = document.createElement('img'); img.loading = 'lazy'; img.src = IMG(c.profile_path, 'w185'); img.onerror = () => img.classList.add('noimg');
       const nm = document.createElement('div'); nm.className = 'cast-name'; nm.textContent = c.name;
       const ch = document.createElement('div'); ch.className = 'cast-char'; ch.textContent = c.character || '';
-      card.append(img, nm, ch);
-      return card;
+      castCard.append(img, nm, ch);
+      return castCard;
     }));
     sec.append(row);
     el.append(sec);

@@ -89,19 +89,36 @@ async function readVideo(contents) {
   return null;
 }
 
+// The playback-progress poll is GATED on player visibility: it runs only while the <webview> player is
+// shown, so a video parked on Dashboard/Browse/Settings costs no idle CPU (it stops evaluating
+// querySelector('video') in every guest subframe every ⚙ progressPollMs). One module-level target — there
+// is exactly one reused <webview>; login popups are windows, not webviews, so they never register here.
+// armPoll reads ms.progressPollMs afresh on EVERY arm, so a settings change applies on the next show.
+let playerPoll = { contents: null, timer: null, shown: false };
+function armPoll() {
+  clearInterval(playerPoll.timer); playerPoll.timer = null;
+  const c = playerPoll.contents;
+  if (!playerPoll.shown || !c || c.isDestroyed()) return;
+  playerPoll.timer = setInterval(async () => {
+    const v = await readVideo(c);
+    if (v) c.hostWebContents?.send('video-progress', v);
+  }, ms.progressPollMs || 5000);
+}
+ipcMain.on('player-visible', (_e, shown) => { playerPoll.shown = !!shown; armPoll(); });
+
 app.on('web-contents-created', (_e, contents) => {
   if (contents.getType() !== 'webview') {
     // main window + login popups: never spawn further windows
     contents.setWindowOpenHandler(() => ({ action: 'deny' }));
     return;
   }
-  // poll the player and push position to the host renderer
-  // ponytail: interval is the ⚙ progressPollMs setting; applies to players opened after a change
-  const timer = setInterval(async () => {
-    const v = await readVideo(contents);
-    if (v) contents.hostWebContents?.send('video-progress', v);
-  }, ms.progressPollMs || 5000);
-  contents.on('destroyed', () => clearInterval(timer));
+  // Register this webview as the (single) progress-poll target; the poll itself is armed on visibility
+  // (player-visible IPC from the renderer) so it never runs while the player is hidden. See armPoll.
+  playerPoll.contents = contents; armPoll();
+  contents.on('destroyed', () => {
+    clearInterval(playerPoll.timer); playerPoll.timer = null;
+    if (playerPoll.contents === contents) playerPoll.contents = null;
+  });
   // While the guest owns the keyboard, document keydowns never reach the host renderer — forward the
   // two in-player shortcuts from here: Esc (exit player) and Ctrl/Cmd+K (command palette).
   contents.on('before-input-event', (_ev, input) => {
@@ -147,13 +164,17 @@ let blocker = null;          // kept so the ⚙ ad-block toggle can disable/re-e
 let blockingEnabled = false;
 let adblockEngine = 'off';   // 'off' | 'ads-only' | 'full' — surfaced to the Privacy panel via adblock-status
 let adlistsBuiltAt = 0;      // ms epoch of the last successful build (drives auto-refresh + the status line)
-let buildInFlight = null;    // coalesces concurrent builds onto one promise
+let buildInFlight = null;    // { p, force } — coalesces concurrent builds; a force build never piggybacks a weaker one
 
 // Build (or rebuild) the ad-block engine. No session side effects — the caller swaps it in via swapBlocker.
 // Concurrent callers coalesce onto the same in-flight build.
 function buildBlocker({ forceRefresh } = {}) {
-  if (buildInFlight) return buildInFlight;
-  const p = (async () => {
+  // A force refresh must NOT piggyback a weaker (possibly cache-served) non-force build already in flight —
+  // otherwise "Update ad lists now" / the hourly refresh silently no-ops. Coalesce only when the in-flight
+  // build is at least as strong (it's a force build, or we aren't forcing); a force onto a non-force chains
+  // a fresh build after it. force-onto-force still coalesces (a double-click won't fetch twice).
+  if (buildInFlight && (buildInFlight.force || !forceRefresh)) return buildInFlight.p;
+  const run = async () => {
     if (process.env.SH_TEST_BLOCK_PATTERN) {
       const b = ElectronBlocker.parse(process.env.SH_TEST_BLOCK_PATTERN); // deterministic e2e rule
       adblockEngine = 'full'; adlistsBuiltAt = Date.now();
@@ -198,9 +219,12 @@ function buildBlocker({ forceRefresh } = {}) {
         return null;
       }
     }
-  })();
-  buildInFlight = p;
-  p.finally(() => { if (buildInFlight === p) buildInFlight = null; }); // clear when settled
+  };
+  // .catch(()=>{}) on the predecessor is load-bearing: a failed in-flight build must not reject the chained run.
+  const p = buildInFlight ? buildInFlight.p.catch(() => {}).then(run) : run();
+  const entry = { p, force: !!forceRefresh };
+  buildInFlight = entry;
+  p.finally(() => { if (buildInFlight === entry) buildInFlight = null; }); // clear when settled
   return p;
 }
 
@@ -425,13 +449,25 @@ app.whenReady().then(() => {
   // to reach their JSON APIs. https only (loopback http allowed for tests); no provider logic here.
   ipcMain.handle('httpGet', async (_e, url) => {
     try {
-      const u = String(url);
-      const okScheme = /^https:\/\//i.test(u) || /^http:\/\/(127\.0\.0\.1|localhost)(:|\/)/i.test(u);
+      const u = new URL(String(url));
+      u.username = u.password = '';                       // never forward embedded credentials
+      const okScheme = u.protocol === 'https:' || (u.protocol === 'http:' && /^(127\.0\.0\.1|localhost)$/.test(u.hostname));
       if (!okScheme) return { error: 'https only' };
       // Send a browser User-Agent — many live-catalog APIs 403 the default Node/undici UA. Abort after
       // 60s so a dead/hanging catalog is skipped (the live grid renders the others incrementally).
-      const r = await fetch(u, { headers: { 'User-Agent': DEFAULT_UA, 'Accept': 'application/json,text/plain,*/*' }, signal: AbortSignal.timeout((ms.catalogTimeoutSec || 60) * 1000) });
-      return { ok: r.ok, status: r.status, body: await r.text() };
+      const r = await fetch(u.href, { headers: { 'User-Agent': DEFAULT_UA, 'Accept': 'application/json,text/plain,*/*' },
+        signal: AbortSignal.timeout((ms.catalogTimeoutSec || 60) * 1000) });
+      // Cap the response at 5MB, streamed — a huge/hostile body must not be buffered before the check.
+      const MAX = 5 * 1024 * 1024;
+      if (+(r.headers.get('content-length') || 0) > MAX) return { error: 'response too large' };
+      let body = '', size = 0; const dec = new TextDecoder();
+      for await (const chunk of r.body ?? []) {
+        size += chunk.byteLength;
+        if (size > MAX) { try { await r.body.cancel(); } catch {} return { error: 'response too large' }; }
+        body += dec.decode(chunk, { stream: true });
+      }
+      body += dec.decode();
+      return { ok: r.ok, status: r.status, body };
     } catch (e) {
       return { error: e.message };
     }

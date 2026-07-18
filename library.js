@@ -215,14 +215,13 @@ function renderHome() {
 // entries with no resolvable id are left as-is (the user removes them; watching heals the rest).
 async function healLibrary() {
   if (localStorage.getItem('libraryHealed') || !tmdbKey) return;
+  // One-time heal — fire the TMDB lookups in parallel (was serial per entry). Duplicate ids firing
+  // duplicate fetches is acceptable here (runs once). Spread preserves object identity, so the mutations
+  // below land on the real cont/later entries.
+  const items = [...cont, ...later].filter((i) => i.type !== 'live');
+  const metas = await Promise.all(items.map((i) => tmdbMeta(tmdbIdOf(i.url), i.type || mediaType(i.url, i.season))));
   let changed = false;
-  for (const list of [cont, later]) {
-    for (const item of list) {
-      if (item.type === 'live') continue;
-      const meta = await tmdbMeta(tmdbIdOf(item.url), item.type || mediaType(item.url, item.season));
-      if (meta) { item.title = meta.title; if (meta.poster) item.poster = meta.poster; changed = true; }
-    }
-  }
+  items.forEach((item, idx) => { const m = metas[idx]; if (m) { item.title = m.title; if (m.poster) item.poster = m.poster; changed = true; } });
   if (changed) { store('continue', cont); store('watchlater', later); if (!$('home').hidden) renderHome(); }
   localStorage.setItem('libraryHealed', '1');
 }

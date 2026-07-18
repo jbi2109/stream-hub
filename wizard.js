@@ -47,8 +47,8 @@ function openAddWizard(existing) {
 
   // ---- shell (built once; card contents swapped per step) ----
   const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
-  const card = document.createElement('div'); card.className = 'wiz-card';
-  overlay.append(card);
+  const wizCard = document.createElement('div'); wizCard.className = 'wiz-card';
+  overlay.append(wizCard);
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
 
   const finish = () => {
@@ -121,7 +121,7 @@ function openAddWizard(existing) {
     next.onclick = () => { if (!isValid()) return; if (isLast) finish(); else { i++; renderStep(); } };
     nav.append(back, next);
 
-    card.replaceChildren(head, h, label, field, nav); // only the card body swaps — overlay stays (no flash)
+    wizCard.replaceChildren(head, h, label, field, nav); // only the card body swaps — overlay stays (no flash)
   };
 
   wiz.replaceChildren(overlay);

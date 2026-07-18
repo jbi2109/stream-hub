@@ -23,15 +23,18 @@ const tmdbIdOf = (url) => {
 // collapse to the same show (keep the most-recently-touched). Idempotent; run at startup.
 function rekeyLibrary() {
   for (const [name, list] of [['continue', cont], ['watchlater', later]]) {
-    for (const item of list) item.key = mediaKey(item.url);
+    let changed = false;
+    // still scan every entry (re-canonicalizing imports is cheap) — but only flag a rewrite if a key
+    // actually moves or the merge collapses duplicates, so a steady-state boot writes nothing.
+    for (const item of list) { const k = mediaKey(item.url); if (item.key !== k) { item.key = k; changed = true; } }
     const byKey = new Map();
     for (const item of list) {
       const prev = byKey.get(item.key);
       const t = (x) => x.updatedAt || x.addedAt || 0;
       if (!prev || t(item) > t(prev)) byKey.set(item.key, item);
     }
-    if (byKey.size !== list.length) { const kept = [...byKey.values()]; list.length = 0; list.push(...kept); }
-    store(name, list);
+    if (byKey.size !== list.length) { const kept = [...byKey.values()]; list.length = 0; list.push(...kept); changed = true; }
+    if (changed) store(name, list);
   }
 }
 
@@ -92,6 +95,13 @@ function scheduleCapture() {
   captureTimer = setTimeout(captureCurrent, settings.captureDebounce || 600);
 }
 
+// Shared title/poster precedence: known (intendedMedia) → TMDB-by-URL-id → scraped page → existing entry.
+async function resolveTitlePoster(url, type, known, page, existing) {
+  const tmdb = known ? null : await tmdbMeta(tmdbIdOf(url), type);
+  return { title: known?.title || tmdb?.title || existing?.title || page.title,
+           poster: known?.poster || tmdb?.poster || page.poster || existing?.poster || '' };
+}
+
 async function captureCurrent() {
   const url = webview.getURL();
   if (!url || !/^https?:/.test(url) || !isMediaUrl(url)) return;
@@ -109,11 +119,9 @@ async function captureCurrent() {
   // TMDB-by-id means even direct navigation is correct and the provider's own og:title is never used
   // when the show is identifiable — a stale bad `existing.title` gets healed on the next watch.
   const known = intendedMedia && (!intendedMedia.id || String(url).includes(String(intendedMedia.id))) ? intendedMedia : null;
-  const tmdb = known ? null : await tmdbMeta(tmdbIdOf(url), type);
   const page = await parsePage();
-  const title = known?.title || tmdb?.title || existing?.title || page.title;
+  const { title, poster } = await resolveTitlePoster(url, type, known, page, existing);
   if (!title) return;
-  const poster = known?.poster || tmdb?.poster || page.poster || existing?.poster || '';
 
   // Continue Watching upsert (gated by the setting; still lets Watch Later track below).
   if (settings.trackContinue !== false) {
@@ -134,7 +142,9 @@ async function captureCurrent() {
     const wl = later.find((w) => w.key === key);
     if (wl) {
       const patch = { season, episode, url, type, poster: poster || wl.poster };
-      if (known || tmdb) patch.title = title;
+      // overwrite the WL title only from an authoritative source (known or a TMDB hit), never a scrape.
+      // tmdbMeta is memoized, so this reuses resolveTitlePoster's cached lookup (no extra fetch).
+      if (known || await tmdbMeta(tmdbIdOf(url), type)) patch.title = title;
       Object.assign(wl, patch);
       store('watchlater', later);
     }

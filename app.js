@@ -9,10 +9,10 @@ $('watch-later').onclick = async () => {
   const key = mediaKey(url);
   const { season, episode } = parseSeasonEpisode(url, page.title);
   const type = intendedMedia?.live ? 'live' : classify(url, season);
-  // Precedence: known -> TMDB looked up by the URL's id -> scrape -> url (provider-agnostic).
-  const tmdb = intendedMedia?.live ? null : await tmdbMeta(tmdbIdOf(url), type);
-  const title = intendedMedia?.title || tmdb?.title || page.title || url;
-  const poster = intendedMedia?.poster || tmdb?.poster || page.poster;
+  // Shared precedence ladder (known short-circuits TMDB); `|| url` is the provider-agnostic last resort.
+  const resolved = await resolveTitlePoster(url, type, intendedMedia, page, null);
+  const title = resolved.title || url;
+  const poster = resolved.poster;
   later = later.filter((c) => c.key !== key); // dedupe
   later.unshift({ key, title, url, poster, season, episode, type, addedAt: Date.now() });
   store('watchlater', later);
@@ -144,21 +144,24 @@ browseFilters = loadFiltersFor(browseTab); // restore the landing tab's saved fi
 if (settings.landingView === 'library') showHome();
 else if (settings.landingView === 'browse') showBrowse();
 else showDashboard();
-healLibrary();           // one-time: re-title old entries from TMDB (no-op once done / without a key)
+// Idle-defer the non-critical boot work so it never blocks first paint (Chromium requestIdleCallback).
+requestIdleCallback(() => healLibrary()); // one-time: re-title old entries from TMDB (no-op once done / without a key)
 
 // "What's New" once per version bump: the release body IS the CHANGELOG section (set by the release
 // ritual), fetched via main's httpGet. Fetch failure (offline / no release for a dev version) still
 // shows the modal with a link. First-ever run seeds silently — no wall of history.
-if (window.sh && window.sh.getVersion) {
-  window.sh.getVersion().then(async (v) => {
-    const last = load('lastSeenVersion', null);
-    store('lastSeenVersion', v);
-    if (!last || last === v) return;
-    let notes = null;
-    try {
-      const r = await window.sh.httpGet(`https://api.github.com/repos/jbi2109/stream-hub/releases/tags/v${v}`);
-      if (r && r.ok) notes = JSON.parse(r.body).body || null;
-    } catch {}
-    openWhatsNew(v, notes);
-  }).catch(() => {});
-}
+requestIdleCallback(() => {
+  if (window.sh && window.sh.getVersion) {
+    window.sh.getVersion().then(async (v) => {
+      const last = load('lastSeenVersion', null);
+      store('lastSeenVersion', v);
+      if (!last || last === v) return;
+      let notes = null;
+      try {
+        const r = await window.sh.httpGet(`https://api.github.com/repos/jbi2109/stream-hub/releases/tags/v${v}`);
+        if (r && r.ok) notes = JSON.parse(r.body).body || null;
+      } catch {}
+      openWhatsNew(v, notes);
+    }).catch(() => {});
+  }
+});

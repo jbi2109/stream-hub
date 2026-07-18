@@ -130,6 +130,7 @@ function hideAll() {
   $('detail').hidden = true;
   $('settings').hidden = true;
   webview.hidden = true;
+  window.sh?.setPlayerVisible?.(false); // player hidden -> stop the main-process progress poll
   playing = null;              // leaving the embed: forget what's playing
   intendedMedia = null;        // and forget any known title/poster; producers re-set it after open()
   currentLiveMatch = null;
@@ -154,6 +155,7 @@ function open(url, track = true) {
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
+  window.sh?.setPlayerVisible?.(true); // player shown -> (re)arm the main-process progress poll
   webview.src = url;
   autoAdvanced = false; // each opened episode may auto-advance once
   if (track) {
@@ -172,6 +174,7 @@ function resumeLast() {
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
+  window.sh?.setPlayerVisible?.(true); // player shown again -> re-arm the main-process progress poll
   if (webview.getAttribute('src') !== lp.url) webview.src = lp.url; // reveal if loaded, reload if moved on
   if (lp.live && lp.match) {
     currentLiveMatch = lp.match;

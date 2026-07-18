@@ -137,6 +137,9 @@ async function fetchStreams(catalogUrl, source, id) {
   return [];
 }
 
+// ponytail: FIFO eviction (Map preserves insertion order); real LRU only if hit rates ever matter
+function capMap(map, max) { while (map.size > max) map.delete(map.keys().next().value); }
+
 // Resolve a match's sources for the source page: pass single-hop embeds through; second-hop the {source,id}
 // ones IN PARALLEL. Cached in a module Map (match objects are recreated on every grid rebuild, so a
 // property cache would be lost). The key includes the source count so a match that gains sources from a
@@ -156,6 +159,7 @@ async function resolveMatchSources(match) {
   }));
   const out = perSource.flat();
   resolvedCache.set(key, out);
+  capMap(resolvedCache, 100); // grows per viewed match — bound it (evicts oldest, never this write)
   return out;
 }
 
@@ -409,7 +413,15 @@ function renderLiveTab(container) {
       }
     }
   };
-  const rebuild = () => { all = groupMatches(allRows); renderCatBar(); draw(); };
+  // Catalogs arrive in a burst (cached ones synchronously in a loop, incremental ones per resolve).
+  // Coalesce the full grid rebuild to one rAF so N arrivals cost one groupMatches+draw, not N.
+  // draw() itself is NEVER debounced — search oninput and the filter pills stay instant.
+  let rebuildQueued = false;
+  const rebuild = () => {
+    if (rebuildQueued) return;
+    rebuildQueued = true;
+    requestAnimationFrame(() => { rebuildQueued = false; all = groupMatches(allRows); renderCatBar(); draw(); });
+  };
   search.oninput = draw;
 
   // Per-catalog status chips (name ✓count / ✕ failed / … loading) so a timed-out catalog is visible.
@@ -442,10 +454,11 @@ function renderLiveTab(container) {
           // absolutize relative logos (e.g. streamed's /api/images/... posters) against the catalog origin
           logo: r.logo && r.logo.startsWith('/') && origin ? origin + r.logo : r.logo }));
         liveCatalogCache.set(s.catalogUrl, { rows: mapped, at: Date.now() });
+        capMap(liveCatalogCache, 20);
         allRows.push(...mapped);
         rebuild();
         setStatus(s.name, '✓ ' + mapped.length, 'ok');
       })
-      .catch(() => { liveCatalogCache.set(s.catalogUrl, { error: true, at: Date.now() }); setStatus(s.name, '✕ failed', 'err'); });
+      .catch(() => { liveCatalogCache.set(s.catalogUrl, { error: true, at: Date.now() }); capMap(liveCatalogCache, 20); setStatus(s.name, '✕ failed', 'err'); });
   }
 }

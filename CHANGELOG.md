@@ -5,6 +5,22 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.4.3 — Performance & cleanup (July 2026)
+
+A tune-up release: the app does less idle work, starts a little quicker, and sheds some dead weight
+under the hood. No user-facing feature changes.
+
+- **Quieter while paused.** The playback-progress poll now stops while the player is hidden, so a
+  backgrounded or exited player no longer burns idle CPU/battery.
+- **Snappier start.** Non-critical boot work — re-titling your library from TMDB and the "What's New"
+  check — is deferred to idle time and run in parallel, so the first screen paints sooner.
+- **Smoother live grid.** Live-grid redraws are batched into a single frame instead of repainting per
+  change.
+- **Housekeeping.** Removed dead code, put a ceiling on internal caches so they can't grow unbounded,
+  and made live-catalog fetches safer with a download size cap.
+
+---
+
 ## v0.4.2 — YouTube video ads blocked (July 2026)
 
 v0.4.1 blocked YouTube video ads by having the ad-block engine inject uBlock's `+js()` scriptlets

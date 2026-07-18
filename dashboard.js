@@ -17,10 +17,18 @@ function dashRail(title, seeAll, items) {
   head.append(link);
   const rail = mk('div', 'rail anim-in');
   rail.append(...items);
-  // edge fades hint at scrollability (mask toggled by can-scroll state)
+  // edge fades hint at scrollability (mask toggled by can-scroll state). Reading scrollLeft/clientWidth/
+  // scrollWidth forces layout; scroll + ResizeObserver can fire many times a frame, so coalesce to one
+  // rAF. State is per-rail (this closure) so two rails scrolling the same frame each recompute.
+  let fadePending = false;
   const fades = () => {
-    rail.classList.toggle('fade-l', rail.scrollLeft > 8);
-    rail.classList.toggle('fade-r', rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 8);
+    if (fadePending) return;
+    fadePending = true;
+    requestAnimationFrame(() => {
+      fadePending = false;
+      rail.classList.toggle('fade-l', rail.scrollLeft > 8);
+      rail.classList.toggle('fade-r', rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 8);
+    });
   };
   rail.onscroll = fades;
   // ResizeObserver (not a one-shot rAF): fires once layout actually settles — however late the rail
@@ -63,18 +71,22 @@ function resumeCard(item) {
   if (when && !item.note) el.querySelector('.card-sub').textContent = when;
   const id = tmdbIdOf(item.url);
   if (id) {
-    tmdbMeta(id, typeOf(item)).then((m) => {
-      if (!m || !m.backdrop || !wrap.isConnected) return;
-      let im = wrap.querySelector('img');
-      if (!im) { // entries captured without a poster still get backdrop art
-        im = document.createElement('img');
-        im.className = 'poster';
-        im.loading = 'lazy';
-        im.onerror = () => { im.style.display = 'none'; }; // no broken-image glyph if the art 404s
-        wrap.prepend(im);
-        wrap.classList.remove('noposter');
-      }
-      im.src = m.backdrop;
+    // defer to idle so N cards don't fire N fetches during the dashboard paint; card[0] hits the
+    // seeded cache (no fetch), cards 1..N resolve when the main thread is free.
+    requestIdleCallback(() => {
+      tmdbMeta(id, typeOf(item)).then((m) => {
+        if (!m || !m.backdrop || !wrap.isConnected) return;
+        let im = wrap.querySelector('img');
+        if (!im) { // entries captured without a poster still get backdrop art
+          im = document.createElement('img');
+          im.className = 'poster';
+          im.loading = 'lazy';
+          im.onerror = () => { im.style.display = 'none'; }; // no broken-image glyph if the art 404s
+          wrap.prepend(im);
+          wrap.classList.remove('noposter');
+        }
+        im.src = m.backdrop;
+      });
     });
   }
   return el;
@@ -132,14 +144,15 @@ function heroContent(kind, d, resume) {
 
 // Fill the hero placeholder: the most recent Continue item (with logo art via one appended detail
 // fetch), else trending #1. Anything failing -> the hero disappears (same contract as empty rails).
-async function fillHero(heroSec) {
+async function fillHero(heroSec, heroFetch) {
   let kind = null, d = null, resume = null;
   try {
     const c = cont[0];
     const cid = c && typeOf(c) !== 'live' && tmdbIdOf(c.url);
     if (cid) {
       kind = typeOf(c) === 'movie' ? 'movie' : 'tv';
-      d = await tmdbGet(`/${kind}/${cid}`, { append_to_response: 'images', include_image_language: 'en,null' });
+      // reuse the single detail fetch renderDashboard already started (hero + resume-card[0] share it)
+      d = heroFetch ? await heroFetch : await tmdbGet(`/${kind}/${cid}`, { append_to_response: 'images', include_image_language: 'en,null' });
       if (d && !d.id) d.id = cid;
       resume = c;
     } else {
@@ -180,9 +193,9 @@ async function fetchTrending() {
 // First-run setup card — the one place that checks BOTH missing pieces. Gated on emptiness (no
 // dismiss flag): it disappears as soon as a key or a source exists.
 function onboardingCard() {
-  const card = mk('div', 'onboard-card');
-  card.append(mk('h2', null, 'Welcome to Stream Hub'));
-  card.append(mk('div', 'set-hint', 'Two quick steps and this becomes your media library:'));
+  const cardEl = mk('div', 'onboard-card');
+  cardEl.append(mk('h2', null, 'Welcome to Stream Hub'));
+  cardEl.append(mk('div', 'set-hint', 'Two quick steps and this becomes your media library:'));
 
   const s1 = mk('div', 'onboard-step');
   s1.append(mk('span', 'onboard-num', '1'), mk('span', null, 'Add a free TMDB API key to power Browse.'));
@@ -200,8 +213,8 @@ function onboardingCard() {
   add.onclick = () => openAddWizard();
   s2.append(add);
 
-  card.append(s1, s2);
-  return card;
+  cardEl.append(s1, s2);
+  return cardEl;
 }
 
 async function renderDashboard() {
@@ -216,6 +229,21 @@ async function renderDashboard() {
     heroSec = mk('div', 'dash-hero');
     heroSec.append(mk('div', 'skel skel-hero'));
     nodes.push(heroSec);
+  }
+
+  // Single-fetch: the hero and resume-card[0] are the same show, so start ONE detail fetch and seed
+  // the meta cache with its mapped result BEFORE the resume rail builds. card[0]'s idle tmdbMeta then
+  // hits the seeded entry (no second fetch), and fillHero reuses the raw detail. Seed with the same
+  // delete-on-null/reject rule tmdbMeta uses, so a bad/failed payload can't poison the session.
+  let heroFetch = null;
+  const c0 = cont[0], cid0 = c0 && typeOf(c0) !== 'live' && tmdbIdOf(c0.url);
+  if (tmdbKey && cid0) {
+    const k0 = typeOf(c0) === 'movie' ? 'movie' : 'tv';
+    heroFetch = tmdbGet(`/${k0}/${cid0}`, { append_to_response: 'images', include_image_language: 'en,null' });
+    const seeded = heroFetch.then((d) => (d && (d.title || d.name))
+      ? { title: d.title || d.name, poster: IMG(d.poster_path, 'w342'), backdrop: IMG(d.backdrop_path, 'w780') } : null);
+    seeded.then((v) => { if (!v) tmdbMetaCache.delete(k0 + ':' + cid0); }, () => tmdbMetaCache.delete(k0 + ':' + cid0));
+    tmdbMetaCache.set(k0 + ':' + cid0, seeded);
   }
 
   const contRail = dashRail('Continue Watching', showHome,
@@ -247,7 +275,7 @@ async function renderDashboard() {
   if (!nodes.length) nodes.push(emptyMsg('Nothing here yet — watch something and it shows up, or add a TMDB API key in Settings to see Trending.'));
   el.replaceChildren(...nodes);
 
-  if (heroSec) fillHero(heroSec);
+  if (heroSec) fillHero(heroSec, heroFetch);
 
   if (trendSec) {
     let results = [];

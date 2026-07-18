@@ -188,15 +188,3 @@ function renderSourceSwitch() {
   }));
   sel.hidden = false;
 }
-
-// Play a title on the chosen source: the detail-page selector, else last-used, else the first source.
-function playOn(kind, type, id, season, episode, title, poster) {
-  const srcs = sourcesFor(kind);
-  if (srcs.length === 0) { alert('Add a ' + (kind === 'anime' ? 'Anime' : 'Movies/TV') + ' source first.'); return; }
-  const sel = document.querySelector('.detail-source');
-  const chosen = (sel && srcs.find((s) => s.url === sel.value)) // match within this kind (URLs can collide across categories)
-    || srcs.find((s) => s.url === defaultSource)
-    || srcs.find((s) => s.url === lastSourceUrl)
-    || srcs[0];
-  openOn(chosen, kind, type, id, season, episode, title, poster);
-}
