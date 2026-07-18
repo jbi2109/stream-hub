@@ -112,6 +112,65 @@ function pillSelect(firstLabel, firstValue, pairs, value, onChange) {
   return sel;
 }
 
+// --- Netflix-style hover preview (F3) ---
+// Fetch-on-hover the SAME detail the hero uses, cached in an isolated map (NOT tmdbMetaCache).
+const hpCache = new Map(); // `${kind}:${id}` -> Promise<detail|null>
+function hoverDetail(kind, id) {
+  const k = kind + ':' + id;
+  if (!hpCache.has(k)) {
+    const p = tmdbGet(`/${kind === 'movie' ? 'movie' : 'tv'}/${id}`, { append_to_response: 'images', include_image_language: 'en,null' })
+      .then((d) => (d && (d.title || d.name)) ? d : null).catch(() => null);
+    p.then((v) => { if (!v) hpCache.delete(k); }); // don't cache failures (mirrors tmdbMeta's delete-on-null)
+    hpCache.set(k, p);
+  }
+  return hpCache.get(k);
+}
+let HOVER_MS = 1000;                      // bare global so e2e can zero it (like heroTimer/settings)
+let hp = null, hpTimer = null, hpHide = null, hpToken = 0;
+function hoverPreviewNode() {              // build the singleton once, lazily, appended to document.body
+  if (hp) return hp;
+  hp = mk('div', 'hover-preview'); hp.hidden = true;
+  const art = mk('div', 'hp-art'); const img = document.createElement('img'); img.loading = 'lazy';
+  img.onerror = () => { img.style.display = 'none'; }; art.append(img);
+  const body = mk('div', 'hp-body');
+  const title = mk('div', 'hp-title'); const meta = mk('div', 'hp-meta'); const ov = mk('div', 'hp-overview');
+  const cta = mk('div', 'hp-cta'); const play = mk('button', 'hero-btn primary hp-play'); const later = mk('button', 'hero-btn hp-later', '+ Watch Later');
+  play.textContent = '▶ Details'; cta.append(play, later);
+  body.append(title, meta, ov, cta); hp.append(art, body);
+  hp.addEventListener('mouseenter', () => { clearTimeout(hpHide); });   // moving onto the card keeps it
+  hp.addEventListener('mouseleave', scheduleHide);
+  document.body.append(hp);
+  document.addEventListener('scroll', hideHoverPreview, true); // capture-phase: the fixed node's anchor moves on any scroll (rail or view)
+  hp._els = { img, title, meta, ov, play, later };
+  return hp;
+}
+const scheduleHide = () => { clearTimeout(hpHide); hpHide = setTimeout(hideHoverPreview, 120); }; // grace period
+function hideHoverPreview() { if (hp) hp.hidden = true; hpToken++; clearTimeout(hpTimer); clearTimeout(hpHide); }
+async function showHoverPreview(cardEl, kind, item) {
+  const node = hoverPreviewNode(); const token = ++hpToken;
+  const d = await hoverDetail(kind, item.id);
+  if (token !== hpToken || !cardEl.isConnected || !d) return;     // stale hover / navigated / no data
+  const e = node._els;
+  e.title.textContent = d.title || d.name || '';
+  const year = (d.release_date || d.first_air_date || '').slice(0, 4);
+  e.meta.textContent = [year, d.vote_average ? `★ ${d.vote_average.toFixed(1)}` : '', (d.genres || []).slice(0, 3).map((g) => g.name).join(' · ')].filter(Boolean).join('   ·   ');
+  e.ov.textContent = (d.overview || '').slice(0, 200);
+  e.img.style.display = ''; e.img.src = IMG(d.backdrop_path, 'w780') || '';
+  e.play.onclick = () => { hideHoverPreview(); showDetail(kind, item.id); };
+  e.later.onclick = () => { addLater(kind, kind === 'movie' ? 'movie' : 'tv', item.id, d.title || d.name, IMG(d.poster_path, 'w342')); hideHoverPreview(); };
+  node.hidden = false;
+  positionHoverPreview(cardEl, node);
+}
+function positionHoverPreview(cardEl, node) {
+  const r = cardEl.getBoundingClientRect();
+  const w = node.offsetWidth, h = node.offsetHeight;
+  let left = r.left + r.width / 2 - w / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));   // clamp to viewport
+  let top = r.top - h - 8;                                          // prefer above
+  if (top < 8) top = r.bottom + 8;                                 // flip below if no room
+  node.style.left = left + 'px'; node.style.top = top + 'px';
+}
+
 function posterCard(kind, item, rank) {
   const el = document.createElement('div');
   el.className = 'card poster-card';
@@ -140,8 +199,19 @@ function posterCard(kind, item, rank) {
   if (meta) info.append(mk('div', 'poster-info-meta', meta));
   wrap.append(info);
   if (rank) wrap.append(mk('span', 'rank-badge', String(rank).padStart(2, '0'))); // TOP 10 numbered overlay
+  // 'New' tag: only a PAST release within the last 21 days (upcoming/future -> nothing)
+  const rel = item.release_date || item.first_air_date || '';
+  const rt = Date.parse(rel);
+  if (!isNaN(rt) && rt <= Date.now() && Date.now() - rt <= 21 * 86400000) wrap.append(mk('span', 'tile-tag new', 'New'));
   el.append(wrap);
   el.onclick = () => showDetail(kind, item.id);
+  // Netflix expand-on-hover: after ~1s, show the floating preview card (complements the .poster-overlay).
+  // Gated on real hover capability so touch devices (no hover) never trigger it.
+  if (matchMedia('(hover: hover)').matches) {
+    el.addEventListener('mouseenter', () => { clearTimeout(hpTimer); clearTimeout(hpHide);
+      hpTimer = setTimeout(() => showHoverPreview(el, kind, item), HOVER_MS); });
+    el.addEventListener('mouseleave', () => { clearTimeout(hpTimer); scheduleHide(); });
+  }
   return el;
 }
 

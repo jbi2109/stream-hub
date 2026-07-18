@@ -5,6 +5,25 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.4.5 — Dashboard polish & Netflix-style touches (July 2026)
+
+A round of dashboard finish work benchmarked against the big streaming apps.
+
+- **Hover a poster for a rich preview** — hovering a Trending / Top 10 / genre / Browse poster for a
+  moment pops a floating card with backdrop art, the title, genres, rating, a short synopsis, and
+  **▶ Details** / **+ Watch Later** buttons — Netflix's expand-on-hover, without leaving the row.
+- **Live now loads itself on the dashboard** — the Live rail now fetches your live catalogs and shows
+  the top matches right on the landing page (previously it only showed cached matches, with an "Open
+  Live TV" prompt when the cache was cold). It loads in the background behind skeletons, caches for
+  90s, and caps to a few catalogs so a slow source can't stall the page.
+- **The rail scrollbar is gone** — rails scroll with the ‹ › arrows (and trackpad/wheel); the native
+  scrollbar under each row no longer clutters the layout.
+- **A livelier hero** — the spotlight backdrop drifts slowly (Ken Burns), with a soft accent-tint glow
+  behind the title for depth and legibility. All motion respects your "reduce motion" setting.
+- **"New" tags** — a small badge marks titles released in the last three weeks.
+
+---
+
 ## v0.4.4 — Dashboard redesign (July 2026)
 
 The landing dashboard grew up: a bigger, rotating spotlight on top and a set of rails you control.

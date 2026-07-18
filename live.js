@@ -289,6 +289,24 @@ function matchCard(m) {
 const LIVE_CACHE_TTL = 90000; // ms
 const liveCatalogCache = new Map(); // catalogUrl -> { rows, at } | { error: true, at }
 
+// Fetch ONE live catalog into liveCatalogCache (map + absolutize logo + cap). Shared by the Live tab
+// and the dashboard rail. Never throws; caches {error:true} on failure. Returns the cache entry.
+async function warmCatalog(s) {
+  let origin = ''; try { origin = new URL(s.catalogUrl).origin; } catch {}
+  try {
+    const rows = (await fetchCatalog(s.catalogUrl)).map((r) => ({ ...r, catalog: s.name, catalogUrl: s.catalogUrl,
+      logo: r.logo && r.logo.startsWith('/') && origin ? origin + r.logo : r.logo }));
+    const e = { rows, at: Date.now() }; liveCatalogCache.set(s.catalogUrl, e); capMap(liveCatalogCache, 20); return e;
+  } catch { const e = { error: true, at: Date.now() }; liveCatalogCache.set(s.catalogUrl, e); capMap(liveCatalogCache, 20); return e; }
+}
+// Warm up to `cap` cold/stale live catalogs (skip fresh ones), calling onEach after each settles.
+async function warmLiveCache(cap, onEach) {
+  const stale = sources.filter((s) => s.category === 'live' && s.catalogUrl)
+    .filter((s) => { const c = liveCatalogCache.get(s.catalogUrl); return !c || Date.now() - c.at >= LIVE_CACHE_TTL; })
+    .slice(0, cap);
+  await Promise.allSettled(stale.map((s) => warmCatalog(s).then(onEach)));
+}
+
 // The live view's sort + Live-now selections persist across visits + restarts.
 let liveView = load('liveView', { sort: 'default', liveOnly: false });
 
@@ -447,18 +465,10 @@ function renderLiveTab(container) {
       else setStatus(s.name, '✕ failed', 'err');
       continue;
     }
-    let origin = ''; try { origin = new URL(s.catalogUrl).origin; } catch {}
-    fetchCatalog(s.catalogUrl)
-      .then((rows) => {
-        const mapped = rows.map((r) => ({ ...r, catalog: s.name, catalogUrl: s.catalogUrl,
-          // absolutize relative logos (e.g. streamed's /api/images/... posters) against the catalog origin
-          logo: r.logo && r.logo.startsWith('/') && origin ? origin + r.logo : r.logo }));
-        liveCatalogCache.set(s.catalogUrl, { rows: mapped, at: Date.now() });
-        capMap(liveCatalogCache, 20);
-        allRows.push(...mapped);
-        rebuild();
-        setStatus(s.name, '✓ ' + mapped.length, 'ok');
-      })
-      .catch(() => { liveCatalogCache.set(s.catalogUrl, { error: true, at: Date.now() }); capMap(liveCatalogCache, 20); setStatus(s.name, '✕ failed', 'err'); });
+    // warmCatalog does the fetch/map/absolutize/set/cap (shared with the dashboard rail); never throws.
+    warmCatalog(s).then((e) => {
+      if (e.rows) { allRows.push(...e.rows); rebuild(); setStatus(s.name, '✓ ' + e.rows.length, 'ok'); }
+      else setStatus(s.name, '✕ failed', 'err');
+    });
   }
 }

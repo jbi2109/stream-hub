@@ -123,6 +123,7 @@ function setActiveRail(id) {
 }
 
 function hideAll() {
+  hideHoverPreview();                     // single choke point for view switches: drop the fixed hover preview (browse.js global)
   $('topbar').classList.remove('at-top'); // detail's scroll-blend must not linger on other views
   $('dashboard').hidden = true;
   $('home').hidden = true;

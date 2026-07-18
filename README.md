@@ -22,10 +22,13 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   show/hide and reorder in **Settings → General**: **Continue Watching** (16:9 cards with progress,
   timestamp/Completed chips, and recency), **Trending**, a numbered **Top 10**, **Live now** (from your
   live catalogs, most-watched first), plus optional **Top Rated / Newest / Upcoming** and **per-genre
-  shelves** — each with a "See all →" into the full view. Rails **load as you scroll**, scale to the
-  window, and have chevron scroll arrows. Empty rails hide; a fresh install shows a two-step **setup
-  card** (TMDB key → first source) instead. The landing view is configurable (Dashboard / Browse /
-  Library).
+  shelves** — each with a "See all →" into the full view. **Live now fetches its top matches right on
+  the dashboard** (behind skeletons, cached). Rails **load as you scroll**, scale to the window, and
+  scroll with chevron ‹ › arrows (no scrollbar clutter). **Hover a poster** for a Netflix-style preview
+  card (backdrop, genres, synopsis, ▶ Details / + Watch Later). The hero backdrop drifts (Ken Burns)
+  with a soft accent glow; recent titles get a **"New"** tag — all motion respects reduced-motion.
+  Empty rails hide; a fresh install shows a two-step **setup card** (TMDB key → first source) instead.
+  The landing view is configurable (Dashboard / Browse / Library).
 - **Browse (TMDB)** — discover Movies, TV, and Anime
   from [TMDB](https://www.themoviedb.org/), **filter by genre / year / language / country / provider and sort**,
   **page** through the whole catalog (20 at a time), search, and open a title's **native detail page**
@@ -157,7 +160,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 138-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 141-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source

@@ -4,6 +4,18 @@ const IMG = (p, size) => (p ? `https://image.tmdb.org/t/p/${size}${p}` : '');
 
 function detailBackTo() { showBrowse(); }
 
+// Shared Watch-Later add for a KNOWN TMDB id (detail page + hover preview). Mirrors the detail WL
+// button's exact semantics: buildUrl via the first source (tmdb: fallback), dedupe by key, anime->tv.
+// (app.js's topbar handler adds the CURRENT webview page — a different shape — so it does NOT use this.)
+function addLater(kind, type, id, title, poster, season = null, episode = null) {
+  const src = sourcesFor(kind)[0];
+  const url = src ? buildUrl(src, type, id, season, episode) : `tmdb:${type}/${id}`;
+  const key = mediaKey(url);
+  later = later.filter((c) => c.key !== key);
+  later.unshift({ key, title, url, poster, season, episode, type: kind === 'anime' ? 'tv' : type, addedAt: Date.now() });
+  store('watchlater', later); toast(`Added to Watch Later — ${title}`);
+}
+
 async function showDetail(kind, id) {
   hideAll();
   $('detail').hidden = false;
@@ -107,15 +119,7 @@ function renderDetail(kind, type, id, d) {
   }
   const wl = document.createElement('button');
   wl.textContent = '+ Watch Later';
-  wl.onclick = () => {
-    const src = sourcesFor(kind)[0];
-    const url = src ? buildUrl(src, type, id, curSeason, curEpisode) : `tmdb:${type}/${id}`;
-    const key = mediaKey(url);
-    later = later.filter((c) => c.key !== key);
-    later.unshift({ key, title, url, poster: posterUrl, season: curSeason, episode: curEpisode, type: kind === 'anime' ? 'tv' : type, addedAt: Date.now() });
-    store('watchlater', later);
-    toast(`Added to Watch Later — ${title}`);
-  };
+  wl.onclick = () => addLater(kind, type, id, title, posterUrl, curSeason, curEpisode);
   actions.append(wl);
   info.append(actions);
 

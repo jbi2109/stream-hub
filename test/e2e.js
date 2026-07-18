@@ -191,10 +191,15 @@ async function quitApp() {
   try {
     const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
     const browser = await CDP.connect(webSocketDebuggerUrl);
-    browser.send('Browser.close').catch(() => {}); // browser may drop socket without replying
+    // Await the graceful close so localStorage flushes (protects persistence test #22). Browser.close
+    // never acks on this Chromium (socket just drops), so wait on the socket-close event, bounded so a
+    // no-ack close can't hang the suite.
+    const closed = new Promise((res) => browser.ws.addEventListener('close', res));
+    browser.send('Browser.close').catch(() => {});
+    await Promise.race([closed, sleep(2000)]);
     browser.close();
   } catch {}
-  await sleep(1500);
+  await sleep(600);
   try { electronProc?.kill(); } catch {}
   electronProc = null;
 }
@@ -1179,6 +1184,32 @@ async function main() {
   assert.strictEqual(await page.eval(`matchCard({ title: 'M', logo: '/x.png', sources: [] }).querySelector('img').loading`), 'lazy', 'match thumbs should be lazy');
   ok('perf: grid images use loading="lazy"');
 
+  // 32Q3b. v0.4.5 F5: 'New' tile-tag overlays a poster released in the last 21 days; not for older releases
+  assert.ok(await page.eval(`!!posterCard('movie', { id: 1, title: 'Fresh', poster_path: '/x.jpg', release_date: new Date(Date.now() - 3*86400000).toISOString().slice(0, 10) }).querySelector('.tile-tag.new')`), 'a recent release gets a New tag');
+  assert.ok(await page.eval(`!posterCard('movie', { id: 2, title: 'Old', poster_path: '/x.jpg', release_date: '2020-01-01' }).querySelector('.tile-tag.new')`), 'an old release gets no New tag');
+  ok('tiles: recent releases get a New tag, old ones do not');
+
+  // 32Q3c. v0.4.5 F3: hovering a posterCard shows a floating preview (backdrop/title/meta/overview + CTAs).
+  //        Drive the logic DIRECTLY — the attach gates on matchMedia('(hover:hover)') which reads false in the CI window.
+  await page.eval(`(() => { const c = posterCard('movie', { id: 42, title: 'X', poster_path: '/x.jpg' }); document.getElementById('browse').append(c); window.__hpCard = c; })()`);
+  await page.eval(`showHoverPreview(window.__hpCard, 'movie', { id: 42 })`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview:not([hidden])')`), 'hover preview shown');
+  assert.strictEqual(await page.eval(`document.querySelector('.hover-preview .hp-title').textContent`), 'Fixture Title', 'hover preview title wrong');
+  assert.ok(await page.eval(`document.querySelector('.hover-preview .hp-overview').textContent.includes('A fixture overview.')`), 'hover preview overview missing');
+  assert.ok(await page.eval(`document.querySelector('.hover-preview .hp-meta').textContent.includes('Drama')`), 'hover preview genres missing');
+  // + Watch Later CTA adds an entry, then restore watchlater to its pre-test state
+  const wlBeforeHp = (await page.eval(`JSON.parse(localStorage.getItem('watchlater') || '[]')`)).length;
+  await page.eval(`document.querySelector('.hover-preview .hp-later').click()`);
+  assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, wlBeforeHp + 1, 'hover + Watch Later did not add');
+  await page.eval(`later.shift(); store('watchlater', later);`); // restore (addLater unshifts the new entry to index 0)
+  // ▶ Details CTA routes to the native detail page (showDetail with the same id)
+  await page.eval(`showHoverPreview(window.__hpCard, 'movie', { id: 42 })`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview:not([hidden])')`), 'hover preview re-shown for Details');
+  await page.eval(`document.querySelector('.hover-preview .hp-play').click()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!(document.querySelector('#detail h1') || {}).textContent`), 'hp Details opened the detail page');
+  await page.eval(`hideHoverPreview(); window.__hpCard.remove(); delete window.__hpCard;`);
+  ok('hover preview: fetch-on-hover card shows detail; + Watch Later adds; ▶ Details opens the detail page');
+
   // 32Q4. v0.3.0: ⏯ Resume survives a restart (lastPlayed persisted) and restores the live UI
   await page.eval(`location.reload()`);
   await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'reloaded for resume persistence');
@@ -1278,18 +1309,16 @@ async function main() {
   // 36. Google sign-in fix gate: off → the login-host fixture sees the Chrome UA; on → Firefox again.
   const uaToggle = `[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Google sign-in fix')).querySelector('input[type=checkbox]')`;
   await page.eval(`${uaToggle}.click()`); // off
-  await sleep(400);
-  const uaOff = await stGuest.eval(`fetch('${UA_ECHO}/').then(r => r.text())`);
+  const uaOff = await until(async () => { const ua = await stGuest.eval(`fetch('${UA_ECHO}/').then(r => r.text())`); return (!ua.includes('Firefox') && ua.includes('Chrome')) ? ua : false; }, 'UA gate off: login host echoes Chrome UA');
   assert.ok(!uaOff.includes('Firefox') && uaOff.includes('Chrome'), 'gate off: the login host should see the normal Chrome UA');
   await page.eval(`${uaToggle}.click()`); // back on
-  await sleep(400);
-  const uaOn = await stGuest.eval(`fetch('${UA_ECHO}/').then(r => r.text())`);
+  const uaOn = await until(async () => { const ua = await stGuest.eval(`fetch('${UA_ECHO}/').then(r => r.text())`); return ua.includes('Firefox') ? ua : false; }, 'UA gate on: login host echoes Firefox UA');
   assert.ok(uaOn.includes('Firefox'), 'gate on: Firefox UA restored');
   ok('⚙ settings: Google-UA spoof gates live (Chrome when off, Firefox when on)');
 
   // 37. settings.json roundtrip: an Advanced change lands in the main process file with the full ⚙ subset
   await page.eval(`(() => { const i = [...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('Live catalog timeout')).querySelector('input'); i.value = '42'; i.dispatchEvent(new Event('change')); })()`);
-  await sleep(400);
+  await until(() => { try { return JSON.parse(fs.readFileSync(path.join(PROFILE, 'settings.json'), 'utf8')).catalogTimeoutSec === 42; } catch { return false; } }, 'settings.json roundtrip');
   const msFile = JSON.parse(fs.readFileSync(path.join(PROFILE, 'settings.json'), 'utf8'));
   assert.strictEqual(msFile.catalogTimeoutSec, 42, 'catalogTimeoutSec should persist to settings.json');
   assert.strictEqual(msFile.adblock, true, 'adblock state should persist');
@@ -1579,17 +1608,18 @@ async function main() {
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('continue')).length`), 0, 'the entry should be gone from storage');
   ok('dashboard: card mutations refresh the visible rail');
 
-  // 52. the Live-now rail NEVER fetches: cold cache -> hint; the hint opens Live TV (which fetches)
+  // 52. the dashboard Live-now rail FETCHES the top matches itself (first hop only; two-hop resolve stays
+  // lazy). Seed one two-hop live catalog + clear the cache, open the dashboard: it warms the catalog and
+  // renders the match. Then remove all live sources + clear the cache -> the Live-now rail is absent.
   await page.eval(`sources = sources.filter(s => s.category !== 'live'); sources.push({ name: 'DashHop', category: 'live', catalogUrl: '${CATALOG_TWOHOP}/api/matches/live' }); store('sources', sources); liveCatalogCache.clear();`);
   const dashHits = twoHopHits;
   await page.eval(`document.getElementById('dash-btn').click()`);
-  await until(() => page.eval(`!!document.querySelector('#dashboard .dash-live-hint')`), 'cold cache shows the Open-Live-TV hint');
-  await sleep(600);
-  assert.strictEqual(twoHopHits, dashHits, 'the dashboard must not fetch catalogs');
-  await page.eval(`document.querySelector('#dashboard .dash-live-hint').click()`);
-  await until(() => Promise.resolve(twoHopHits === dashHits + 1), 'the hint opens Live TV, which fetches');
-  await until(() => page.eval(`[...document.querySelectorAll('#browse .match-grid .match-card')].some(c => c.textContent.includes('Hop Match'))`), 'live grid renders after the hint');
-  ok('dashboard: live rail is cache-only; the hint routes to Live TV');
+  await until(() => twoHopHits > dashHits, 'dashboard warms the live catalog');
+  await until(() => page.eval(`[...document.querySelectorAll('#dashboard .rail .match-card')].some(c => c.textContent.includes('Hop Match'))`), 'live match rendered on the dashboard');
+  await page.eval(`sources = sources.filter(s => s.category !== 'live'); store('sources', sources); liveCatalogCache.clear(); showDashboard();`);
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'dashboard re-rendered with no live sources');
+  await until(() => page.eval(`document.querySelectorAll('#dashboard .match-card').length === 0 && ![...document.querySelectorAll('#dashboard .dash-section h2')].some(h => h.textContent === 'Live now')`), 'no catalog -> Live-now rail absent');
+  ok('dashboard: live rail fetches the top matches; no catalog -> rail absent');
 
   // 53. rail keyboard nav (←/→ walk the rail, ↑/↓ hop rails), digit 0, and the palette entry
   await page.eval(`(() => { cont.length = 0;
@@ -1758,6 +1788,17 @@ async function main() {
   assert.strictEqual(await page.eval(`(() => { const s = document.createElement('div'); s.className = 'skel'; document.body.append(s); const v = getComputedStyle(s, '::after').animationName; s.remove(); return v; })()`), 'none', 'shimmer gated off');
   await page.eval(`document.body.classList.remove('reduced-motion')`);
   ok('motion: reduced-motion class disables animation');
+
+  // 64b. v0.4.5 F4: Ken Burns drifts the hero backdrop (transform), double-gated by reduced-motion
+  await page.eval(`(() => { cont.length = 0;
+    cont.push({ key: 'tv#428', title: 'Fixture Title', url: '${PLAYER}/embed/tv/428/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now(), position: 1234, duration: 6000, note: '' });
+    store('continue', cont); showDashboard(); })()`);
+  await until(() => page.eval(`!!document.querySelector('#dashboard .dash-hero .hero-bg img')`), 'hero backdrop img present');
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('.dash-hero .hero-bg img')).animationName`), 'hero-kenburns', 'Ken Burns animates the backdrop under normal motion');
+  await page.eval(`document.body.classList.add('reduced-motion')`);
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('.dash-hero .hero-bg img')).animationName`), 'none', 'reduced-motion kills Ken Burns');
+  await page.eval(`document.body.classList.remove('reduced-motion')`);
+  ok('hero: Ken Burns transform on the backdrop, gated by reduced-motion');
 
   // 65. rail edge fades track scrollability
   await page.eval(`(() => { cont.length = 0;

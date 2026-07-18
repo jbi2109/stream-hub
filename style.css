@@ -838,6 +838,10 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 .dash-seeall:hover { color: var(--accent); }
 /* horizontal card rail (same scroller pattern as .cast-row) */
 .rail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 8px; }
+/* rail has its own chevrons (.rail-chev) + edge fades, so hide the native scrollbar (this scoping is deliberate:
+   #dashboard/.grid/.cast-row/.providers keep theirs) */
+.rail { scrollbar-width: none; }
+.rail::-webkit-scrollbar { display: none; }
 /* responsive card widths: --poster-min (posterSize) stays the desktop target; shrink on narrow windows */
 .rail .card,
 .rail .skel-poster { flex: 0 0 clamp(112px, 30vw, var(--poster-min, 160px)); }
@@ -913,6 +917,11 @@ button svg { vertical-align: -2px; pointer-events: none; }
 .hero-inner { position: relative; min-height: 320px; display: flex; align-items: flex-end; }
 .hero-bg { position: absolute; inset: 0; background: var(--panel-2); }
 .hero-bg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Ken Burns drift on the backdrop (transform); the carousel cross-fade is opacity on .hero-inner — no conflict.
+   Start scale >=1.04 so the translate never reveals an edge under object-fit:cover. Double-gated: this
+   body:not(.reduced-motion) prefix + the global body.reduced-motion kill switch below. */
+@keyframes hero-kenburns { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.10) translate(-2%, -1.5%); } }
+body:not(.reduced-motion) .hero-bg img { animation: hero-kenburns 20s ease-in-out infinite alternate; }
 .hero-bg::after {
   content: '';
   position: absolute; inset: 0;
@@ -920,7 +929,13 @@ button svg { vertical-align: -2px; pointer-events: none; }
     linear-gradient(to top, rgba(var(--bg-rgb), .92), rgba(var(--bg-rgb), .25) 55%, rgba(var(--bg-rgb), .05)),
     linear-gradient(to right, rgba(var(--bg-rgb), .55), transparent 60%);
 }
-.hero-body { position: relative; padding: 26px 28px; max-width: 640px; }
+.hero-body { position: relative; isolation: isolate; padding: 26px 28px; max-width: 640px; }
+/* accent-tint glow washed under the hero text, over the backdrop scrim (z-index:-1). Modest alpha keeps
+   text legible in both themes; the existing bottom scrim still carries contrast. */
+.hero-body::before {
+  content: ''; position: absolute; inset: -20% -10% -10% -20%; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 140% at 20% 90%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 60%);
+}
 .hero-logo {
   max-height: 90px; max-width: 320px;
   object-fit: contain; display: block;
@@ -981,6 +996,8 @@ body:not(.reduced-motion) .hero-inner.active { animation: hero-fade var(--dur-mi
   font-weight: 800; font-size: 12px; padding: 2px 8px;
   border-radius: var(--r-sm); pointer-events: none; z-index: 1;
 }
+/* 'New' tag: same recipe as .rank-badge but top-RIGHT so it never collides with the top-left rank badge */
+.tile-tag.new { position: absolute; top: 6px; right: 6px; background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: var(--r-sm); pointer-events: none; z-index: 1; }
 
 /* ---------- v0.4.0: 16:9 resume cards (dashboard Continue rail) ---------- */
 /* .rail .resume-card width is set with .skel-wide above (responsive clamp) */
@@ -1121,3 +1138,16 @@ body:not(.reduced-motion) .hero-inner.active { animation: hero-fade var(--dur-mi
 body:not(.reduced-motion) .anim-in > * { animation: sh-enter var(--dur-mid) ease backwards; }
 /* one kill switch: OS "reduce motion" (live-synced to this class) silences everything */
 body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::after { animation: none !important; transition: none !important; }
+
+/* ---------- v0.4.5 F3: Netflix hover preview card ---------- */
+.hover-preview { position: fixed; z-index: var(--z-modal); width: clamp(280px, 24vw, 360px);
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: 0 12px 40px rgba(0,0,0,.5); overflow: hidden; }
+.hp-art img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--panel-2); }
+.hp-body { padding: 12px 14px; }
+.hp-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+.hp-meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.hp-overview { font-size: 12.5px; color: var(--text); opacity: .9; margin-bottom: 12px; line-height: 1.4; }
+.hp-cta { display: flex; gap: 8px; }
+.hp-cta .hero-btn { padding: 6px 12px; font-size: 13px; }
+body:not(.reduced-motion) .hover-preview { animation: sh-enter var(--dur-mid, 180ms) ease; }

@@ -340,14 +340,18 @@ function onboardingCard() {
 async function fillRail(sec, r) {
   const rail = sec.querySelector('.rail');
   if (r.special === 'live') {
-    const items = cachedLiveNow().slice(0, DASH_RAIL_MAX).map(matchCard);
-    if (items.length) rail.replaceChildren(...items);
-    else if (sources.some((s) => s.category === 'live' && s.catalogUrl)) {
-      // cold cache: point at the Live tab (which fetches + warms the cache) instead of fetching here
-      const hint = mk('button', 'set-btn dash-live-hint', 'Open Live TV to load matches');
-      hint.onclick = () => { browseTab = 'live'; showBrowse(); };
-      rail.replaceChildren(hint);
-    } else sec.remove();
+    const cats = sources.filter((s) => s.category === 'live' && s.catalogUrl);
+    const paint = () => { if (!sec.isConnected) return;
+      const items = cachedLiveNow().slice(0, 10).map(matchCard);
+      if (items.length) rail.replaceChildren(...items); };
+    paint();                       // instant if the Live tab already warmed the cache
+    await warmLiveCache(4, paint); // fetch up to 4 cold catalogs, repaint as each lands (dead 60s one can't block)
+    if (!sec.isConnected) return;
+    if (!cachedLiveNow().length) { // nothing live-now after warming
+      if (cats.length) { const hint = mk('button', 'set-btn dash-live-hint', 'Open Live TV to load matches');
+        hint.onclick = () => { browseTab = 'live'; showBrowse(); }; rail.replaceChildren(hint); }
+      else sec.remove();
+    }
     return;
   }
   let nodes = [];

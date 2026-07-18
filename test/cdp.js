@@ -10,7 +10,7 @@ async function until(fn, desc, timeout = 20000) {
   let last;
   while (Date.now() < end) {
     try { last = await fn(); if (last) return last; } catch (e) { last = e; }
-    await sleep(250);
+    await sleep(100);
   }
   throw new Error(`timeout waiting for: ${desc} (last: ${last})`);
 }
