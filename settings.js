@@ -18,7 +18,7 @@ const SETTINGS_DEFAULTS = {
   captureDebounce: 600,     // ms before a watched page is captured
   // ⚙ main-process settings (mirrored to userData/settings.json via sh.setSetting; live-applied)
   adblock: true,            // ad-blocking on/off
-  youtubeScriptlets: true,  // YT pre-roll blocking via uBlock scriptlets; kill-switch
+  youtubeScriptlets: true,  // gates the preload YouTube video-ad pruner (webview-preload.js) — not engine scriptlets anymore
   extraAuthHosts: '',       // comma-separated extra hosts allowed to open login pop-ups
   googleUaSpoof: true,      // present Google sign-in as Firefox ("browser not secure" fix)
   autoUpdateCheck: true,    // check for updates on launch
@@ -222,7 +222,7 @@ function buildPrivacy() {
     toggleControl('adblock', pushThenRender)));
 
   p.append(settingRow('YouTube ad-blocking',
-    'Also blocks YouTube pre-roll/mid-roll ads with uBlock scriptlets. Best-effort — YouTube fights back. If a YouTube video ever goes black, turn this off and reload the video.',
+    'Blocks YouTube video ads (pre-roll/mid-roll) by pruning them from the player — safe, doesn\'t touch the player. On by default. If YouTube ever misbehaves, turn this off and reload.',
     toggleControl('youtubeScriptlets', pushThenRender)));
 
   const updRow = mk('div', 'set-btn-row');

@@ -5,6 +5,26 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.4.2 — YouTube video ads blocked (July 2026)
+
+v0.4.1 blocked YouTube video ads by having the ad-block engine inject uBlock's `+js()` scriptlets
+into the page. On a signed-in YouTube player that backfired: the engine injects them via a `<script>`
+DOM node, YouTube's Content-Security-Policy blocks that node insertion, and the violation is
+uncatchable — so the player never started and you got a grey video area.
+
+- **YouTube video ads still blocked — the grey player is fixed for everyone on update.** The
+  engine-scriptlet approach is gone. In its place, an in-page **config pruner** removes the ad
+  fields (pre-roll/mid-roll) from YouTube's player config before the player ever reads it. It never
+  inserts a DOM script (no CSP violation), never touches the player (no grey/black video), and
+  never blocks a network request. An **auto-skip fallback** mutes and fast-forwards anything that
+  slips through (e.g. server-side-inserted ads).
+- **Toggle unchanged.** **Settings → Privacy → YouTube ad-blocking** still lets you turn it off and
+  reload if YouTube ever misbehaves.
+- Nothing else from v0.4.1 changes — the network + cosmetic ad-blocking, the cached self-updating
+  ad lists, and the **Update ad lists now** button all work exactly as before.
+
+---
+
 ## v0.4.1 — YouTube ad-blocking & self-updating ad lists (July 2026)
 
 Ad-blocking got a real upgrade, prompted by pre-roll ads slipping through on YouTube.

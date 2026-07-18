@@ -54,11 +54,11 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   **All / Movies / TV Shows** (Watch Later also has **Live TV**). A per-card dropdown lets you
   fix a wrong auto-classification. Live TV is never added to Continue Watching.
 - **Ad-blocking** — the [Ghostery](https://github.com/ghostery/adblocker) engine with full
-  uBlock-style lists (network + cosmetic + scriptlets), cached locally and auto-refreshed while
-  the app runs (plus an **Update ad lists now** button in Settings → Privacy). YouTube
-  pre-roll/mid-roll blocking is included via uBlock's scriptlets — best-effort (never as
-  bulletproof as uBlock Origin in a real browser; YouTube actively fights blockers), with a
-  kill-switch in Settings → Privacy if a YouTube video ever misbehaves.
+  uBlock-style lists (network + cosmetic), cached locally and auto-refreshed while the app runs
+  (plus an **Update ad lists now** button in Settings → Privacy). YouTube video-ad blocking
+  (pre-roll/mid-roll) is **on by default** via an in-page config pruner that removes the ads from
+  the player's config before it reads them — CSP-safe, and it never touches the player itself, so
+  no grey/black video. A toggle in Settings → Privacy turns it off if YouTube ever misbehaves.
 - **Popup blocking** — ad pop-unders are denied; same-site `_blank` links open in place;
   real login pop-ups (Google, Apple, Discord, GitHub, Microsoft, Facebook) are allowed so you
   can sign into sites that offer accounts (Google logins get a Firefox user-agent so its
@@ -153,7 +153,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 125-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 126-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source

@@ -1207,11 +1207,11 @@ async function main() {
   await closeTarget(loginWin.id);
   ok('login: in-page nav to a google-login host opens a standalone window, not the webview');
 
-  // 32z. v0.4.1: YouTube hosts now get FULL injection by default (scriptlets ON — 2.18.1 injects them
-  //       safely, and scriptlets are the only thing that blocks YT pre-rolls). Cosmetic element-hiding
-  //       (Sponsored feed tiles / masthead) still applies; the '###sh-cosmetic' rule hides #sh-cosmetic on
-  //       the normal host AND the YouTube host. The cosmetic-only carve-out is now the youtubeScriptlets=
-  //       false kill-switch path (exercised by test 37b), not the default.
+  // 32z. v0.4.2: YT hosts ALWAYS get cosmetic-CSS-only, regardless of the youtubeScriptlets setting
+  //       (Layer 1 is now unconditional — engine scriptlets are NEVER injected on YouTube, since their
+  //       <script> node insertion crashes the player via CSP). Cosmetic element-hiding (Sponsored feed
+  //       tiles / masthead) still applies: the '###sh-cosmetic' rule hides #sh-cosmetic on the normal host
+  //       AND the YouTube host. YouTube video-ad blocking moved to the preload pruner (tested in 37b).
   await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/cosmetic-check'`);
   const ccTarget = await until(async () =>
     (await targets()).find((t) => t.url.startsWith(`${SITE}/cosmetic-check`) && t.webSocketDebuggerUrl), 'guest for cosmetic-check');
@@ -1223,9 +1223,9 @@ async function main() {
     (await targets()).find((t) => t.url.startsWith(YT_FIX) && t.webSocketDebuggerUrl), 'guest for yt-fix host');
   const ytGuest = await CDP.connect(ytTarget.webSocketDebuggerUrl);
   await until(() => ytGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display === 'none'`),
-    'cosmetic CSS also injected on the YouTube host (sponsored-tile hiding restored)');
+    'cosmetic CSS injected on the YouTube host (sponsored-tile hiding)');
   ytGuest.close();
-  ok('adblock: YouTube gets full injection by default (scriptlets on); cosmetic hiding still applies');
+  ok('adblock: YouTube always gets cosmetic-CSS-only (no engine scriptlets); sponsored-tile hiding applies');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
@@ -1293,23 +1293,62 @@ async function main() {
 
   // ---------- v0.4.1 YouTube scriptlet kill-switch + ad-list refresh/status ----------
 
-  // 37b. YouTube ad-blocking kill-switch: turning youtubeScriptlets OFF falls back to the cosmetic-only
-  //      carve-out on YT hosts (still hides #sh-cosmetic), and persists youtubeScriptlets:false.
+  // 37b. YouTube ad-blocking toggle now gates the PRELOAD config pruner (webview-preload.js), not engine
+  //      scriptlets. Observable in the guest main world: the pruner proxies JSON.parse and strips ad fields
+  //      (playerAds/adPlacements/adSlots) out of the object before returning it. ON -> adPlacements gone,
+  //      other keys survive; OFF -> the pruner never installs, so adPlacements is left intact. Toggling OFF
+  //      also persists youtubeScriptlets:false.
   const ytToggle = `[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('YouTube ad-blocking')).querySelector('input[type=checkbox]')`;
-  await page.eval(`${ytToggle}.click()`); // off -> cosmetic-only carve-out on YT hosts
+  const pruneProbe = `JSON.stringify((() => { const r = JSON.parse('{"adPlacements":[1],"x":2}'); return { hasAd: 'adPlacements' in r, x: r.x }; })())`;
+  // setting is ON by default -> pruner active on the YT fixture guest
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${YT_FIX}/prune-on'`);
+  const onTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(`${YT_FIX}/prune-on`) && t.webSocketDebuggerUrl), 'guest for yt-fix (pruner on)');
+  const onGuest = await CDP.connect(onTarget.webSocketDebuggerUrl);
+  const onRes = JSON.parse(await until(() => onGuest.eval(pruneProbe), 'pruner probe evaluated (on)'));
+  assert.strictEqual(onRes.hasAd, false, 'pruner ON: JSON.parse should strip adPlacements');
+  assert.strictEqual(onRes.x, 2, 'pruner ON: non-ad fields survive');
+  onGuest.close();
+  // turn it OFF -> the preload asks main, main says no, the pruner never installs
+  await page.eval(`${ytToggle}.click()`);
   await sleep(400); // let set-setting land in the main process
-  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${YT_FIX}/'`);
-  const kkTarget = await until(async () =>
-    (await targets()).find((t) => t.url.startsWith(YT_FIX) && t.webSocketDebuggerUrl), 'guest for yt-fix (kill-switch)');
-  const kkGuest = await CDP.connect(kkTarget.webSocketDebuggerUrl);
-  await until(() => kkGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display === 'none'`),
-    'cosmetic-only carve-out still hides #sh-cosmetic on YT with scriptlets off');
-  kkGuest.close();
+  await page.eval(`document.getElementById('webview').src = '${YT_FIX}/prune-off'`);
+  const offTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(`${YT_FIX}/prune-off`) && t.webSocketDebuggerUrl), 'guest for yt-fix (pruner off)');
+  const offGuest = await CDP.connect(offTarget.webSocketDebuggerUrl);
+  const offRes = JSON.parse(await until(() => offGuest.eval(pruneProbe), 'pruner probe evaluated (off)'));
+  assert.strictEqual(offRes.hasAd, true, 'pruner OFF: adPlacements should be left intact');
+  offGuest.close();
   const msKill = JSON.parse(fs.readFileSync(path.join(PROFILE, 'settings.json'), 'utf8'));
   assert.strictEqual(msKill.youtubeScriptlets, false, 'youtubeScriptlets:false should persist to settings.json');
-  await page.eval(`${ytToggle}.click()`); // back on (full injection default)
+  await page.eval(`${ytToggle}.click()`); // back on (default)
   await sleep(400);
-  ok('⚙ YouTube kill-switch: cosmetic-only carve-out hides sponsored tiles; persists youtubeScriptlets');
+  ok('⚙ YouTube pruner: JSON.parse strips ad fields when on, leaves them when off; persists youtubeScriptlets');
+
+  // 37b2. auto-skip fallback: on a YT-fixture guest with the pruner active, a #movie_player that goes
+  //       'ad-showing' is muted + fast-forwarded to the end and its skip button clicked (for ads the
+  //       config pruner can't catch, e.g. server-side-inserted). The observer is on document.documentElement.
+  await page.eval(`document.getElementById('webview').src = '${YT_FIX}/autoskip'`);
+  const asTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(`${YT_FIX}/autoskip`) && t.webSocketDebuggerUrl), 'guest for yt-fix (auto-skip)');
+  const asGuest = await CDP.connect(asTarget.webSocketDebuggerUrl);
+  await until(() => asGuest.eval('!!document.body'), 'auto-skip guest body ready');
+  const asRes = await asGuest.eval(`new Promise((resolve) => {
+    const mp = document.createElement('div'); mp.id = 'movie_player'; mp.className = 'ad-showing';
+    const v = document.createElement('video'); let _ct = 0;
+    Object.defineProperty(v, 'duration', { get: () => 100 });
+    Object.defineProperty(v, 'currentTime', { get: () => _ct, set: (x) => { _ct = x; } });
+    const skip = document.createElement('button'); skip.className = 'ytp-ad-skip-button-modern';
+    window.__skipped = false; skip.addEventListener('click', () => { window.__skipped = true; });
+    mp.appendChild(v); mp.appendChild(skip); document.body.appendChild(mp);
+    requestAnimationFrame(() => mp.classList.add('ad-interrupting')); // force an attribute mutation too
+    setTimeout(() => resolve({ muted: v.muted, ct: v.currentTime, dur: v.duration, skipped: window.__skipped }), 300);
+  })`);
+  assert.strictEqual(asRes.muted, true, 'auto-skip: the ad video should be muted');
+  assert.strictEqual(asRes.ct, asRes.dur, 'auto-skip: the ad should be fast-forwarded to its end');
+  assert.strictEqual(asRes.skipped, true, 'auto-skip: the skip button should be clicked');
+  asGuest.close();
+  ok('⚙ YouTube auto-skip: an ad-showing player is muted, fast-forwarded, and its skip button clicked');
 
   // 37c. sh.refreshAdlists() hot-swaps the engine with the ordered disable→enable — network blocking must
   //      survive the swap AND the YT/cosmetic wrapper must be re-applied on the new engine.

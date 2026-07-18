@@ -41,7 +41,7 @@ const MAIN_DEFAULTS = {
   googleUaSpoof: true,     // present Google sign-in as Firefox ("browser not secure" fix)
   autoUpdateCheck: true,   // check for updates on launch
   catalogTimeoutSec: 60,   // live-catalog fetch abort
-  youtubeScriptlets: true, // inject uBlock scriptlets on YouTube to block pre-roll/mid-roll ads (kill-switch)
+  youtubeScriptlets: true, // gates the preload YouTube video-ad pruner (webview-preload.js) — not engine scriptlets anymore
 };
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 let ms = { ...MAIN_DEFAULTS };
@@ -204,12 +204,12 @@ function buildBlocker({ forceRefresh } = {}) {
   return p;
 }
 
-// Layer the YouTube ad-block policy onto a freshly built engine. By default YT hosts get FULL injection
-// (incl. uBlock's +js() scriptlets) — the ONLY thing that blocks YT pre-roll/mid-roll ads, and 2.18.1's
-// scriptlets inject safely via the engine's try/catch'd executeJavaScript. The ⚙ youtubeScriptlets
-// kill-switch (read LIVE per frame — no rebuild) falls back to cosmetic-CSS-only on YT hosts: hides
-// Sponsored feed tiles / masthead but withholds scriptlets, for the rare case a YT video goes black.
-// Ghostery calls onInjectCosmeticFilters fresh per frame, so wrapping it here scopes this to YouTube.
+// Layer the YouTube ad-block policy onto a freshly built engine. YT hosts ALWAYS get cosmetic-CSS-only
+// (network + Sponsored-tile/masthead hiding); engine scriptlets are NEVER injected on YouTube (they crash
+// the player via CSP — the injected <script> node insertion is blocked and the violation is uncatchable,
+// leaving a grey player). YouTube video-ad blocking is handled separately by the pruner in
+// webview-preload.js, gated on the youtubeScriptlets setting. Ghostery calls onInjectCosmeticFilters fresh
+// per frame, so wrapping it here scopes this to YouTube.
 function applyYtPolicy(b) {
   if (!b) return b;
   const YT_HOSTS = /(^|\.)(youtube\.com|youtube-nocookie\.com|googlevideo\.com|youtu\.be)$/i;
@@ -218,7 +218,7 @@ function applyYtPolicy(b) {
   b.onInjectCosmeticFilters = async (event, url, msg) => {
     try {
       const host = new URL(url).hostname;
-      if (ms.youtubeScriptlets === false && (YT_HOSTS.test(host) || (ytTestHost && url.includes(ytTestHost)))) {
+      if (YT_HOSTS.test(host) || (ytTestHost && url.includes(ytTestHost))) {
         const first = msg === undefined;
         const { active, styles } = b.getCosmeticsFilters({
           domain: host.split('.').slice(-2).join('.'), hostname: host, url,
@@ -404,6 +404,14 @@ app.whenReady().then(() => {
   // ⚙ ad-list refresh + status for the Privacy panel ("Update ad lists now" + the status line).
   ipcMain.handle('refresh-adlists', () => refreshAdlists());
   ipcMain.handle('adblock-status', () => ({ enabled: blockingEnabled, engine: adblockEngine, at: adlistsBuiltAt }));
+
+  // The guest preload asks, synchronously at document_start, whether to run the YouTube video-ad
+  // pruner. Gated on the youtubeScriptlets setting; matches real YT hosts + the e2e fixture host.
+  ipcMain.on('yt-adblock', (e, host) => {
+    const YT = /(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i;
+    const t = process.env.SH_TEST_YT_HOST; // e.g. 127.0.0.1:9315
+    e.returnValue = ms.youtubeScriptlets !== false && (YT.test(host) || (!!t && !!host && host.includes(t)));
+  });
 
   // Version string for the sidebar footer, and a manual "check for updates" trigger.
   ipcMain.handle('app-version', () => app.getVersion());
