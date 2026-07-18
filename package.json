@@ -1,6 +1,6 @@
 {
   "name": "stream-hub",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A desktop browser for streaming sites, with bookmarks, automatic watch-progress tracking, and ad-blocking.",
   "main": "main.js",
   "scripts": {
