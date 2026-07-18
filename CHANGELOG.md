@@ -5,6 +5,24 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.4.4 — Dashboard redesign (July 2026)
+
+The landing dashboard grew up: a bigger, rotating spotlight on top and a set of rails you control.
+
+- **Rotating featured hero.** The banner now cycles through several picks (your last-watched title first,
+  then trending), auto-advancing on a timer with arrows and dots to move by hand. It pauses while you
+  hover and holds still if you've asked for reduced motion.
+- **Rails you choose and arrange.** Under Settings → General you can show, hide, and reorder the
+  dashboard rails: Continue Watching, Trending, a numbered **Top 10**, and Live now, plus optional
+  **Top Rated**, **Newest**, **Upcoming**, and per-genre shelves (Action, Comedy, Horror, and more).
+- **Loads as you scroll.** Rails below the fold fill in when you reach them rather than all at once, and
+  card sizes now scale to the window so the dashboard stays tidy on narrow screens.
+- **Scroll arrows.** Chevron buttons appear on a rail's edges to page through it a screenful at a time.
+
+No changes to your sources or playback.
+
+---
+
 ## v0.4.3 — Performance & cleanup (July 2026)
 
 A tune-up release: the app does less idle work, starts a little quicker, and sheds some dead weight

@@ -313,6 +313,24 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 .set-btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .set-val { font-size: 13px; color: var(--text); cursor: pointer; }
 .set-val:hover { filter: brightness(1.15); }
+
+/* v0.4.4: dashboard-rails control (ordered checkbox list with ▲/▼ reorder) */
+.dashrails {
+  min-width: 240px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.dashrail-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+.dashrail-row + .dashrail-row { border-top: 1px solid var(--border); }
+.dashrail-name { flex: 1; font-size: 13px; }
+.dashrail-move {
+  background: none; border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text); cursor: pointer; font-size: 11px; line-height: 1; padding: 3px 6px;
+}
+.dashrail-move:hover:not(:disabled) { background: var(--panel); }
+.dashrail-move:disabled { opacity: .4; cursor: default; }
 .set-status { font-size: 12px; color: var(--accent); }
 .set-warn {
   background: rgba(240, 170, 60, .12);
@@ -813,15 +831,19 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 
 /* ---------- dashboard (landing view) ---------- */
 #dashboard { overflow-y: auto; }
-.dash-section { margin-bottom: 20px; }
+.dash-section { margin-bottom: 20px; position: relative; } /* anchor for the absolute rail chevrons */
 .dash-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
 .dash-head h2 { margin: 0; font-size: 16px; }
 .dash-seeall { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
 .dash-seeall:hover { color: var(--accent); }
 /* horizontal card rail (same scroller pattern as .cast-row) */
 .rail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 8px; }
-.rail .card { flex: 0 0 var(--poster-min, 160px); }
-.rail .match-card { flex: 0 0 240px; }
+/* responsive card widths: --poster-min (posterSize) stays the desktop target; shrink on narrow windows */
+.rail .card,
+.rail .skel-poster { flex: 0 0 clamp(112px, 30vw, var(--poster-min, 160px)); }
+.rail .resume-card,
+.rail .skel-wide   { flex: 0 0 clamp(200px, 60vw, 300px); }
+.rail .match-card  { flex: 0 0 clamp(180px, 55vw, 260px); }
 .dash-live-hint { align-self: flex-start; }
 
 /* first-run onboarding card */
@@ -884,8 +906,7 @@ button svg { vertical-align: -2px; pointer-events: none; }
 .skel-episode { height: 82px; }
 .skel-row { height: 42px; margin: 6px 0; }
 .skel-hero { height: 320px; border-radius: var(--r-lg); }
-.rail .skel-poster { flex: 0 0 var(--poster-min, 160px); }
-.rail .skel-wide { flex: 0 0 280px; }
+/* .rail .skel-poster / .skel-wide widths are set with .card / .resume-card above (responsive clamps) */
 
 /* ---------- v0.4.0: dashboard hero ---------- */
 .dash-hero { position: relative; border-radius: var(--r-lg); overflow: hidden; margin-bottom: 22px; }
@@ -927,8 +948,42 @@ button svg { vertical-align: -2px; pointer-events: none; }
   outline-offset: 2px;
 }
 
+/* ---------- v0.4.4: rotating multi-hero carousel + TOP 10 rank badge ---------- */
+.hero-carousel { position: relative; }
+.hero-slides { position: relative; }
+.hero-inner:not(.active) { display: none; } /* only the active slide shows; slide 0 stays first in DOM */
+body:not(.reduced-motion) .hero-inner.active { animation: hero-fade var(--dur-mid) ease; }
+@keyframes hero-fade { from { opacity: 0; } to { opacity: 1; } }
+.hero-dots {
+  position: absolute; left: 0; right: 0; bottom: 12px;
+  display: flex; justify-content: center; gap: 8px; z-index: 2;
+}
+.hero-dot {
+  width: 8px; height: 8px; padding: 0;
+  border: none; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, .4); cursor: pointer;
+}
+.hero-dot.on { background: var(--accent); }
+.hero-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0;
+  border: none; border-radius: var(--r-pill);
+  background: var(--scrim); color: #fff; cursor: pointer; z-index: 2;
+}
+.hero-arrow.prev { left: 12px; }
+.hero-arrow.next { right: 12px; }
+.hero-arrow svg { width: 24px; height: 24px; }
+.hero-dot:focus-visible, .hero-arrow:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.rank-badge {
+  position: absolute; top: 6px; left: 6px;
+  background: var(--accent); color: var(--on-accent);
+  font-weight: 800; font-size: 12px; padding: 2px 8px;
+  border-radius: var(--r-sm); pointer-events: none; z-index: 1;
+}
+
 /* ---------- v0.4.0: 16:9 resume cards (dashboard Continue rail) ---------- */
-.rail .resume-card { flex: 0 0 280px; }
+/* .rail .resume-card width is set with .skel-wide above (responsive clamp) */
 .resume-card .poster-wrap { aspect-ratio: 16 / 9; }
 .resume-chip {
   position: absolute;
@@ -985,6 +1040,7 @@ button svg { vertical-align: -2px; pointer-events: none; }
   .skel-hero { height: 240px; }
   .hero-body { padding: 18px; }
   .hero-title { font-size: 22px; }
+  .rail { gap: 10px; }
 }
 
 /* ---------- v0.4.0: card hover layers ---------- */
@@ -1017,6 +1073,22 @@ button svg { vertical-align: -2px; pointer-events: none; }
 .rail.fade-l { mask-image: linear-gradient(to right, transparent, #000 6%); }
 .rail.fade-r { mask-image: linear-gradient(to right, #000 94%, transparent); }
 .rail.fade-l.fade-r { mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent); }
+
+/* ---------- v0.4.4: rail chevron scroll buttons (hover-revealed, absolute over the rail edges) ---------- */
+.rail-chev {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+  border: none; border-radius: var(--r-pill);
+  background: var(--scrim); color: #fff; cursor: pointer;
+  z-index: 2; opacity: 0; transition: opacity var(--dur-mid) ease;
+}
+.rail-chev.prev { left: 2px; }
+.rail-chev.next { right: 2px; }
+.rail-chev svg { width: 22px; height: 22px; }
+.dash-section:hover .rail-chev:not([disabled]) { opacity: 1; }
+.rail-chev[disabled] { opacity: 0; pointer-events: none; } /* nothing to scroll to at that end */
+.rail-chev:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* ---------- v0.4.0: toast ---------- */
 .toast {

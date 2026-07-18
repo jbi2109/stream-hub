@@ -1685,6 +1685,43 @@ async function main() {
   assert.ok(await page.eval(`document.querySelector('.dash-hero .hero-title').textContent.includes('Disc')`), 'trending hero titled from discover');
   ok('hero: trending fallback without a Resume CTA');
 
+  // ---------- v0.4.4 rotating multi-hero + TOP 10 badge ----------
+
+  // 59a. carousel structure: resume slide 0 + trending slides; one dot per slide, slide 0 active.
+  //      Fixture returns 1 trending row, so resume + trending => 2 slides (enough to exercise multi-slide).
+  await page.eval(`(() => { cont.length = 0;
+    cont.push({ key: 'tv#428', title: 'Fixture Title', url: '${PLAYER}/embed/tv/428/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now(), position: 1234, duration: 6000, note: '' });
+    store('continue', cont); showDashboard(); })()`);
+  await until(() => page.eval(`!!document.querySelector('#dashboard .hero-slides > .hero-inner')`), 'hero carousel builds slides');
+  const [dotCount, slideCount] = await page.eval(`[document.querySelectorAll('#dashboard .hero-dot').length, document.querySelectorAll('#dashboard .hero-slides > .hero-inner').length]`);
+  assert.strictEqual(dotCount, slideCount, 'one hero-dot per slide');
+  assert.ok(await page.eval(`document.querySelector('#dashboard .hero-slides > .hero-inner').classList.contains('active')`), 'slide 0 is the active slide');
+
+  // dot click swaps the active slide (guarded: only when the fixture yields >1 slide)
+  if (slideCount > 1) {
+    await page.eval(`document.querySelectorAll('#dashboard .hero-dot')[1].click()`);
+    assert.ok(await page.eval(`document.querySelectorAll('#dashboard .hero-slides > .hero-inner')[1].classList.contains('active')`), 'clicking dot 2 activates slide 2');
+    assert.ok(await page.eval(`!document.querySelectorAll('#dashboard .hero-slides > .hero-inner')[0].classList.contains('active')`), 'slide 0 loses .active after dot click');
+  }
+
+  // auto-advance is deterministic via the module-level heroTimer (bare-name in page.eval, like cont/settings):
+  // armed under normal motion with >1 slide, NOT armed under reduced-motion.
+  await page.eval(`document.body.classList.remove('reduced-motion'); showDashboard();`);
+  await until(() => page.eval(`document.querySelectorAll('#dashboard .hero-slides > .hero-inner').length > 1`), 'multi-slide carousel built (normal motion)');
+  assert.ok(await page.eval(`heroTimer !== null`), 'auto-advance interval is armed with >1 slide');
+  await page.eval(`document.body.classList.add('reduced-motion'); showDashboard();`);
+  await until(() => page.eval(`document.querySelectorAll('#dashboard .hero-slides > .hero-inner').length > 1`), 'carousel rebuilt under reduced-motion');
+  assert.strictEqual(await page.eval(`heroTimer`), null, 'reduced-motion arms no auto-advance interval');
+  await page.eval(`document.body.classList.remove('reduced-motion'); clearInterval(heroTimer); heroTimer = null;`); // no stray tick into later tests
+  ok('hero carousel: one dot per slide, dot-click swaps active, heroTimer armed only under normal motion');
+
+  // 59b. TOP 10 rank badge: numbered overlay on the top10 rail's poster cards, reading 01..
+  await page.eval(`settings.dashRails = ['continue', 'top10']; saveSettings(); showDashboard();`);
+  await until(() => page.eval(`!!document.querySelector('#dashboard .rank-badge')`), 'TOP 10 rank badge renders');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#dashboard .rank-badge')].some(b => b.textContent === '01')`), 'first TOP 10 card badge reads 01');
+  await page.eval(`settings.dashRails = ['continue', 'trending', 'top10', 'live']; saveSettings();`);
+  ok('TOP 10: numbered rank badge (01) overlays the poster');
+
   // 60. resume cards: 16:9 chips (timestamp / Completed), relative time, backdrop swap via tmdbMeta
   await page.eval(`(() => { cont.length = 0;
     cont.push({ key: 'tv#428', title: 'Fixture Title', url: '${PLAYER}/embed/tv/428/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now() - 3*86400000, position: 1234, duration: 6000, note: '' });
@@ -1732,6 +1769,60 @@ async function main() {
   await page.eval(`(() => { const r = document.querySelector('#dashboard .rail'); r.scrollLeft = 200; r.dispatchEvent(new Event('scroll')); })()`);
   await until(() => page.eval(`document.querySelector('#dashboard .rail').classList.contains('fade-l')`), 'left fade after scrolling'); // fades recompute is now rAF-throttled
   ok('rails: edge fades track scroll position');
+
+  // ---------- v0.4.4 dashboard rail registry ----------
+
+  // 65a. rail visibility + persistence: settings.dashRails controls which rails show (Live off -> absent)
+  await page.eval(`settings.dashRails = ['continue', 'trending']; saveSettings(); showDashboard();`);
+  await until(() => page.eval(`[...document.querySelectorAll('#dashboard .dash-section h2')].some(h => h.textContent === 'Trending')`), 'Trending rail present under custom rails');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#dashboard .dash-section h2')].some(h => h.textContent === 'Continue Watching')`), 'Continue rail present under custom rails');
+  assert.ok(await page.eval(`![...document.querySelectorAll('#dashboard .dash-section h2')].some(h => h.textContent === 'Live now')`), 'Live-now rail must be absent when not in dashRails');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#dashboard .match-card').length`), 0, 'no live match cards when the live rail is disabled');
+  ok('dashboard rails: dashRails membership controls rail visibility');
+
+  // 65b. order is followed: the first rail matches the first enabled id
+  await page.eval(`settings.dashRails = ['trending', 'continue', 'top10', 'live']; saveSettings(); showDashboard();`);
+  await until(() => page.eval(`(document.querySelector('#dashboard .dash-section h2') || {}).textContent === 'Trending'`), 'first rail is Trending when ordered first');
+  ok('dashboard rails: settings.dashRails order = render order');
+
+  // 65c. genre shelf: enabling a genre rail renders it, and the /discover query carries with_genres (fixture echo)
+  await page.eval(`settings.dashRails = ['continue', 'genre:28']; saveSettings(); showDashboard();`);
+  await until(() => page.eval(`(() => { const s = [...document.querySelectorAll('#dashboard .dash-section')].find(s => (s.querySelector('h2')||{}).textContent === 'Action'); return s && s.querySelector('.card'); })()`), 'genre rail renders a card');
+  assert.ok(await page.eval(`(() => { const s = [...document.querySelectorAll('#dashboard .dash-section')].find(s => (s.querySelector('h2')||{}).textContent === 'Action'); return [...s.querySelectorAll('.card')].some(c => c.textContent.includes('G28')); })()`), 'genre rail /discover query must carry with_genres=28');
+  ok('dashboard rails: genre shelf enable + with_genres query shape');
+
+  // 65d. lazy rails: a below-fold discover shelf is NOT eager-filled; fillRail fills it on demand.
+  //      Top Rated is index 4 (beyond EAGER=2, not special) -> observed, not eager. The observer is
+  //      disconnected right after render and the lazy path (fillRail) driven directly: under CDP the 400px
+  //      rootMargin + async first-observation callback make a real-scroll assertion racy (the rail may sit
+  //      within rootMargin, or the callback may fire before/after the check), so the direct call proves
+  //      both halves of the contract (not-eager + fills-on-demand) deterministically.
+  await page.eval(`settings.dashRails = ['continue', 'trending', 'top10', 'live', 'toprated']; saveSettings(); showDashboard(); railObserver && railObserver.disconnect();`);
+  const trSel = `[...document.querySelectorAll('#dashboard .dash-section')].find(s => (s.querySelector('h2')||{}).textContent === 'Top Rated')`;
+  await until(() => page.eval(`(() => { const s = ${trSel}; return s && s.querySelector('.skel'); })()`), 'Top Rated shell built with skeletons');
+  assert.strictEqual(await page.eval(`(() => { const s = ${trSel}; return s.querySelectorAll('.card').length; })()`), 0, 'below-fold Top Rated rail is not eager-filled (skeletons only)');
+  await page.eval(`(() => { const s = ${trSel}; fillRail(s, s._rail); })()`);
+  await until(() => page.eval(`(() => { const s = ${trSel}; return s && s.querySelector('.card'); })()`), 'lazy fillRail populates the below-fold rail');
+  await page.eval(`settings.dashRails = ['continue', 'trending', 'top10', 'live']; saveSettings();`);
+  ok('dashboard rails: below-fold shelves lazy-fill on demand');
+
+  // 65e. chevron scroll buttons: exist per rail section, prev disabled at scrollLeft 0, clicking next
+  //      scrolls the rail. reduced-motion -> instant ('auto') scroll, so scrollLeft moves synchronously
+  //      and the assertion is deterministic (same 12-wide-card overflow premise as T65's edge fades).
+  await page.eval(`(() => { cont.length = 0;
+    for (let i = 0; i < 12; i++) cont.push({ key: 'tv#43' + i, title: 'Chev' + i, url: '${PLAYER}/embed/tv/' + (430 + i) + '/1/1', poster: '', season: 1, episode: 1, type: 'tv', updatedAt: Date.now() - i, position: null, duration: null, note: '' });
+    store('continue', cont); document.body.classList.add('reduced-motion'); renderDashboard(); })()`);
+  await until(() => page.eval(`document.querySelectorAll('#dashboard .rail .resume-card').length >= 12`), 'wide Continue rail rendered for chevrons');
+  const csSel = `[...document.querySelectorAll('#dashboard .dash-section')].find(s => s.querySelector('.resume-card'))`;
+  assert.ok(await page.eval(`(() => { const s = ${csSel}; return !!s.querySelector('.rail-chev.prev') && !!s.querySelector('.rail-chev.next'); })()`), 'both rail chevrons exist in the section');
+  await until(() => page.eval(`(() => { const s = ${csSel}; return s.querySelector('.rail-chev.prev').disabled; })()`), 'prev chevron disabled at scrollLeft 0');
+  await page.eval(`(() => { const s = ${csSel}; s.querySelector('.rail-chev.next').click(); })()`);
+  await until(() => page.eval(`(() => { const s = ${csSel}; return s.querySelector('.rail').scrollLeft > 8; })()`), 'clicking next scrolls the rail right');
+  await page.eval(`document.body.classList.remove('reduced-motion');`);
+  ok('dashboard rails: chevrons scroll the rail (prev disabled at the start)');
+
+  // restore the default rail set for the tests that follow
+  await page.eval(`settings.dashRails = ['continue', 'trending', 'top10', 'live']; saveSettings();`);
 
   // 66. detail: cinematic backdrop + logo art + scroll-linked cover; the live picker stays plain
   await page.eval(`showDetail('movie', 42)`);

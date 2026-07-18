@@ -1,14 +1,50 @@
-// Landing dashboard: a cinematic hero (your resume item > trending) over horizontal rails of
-// Continue Watching / Trending / Live now, built from the existing card builders so click behavior,
-// resume state, and keyboard focus all come for free. Empty rails hide; a fresh profile (no TMDB key
-// AND no sources) gets the onboarding card instead. The Live-now rail reads ONLY the catalog cache —
-// it never fetches (visiting the Live TV tab warms the cache); a cold cache shows a hint.
+// Landing dashboard: a cinematic hero (your resume item > trending) over a configurable set of
+// horizontal rails, built from the existing card builders so click behavior, resume state, and
+// keyboard focus all come for free. Rails come from a registry (DASH_RAILS); settings.dashRails picks
+// which show and in what order. Empty rails hide; a fresh profile (no TMDB key AND no sources) gets the
+// onboarding card instead. The Live-now rail reads ONLY the catalog cache — it never fetches (visiting
+// the Live TV tab warms the cache); a cold cache shows a hint.
 
 const DASH_RAIL_MAX = 15;
 
-// One rail: title + "See all →" + a horizontal scroller of cards. Null when there's nothing to show.
-function dashRail(title, seeAll, items) {
-  if (!items.length) return null;
+// Movie-only genre rails (default off).
+// ponytail: movie-only genre rails avoid the movie/TV genre-id split; add TV genre rails only if asked.
+const DASH_GENRES = [['28', 'Action'], ['35', 'Comedy'], ['27', 'Horror'], ['10749', 'Romance'], ['878', 'Sci-Fi & Fantasy'], ['16', 'Animation']];
+
+const seeAllMovies = () => { browseTab = 'movie'; showBrowse(); };
+const seeAllLive = () => { browseTab = 'live'; showBrowse(); };
+
+// Rail registry. Descriptor: { id, title, seeAll, skel, skelN, special?, build:async()=>Node[] } where
+// build returns the card nodes. The 'live' special branch in fillRail bypasses build (cache-only).
+const DASH_RAILS = [
+  { id: 'continue', title: 'Continue Watching', seeAll: showHome, skel: 'skel-wide', skelN: 5, special: 'continue',
+    build: async () => cont.slice(0, DASH_RAIL_MAX).map(resumeCard) },
+  { id: 'trending', title: 'Trending', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
+    build: async () => (await discoverRail('trending')).map((r) => posterCard('movie', r)) },
+  { id: 'top10', title: 'Top 10 Today', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 10,
+    build: async () => (await discoverRail('trending')).slice(0, 10).map((r, i) => posterCard('movie', r, i + 1)) }, // R2: rank badge (i+1 => 01..10)
+  { id: 'live', title: 'Live now', seeAll: seeAllLive, skel: 'skel-wide', skelN: 4, special: 'live',
+    build: async () => [] }, // unused — fillRail's live branch is cache-only
+  { id: 'toprated', title: 'Top Rated', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
+    build: async () => (await discoverRail('toprated')).map((r) => posterCard('movie', r)) },
+  { id: 'newest', title: 'Newest', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
+    build: async () => (await discoverRail('newest')).map((r) => posterCard('movie', r)) },
+  { id: 'upcoming', title: 'Upcoming', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
+    build: async () => (await discoverRail('upcoming')).map((r) => posterCard('movie', r)) },
+  ...DASH_GENRES.map(([gid, name]) => ({
+    id: 'genre:' + gid, title: name, seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
+    build: async () => (await discoverRail('genre:' + gid)).map((r) => posterCard('movie', r)),
+  })),
+];
+const RAIL_BY_ID = Object.fromEntries(DASH_RAILS.map((r) => [r.id, r]));
+// Default membership + order. Mirrored into SETTINGS_DEFAULTS.dashRails (settings.js loads after this
+// file, so the literal lives here and settings references it — not the other way around).
+const DEFAULT_DASH_RAILS = ['continue', 'trending', 'top10', 'live'];
+const enabledRails = () => (settings.dashRails || DEFAULT_DASH_RAILS).map((id) => RAIL_BY_ID[id]).filter(Boolean);
+
+// One rail SHELL: title + "See all →" + a horizontal scroller of skeletons. Always returned (fillRail
+// swaps in real cards or removes the section), so R3's lazy observer always has a target.
+function railShell(title, seeAll, skel, skelN) {
   const sec = mk('div', 'dash-section');
   const head = mk('div', 'dash-head');
   head.append(mk('h2', null, title));
@@ -16,10 +52,18 @@ function dashRail(title, seeAll, items) {
   link.onclick = seeAll;
   head.append(link);
   const rail = mk('div', 'rail anim-in');
-  rail.append(...items);
+  rail.append(...skeletonCards(skelN, skel));
+  // chevron scroll buttons (siblings of the rail; CSS absolute-positions them over its edges so they
+  // never shift the rail layout). Reduced-motion → instant scroll. NAV_SEL doesn't match <button>, so
+  // keyboard grid nav skips them.
+  const chevL = mk('button', 'rail-chev prev'); chevL.append(icon('chevron-l'));
+  const chevR = mk('button', 'rail-chev next'); chevR.append(icon('chevron-r'));
+  const scrollBy = (dir) => rail.scrollBy({ left: dir * rail.clientWidth * 0.8, behavior: document.body.classList.contains('reduced-motion') ? 'auto' : 'smooth' });
+  chevL.onclick = () => scrollBy(-1); chevR.onclick = () => scrollBy(1);
   // edge fades hint at scrollability (mask toggled by can-scroll state). Reading scrollLeft/clientWidth/
   // scrollWidth forces layout; scroll + ResizeObserver can fire many times a frame, so coalesce to one
-  // rAF. State is per-rail (this closure) so two rails scrolling the same frame each recompute.
+  // rAF. State is per-rail (this closure) so two rails scrolling the same frame each recompute. The same
+  // reads also toggle the chevrons' disabled state at the scroll ends.
   let fadePending = false;
   const fades = () => {
     if (fadePending) return;
@@ -28,13 +72,15 @@ function dashRail(title, seeAll, items) {
       fadePending = false;
       rail.classList.toggle('fade-l', rail.scrollLeft > 8);
       rail.classList.toggle('fade-r', rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 8);
+      chevL.disabled = rail.scrollLeft <= 8;
+      chevR.disabled = rail.scrollLeft + rail.clientWidth >= rail.scrollWidth - 8;
     });
   };
   rail.onscroll = fades;
   // ResizeObserver (not a one-shot rAF): fires once layout actually settles — however late the rail
   // attaches or images shift it — and again on window resizes, so the fade state can't go stale.
   new ResizeObserver(fades).observe(rail);
-  sec.append(head, rail);
+  sec.append(head, rail, chevL, chevR);
   return sec;
 }
 
@@ -94,6 +140,13 @@ function resumeCard(item) {
 
 // ---------- hero (resume > trending) ----------
 
+// Auto-advance interval for the rotating hero. Module-scope so renderDashboard can clear it at the top
+// of every re-render (otherwise intervals stack and fire on detached slide nodes).
+let heroTimer = null;
+// Lazy-fill observer for discover-backed rails below the fold. Module-scope so every re-render can
+// disconnect the prior one (observers leak otherwise) before building a fresh one.
+let railObserver = null;
+
 function heroContent(kind, d, resume) {
   const inner = mk('div', 'hero-inner');
   const bg = mk('div', 'hero-bg');
@@ -142,28 +195,78 @@ function heroContent(kind, d, resume) {
   return inner;
 }
 
-// Fill the hero placeholder: the most recent Continue item (with logo art via one appended detail
-// fetch), else trending #1. Anything failing -> the hero disappears (same contract as empty rails).
-async function fillHero(heroSec, heroFetch) {
-  let kind = null, d = null, resume = null;
+// Fill the hero placeholder with a rotating carousel (up to 5 slides). Slide 0 is the most recent
+// Continue item (resume slide, WITH logo art via the one shared detail fetch + a ▶ Resume CTA), else
+// trending #1. Slides 1..4 come from trending discover rows (no per-slide fetch, no logo, no CTA).
+// Slide 0 stays FIRST in DOM + .active so the pinned hero tests resolve to it. Auto-advances every 7s
+// (paused on hover, off under reduced-motion). If slide 0 is unusable the hero disappears (empty-rail
+// contract). heroTimer is cleared at the top of renderDashboard so re-renders don't stack intervals.
+async function fillHeroCarousel(heroSec, heroFetch) {
+  const slides = []; // { kind, d, resume }
+  let trendingRows = [];
+  try { trendingRows = await discoverRail('trending'); } catch {}
   try {
     const c = cont[0];
     const cid = c && typeOf(c) !== 'live' && tmdbIdOf(c.url);
     if (cid) {
-      kind = typeOf(c) === 'movie' ? 'movie' : 'tv';
+      const kind = typeOf(c) === 'movie' ? 'movie' : 'tv';
       // reuse the single detail fetch renderDashboard already started (hero + resume-card[0] share it)
-      d = heroFetch ? await heroFetch : await tmdbGet(`/${kind}/${cid}`, { append_to_response: 'images', include_image_language: 'en,null' });
+      let d = heroFetch ? await heroFetch : await tmdbGet(`/${kind}/${cid}`, { append_to_response: 'images', include_image_language: 'en,null' });
       if (d && !d.id) d.id = cid;
-      resume = c;
+      slides.push({ kind, d, resume: c });
+      for (const row of trendingRows.slice(0, 4)) slides.push({ kind: 'movie', d: row, resume: null });
     } else {
-      const t = await fetchTrending();
-      d = ((t && t.results) || []).find((r) => r.backdrop_path || r.title || r.name) || null;
-      kind = 'movie';
+      for (const row of trendingRows.slice(0, 5)) slides.push({ kind: 'movie', d: row, resume: null });
     }
   } catch {}
   if (!heroSec.isConnected) return; // dashboard re-rendered / navigated away
-  if (!d || d.error || (!d.title && !d.name)) { heroSec.remove(); return; }
-  heroSec.replaceChildren(heroContent(kind, d, resume));
+  const s0 = slides[0];
+  if (!s0 || !s0.d || s0.d.error || (!s0.d.title && !s0.d.name)) { heroSec.remove(); return; }
+
+  const carousel = mk('div', 'hero-carousel');
+  const slidesEl = mk('div', 'hero-slides');
+  const inners = slides.map((s) => heroContent(s.kind, s.d, s.resume));
+  inners.forEach((el, i) => { if (i === 0) el.classList.add('active'); slidesEl.append(el); });
+  carousel.append(slidesEl);
+
+  let activeIdx = 0, dots = [];
+  const heroGoto = (i) => {
+    activeIdx = i;
+    inners.forEach((el, j) => el.classList.toggle('active', j === i));
+    dots.forEach((dot, j) => dot.classList.toggle('on', j === i));
+  };
+
+  if (slides.length > 1) {
+    const prev = mk('button', 'hero-arrow prev'); prev.append(icon('chevron-l'));
+    prev.onclick = () => heroGoto((activeIdx - 1 + slides.length) % slides.length);
+    const next = mk('button', 'hero-arrow next'); next.append(icon('chevron-r'));
+    next.onclick = () => heroGoto((activeIdx + 1) % slides.length);
+    const dotsEl = mk('div', 'hero-dots');
+    dots = slides.map((_, i) => {
+      const dot = mk('button', 'hero-dot' + (i === 0 ? ' on' : ''));
+      dot.onclick = () => heroGoto(i);
+      dotsEl.append(dot);
+      return dot;
+    });
+    carousel.append(prev, next, dotsEl);
+  }
+
+  heroSec.replaceChildren(carousel);
+
+  const canAuto = () => slides.length > 1 && !document.body.classList.contains('reduced-motion');
+  const start = () => {
+    if (!canAuto()) return;
+    clearInterval(heroTimer);
+    heroTimer = setInterval(() => {
+      if (!slidesEl.isConnected) { clearInterval(heroTimer); return; }
+      heroGoto((activeIdx + 1) % slides.length);
+    }, 7000);
+  };
+  if (canAuto()) {
+    start();
+    heroSec.onmouseenter = () => clearInterval(heroTimer);
+    heroSec.onmouseleave = start;
+  }
 }
 
 // ---------- data helpers ----------
@@ -180,14 +283,29 @@ function cachedLiveNow() {
     .sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
 }
 
-// Trending = discover-by-popularity (the app has no /trending path; this reuses the browse endpoint).
-let trendCache = null; // { data, at } — re-entering the dashboard within the TTL doesn't refetch
-const TREND_TTL = 300000;
-async function fetchTrending() {
-  if (trendCache && Date.now() - trendCache.at < TREND_TTL) return trendCache.data;
-  const data = await tmdbGet('/discover/movie', { sort_by: 'popularity.desc' });
-  trendCache = { data, at: Date.now() };
-  return data;
+// Synthetic shelves = TMDB /discover slices (the app has no /trending path). Each rail id maps to a
+// discover query; results are cached per id for RAIL_TTL so re-entering the dashboard doesn't refetch.
+const railCache = new Map();  // id -> { at, results }
+const RAIL_TTL = 300000;      // 5 min
+const today = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+function railQuery(id) {
+  if (id.startsWith('genre:')) return { path: '/discover/movie', query: { with_genres: id.slice(6), sort_by: 'popularity.desc' } };
+  return ({
+    trending: { path: '/discover/movie', query: { sort_by: 'popularity.desc' } },
+    toprated: { path: '/discover/movie', query: { sort_by: 'vote_average.desc', 'vote_count.gte': 200 } },
+    newest:   { path: '/discover/movie', query: { sort_by: 'primary_release_date.desc', 'vote_count.gte': 10, 'primary_release_date.lte': today() } },
+    upcoming: { path: '/discover/movie', query: { sort_by: 'primary_release_date.asc', 'primary_release_date.gte': today() } },
+  })[id];
+}
+async function discoverRail(id) {
+  const key = id === 'top10' ? 'trending' : id; // top10 shares trending's data
+  const hit = railCache.get(key);
+  if (hit && Date.now() - hit.at < RAIL_TTL) return hit.results;
+  const q = railQuery(key);
+  const d = q ? await tmdbGet(q.path, q.query) : null;
+  const results = ((d && d.results) || []).filter((r) => r.poster_path || r.title || r.name).slice(0, DASH_RAIL_MAX);
+  railCache.set(key, { at: Date.now(), results }); capMap(railCache, 24);
+  return results;
 }
 
 // First-run setup card — the one place that checks BOTH missing pieces. Gated on emptiness (no
@@ -217,24 +335,47 @@ function onboardingCard() {
   return cardEl;
 }
 
+// Generic rail fill: swap the skeletons for the descriptor's cards, or remove the section if it's empty.
+// The 'live' rail is bespoke — cache-only (NEVER fetches); a cold cache with a live catalog shows a hint.
+async function fillRail(sec, r) {
+  const rail = sec.querySelector('.rail');
+  if (r.special === 'live') {
+    const items = cachedLiveNow().slice(0, DASH_RAIL_MAX).map(matchCard);
+    if (items.length) rail.replaceChildren(...items);
+    else if (sources.some((s) => s.category === 'live' && s.catalogUrl)) {
+      // cold cache: point at the Live tab (which fetches + warms the cache) instead of fetching here
+      const hint = mk('button', 'set-btn dash-live-hint', 'Open Live TV to load matches');
+      hint.onclick = () => { browseTab = 'live'; showBrowse(); };
+      rail.replaceChildren(hint);
+    } else sec.remove();
+    return;
+  }
+  let nodes = [];
+  try { nodes = await r.build(); } catch {}
+  if (!sec.isConnected) return; // dashboard re-rendered / navigated away while building
+  if (!nodes.length) { sec.remove(); return; }
+  rail.replaceChildren(...nodes);
+  rail.dispatchEvent(new Event('scroll')); // recompute the edge fades for the new width
+}
+
 async function renderDashboard() {
+  clearInterval(heroTimer); heroTimer = null; // idempotent: kill any prior carousel timer before re-render
+  railObserver?.disconnect();                 // and any prior lazy-fill observer (a fresh one is built below)
   const el = $('dashboard');
   if (!tmdbKey && !sources.length) { el.replaceChildren(onboardingCard()); return; }
-
-  const nodes = [];
 
   // hero placeholder (reserved-height skeleton) — filled or removed by fillHero
   let heroSec = null;
   if (tmdbKey) {
     heroSec = mk('div', 'dash-hero');
     heroSec.append(mk('div', 'skel skel-hero'));
-    nodes.push(heroSec);
   }
 
   // Single-fetch: the hero and resume-card[0] are the same show, so start ONE detail fetch and seed
-  // the meta cache with its mapped result BEFORE the resume rail builds. card[0]'s idle tmdbMeta then
+  // the meta cache with its mapped result BEFORE the Continue rail builds. card[0]'s idle tmdbMeta then
   // hits the seeded entry (no second fetch), and fillHero reuses the raw detail. Seed with the same
-  // delete-on-null/reject rule tmdbMeta uses, so a bad/failed payload can't poison the session.
+  // delete-on-null/reject rule tmdbMeta uses, so a bad/failed payload can't poison the session. Seed
+  // BEFORE the fill loop so the Continue rail's resumeCard[0] (built in fillRail) hits the seeded entry.
   let heroFetch = null;
   const c0 = cont[0], cid0 = c0 && typeOf(c0) !== 'live' && tmdbIdOf(c0.url);
   if (tmdbKey && cid0) {
@@ -246,49 +387,30 @@ async function renderDashboard() {
     tmdbMetaCache.set(k0 + ':' + cid0, seeded);
   }
 
-  const contRail = dashRail('Continue Watching', showHome,
-    cont.slice(0, DASH_RAIL_MAX).map(resumeCard));
-  if (contRail) nodes.push(contRail);
-
-  // Trending paints skeleton cards and fills in when the fetch resolves — never blocks the dashboard.
-  let trendSec = null;
-  if (tmdbKey) {
-    trendSec = dashRail('Trending', () => { browseTab = 'movie'; showBrowse(); }, skeletonCards(6));
-    nodes.push(trendSec);
+  // Build every enabled rail's shell (skeletons now, real cards on fill). _rail is stashed so R3's lazy
+  // observer can fill on demand; R1 fills them all eagerly below. Empties remove themselves in fillRail.
+  const sections = [];
+  for (const r of enabledRails()) {
+    const sec = railShell(r.title, r.seeAll, r.skel, r.skelN);
+    sec._rail = r;
+    sections.push(sec);
   }
 
-  const liveNow = cachedLiveNow().slice(0, DASH_RAIL_MAX).map(matchCard);
-  if (liveNow.length) {
-    nodes.push(dashRail('Live now', () => { browseTab = 'live'; showBrowse(); }, liveNow));
-  } else if (sources.some((s) => s.category === 'live' && s.catalogUrl)) {
-    // cold cache: point at the Live tab (which fetches + warms the cache) instead of fetching here
-    const sec = mk('div', 'dash-section');
-    const head = mk('div', 'dash-head');
-    head.append(mk('h2', null, 'Live now'));
-    sec.append(head);
-    const hint = mk('button', 'set-btn dash-live-hint', 'Open Live TV to load matches');
-    hint.onclick = () => { browseTab = 'live'; showBrowse(); };
-    sec.append(hint);
-    nodes.push(sec);
-  }
-
+  const nodes = heroSec ? [heroSec, ...sections] : [...sections];
   if (!nodes.length) nodes.push(emptyMsg('Nothing here yet — watch something and it shows up, or add a TMDB API key in Settings to see Trending.'));
   el.replaceChildren(...nodes);
 
-  if (heroSec) fillHero(heroSec, heroFetch);
+  if (heroSec) fillHeroCarousel(heroSec, heroFetch);
 
-  if (trendSec) {
-    let results = [];
-    try {
-      const d = await fetchTrending();
-      results = ((d && d.results) || []).filter((r) => r.poster_path || r.title || r.name).slice(0, DASH_RAIL_MAX);
-    } catch {}
-    if (!trendSec.isConnected) return; // dashboard re-rendered / navigated away while fetching
-    if (!results.length) trendSec.remove();
-    else {
-      const rail = trendSec.querySelector('.rail');
-      rail.replaceChildren(...results.map((r) => posterCard('movie', r)));
-      rail.dispatchEvent(new Event('scroll')); // re-evaluate the edge fades for the new width
-    }
-  }
+  // Lazy-fill discover-backed rails below the fold on scroll, but fill the first 2 rails + all special
+  // rails (continue/live — local/cache, no fetch) immediately: T49 asserts the Live match-cards and the
+  // Trending cards (rail index 1) render with no scroll. root MUST be #dashboard (it's the scroller).
+  railObserver = new IntersectionObserver((ents) => {
+    for (const e of ents) if (e.isIntersecting) { railObserver.unobserve(e.target); fillRail(e.target, e.target._rail); }
+  }, { root: $('dashboard'), rootMargin: '400px' });
+  const EAGER = 2;
+  sections.forEach((sec, i) => {
+    if (i < EAGER || sec._rail.special) fillRail(sec, sec._rail); // first 2 + all special fill now
+    else railObserver.observe(sec);                               // discover-backed below-fold rails: on scroll
+  });
 }

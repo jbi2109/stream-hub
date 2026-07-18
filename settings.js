@@ -9,6 +9,7 @@ const SETTINGS_DEFAULTS = {
   posterSize: 160,          // grid minmax min, px
   landingView: 'dashboard', // 'dashboard' | 'browse' | 'library' — first view on launch
   defaultBrowseTab: 'movie',// 'movie' | 'tv' | 'anime'
+  dashRails: [...DEFAULT_DASH_RAILS], // dashboard rails: order = render order, membership = enabled (DEFAULT_DASH_RAILS + DASH_RAILS live in dashboard.js)
   watchRegion: 'US',        // TMDB "where to watch" region
   trackContinue: true,      // auto-add to Continue Watching as you watch
   autoAdvanceLater: true,   // Watch Later follows the episode you're on
@@ -112,6 +113,55 @@ function actionButton(label, cls, onClick) {
   return b;
 }
 
+// Ordered checkbox list of dashboard rails: checked = enabled (a member of settings.dashRails), shown
+// in render order; ▲/▼ reorder among the enabled rows. Enabled rails render first (saved order), then
+// the disabled ones. Any change rebuilds settings.dashRails from the checked rows in their visual order,
+// saves, and re-renders the dashboard if it's showing. Uses DASH_RAILS/RAIL_BY_ID from dashboard.js.
+function dashRailsControl() {
+  const box = mk('div', 'dashrails');
+  const apply = () => { saveSettings(); render(); if (!$('dashboard').hidden) renderDashboard(); };
+  // checkbox toggle: rebuild membership from the checked rows, keeping their current visual order
+  const commit = () => {
+    settings.dashRails = [...box.querySelectorAll('.dashrail-row')]
+      .filter((row) => row.querySelector('input').checked).map((row) => row.dataset.id);
+    apply();
+  };
+  // ▲/▼: swap an enabled rail with its enabled neighbour in settings.dashRails
+  const reorder = (id, delta) => {
+    const ids = (settings.dashRails || DEFAULT_DASH_RAILS).slice();
+    const i = ids.indexOf(id), j = i + delta;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    settings.dashRails = ids;
+    apply();
+  };
+  function render() {
+    const order = settings.dashRails || DEFAULT_DASH_RAILS;
+    const enabled = order.map((id) => RAIL_BY_ID[id]).filter(Boolean);
+    const enabledIds = new Set(enabled.map((r) => r.id));
+    const disabled = DASH_RAILS.filter((r) => !enabledIds.has(r.id));
+    const rows = [...enabled, ...disabled];
+    box.replaceChildren(...rows.map((r, i) => {
+      const row = mk('div', 'dashrail-row');
+      row.dataset.id = r.id;
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = enabledIds.has(r.id);
+      cb.onchange = commit;
+      const up = mk('button', 'dashrail-move', '▲');
+      const down = mk('button', 'dashrail-move', '▼');
+      up.disabled = !cb.checked || i === 0;                    // enabled rows are first; i is their rank
+      down.disabled = !cb.checked || i >= enabled.length - 1;
+      up.onclick = () => reorder(r.id, -1);
+      down.onclick = () => reorder(r.id, 1);
+      row.append(cb, mk('span', 'dashrail-name', r.title), up, down);
+      return row;
+    }));
+  }
+  render();
+  return box;
+}
+
 // ---- panels ----
 
 function buildGeneral() {
@@ -143,6 +193,9 @@ function buildGeneral() {
   p.append(settingRow('Default Browse tab', 'Which tab Browse opens on.',
     selectControl(settings.defaultBrowseTab, [['movie', 'Movies'], ['tv', 'TV'], ['anime', 'Anime']],
       (v) => { settings.defaultBrowseTab = v; saveSettings(); })));
+
+  p.append(settingRow('Dashboard rails', 'Choose which rails appear on the dashboard and their order.',
+    dashRailsControl()));
 
   return p;
 }

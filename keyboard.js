@@ -196,10 +196,14 @@ function moveGrid(key) {
       const next = Math.max(0, Math.min(items.length - 1, i + (key === 'ArrowRight' ? 1 : -1)));
       if (next !== i) { items[next].focus(); items[next].scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
     } else {
+      // hop to the nearest rail in that direction that already has a focusable item — lazy rails below
+      // the fold are skeleton-only (no NAV_SEL child) until scrolled into view, so skip over them.
       const rails = [...$('dashboard').querySelectorAll('.rail')];
-      const target = rails[rails.indexOf(container) + (key === 'ArrowDown' ? 1 : -1)];
-      const first = target && target.querySelector(NAV_SEL);
-      if (first) { first.focus(); first.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      const step = (key === 'ArrowDown') ? 1 : -1;
+      for (let ti = rails.indexOf(container) + step; ti >= 0 && ti < rails.length; ti += step) {
+        const firstItem = rails[ti].querySelector(NAV_SEL);
+        if (firstItem) { firstItem.focus(); firstItem.scrollIntoView({ block: 'nearest', inline: 'nearest' }); break; }
+      }
     }
     return true;
   }

@@ -112,7 +112,7 @@ function pillSelect(firstLabel, firstValue, pairs, value, onChange) {
   return sel;
 }
 
-function posterCard(kind, item) {
+function posterCard(kind, item, rank) {
   const el = document.createElement('div');
   el.className = 'card poster-card';
   el.tabIndex = 0;
@@ -139,6 +139,7 @@ function posterCard(kind, item) {
   const meta = [year, item.vote_average ? `★ ${item.vote_average.toFixed(1)}` : ''].filter(Boolean).join('  ·  ');
   if (meta) info.append(mk('div', 'poster-info-meta', meta));
   wrap.append(info);
+  if (rank) wrap.append(mk('span', 'rank-badge', String(rank).padStart(2, '0'))); // TOP 10 numbered overlay
   el.append(wrap);
   el.onclick = () => showDetail(kind, item.id);
   return el;
