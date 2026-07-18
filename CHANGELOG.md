@@ -5,6 +5,26 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.4.1 — YouTube ad-blocking & self-updating ad lists (July 2026)
+
+Ad-blocking got a real upgrade, prompted by pre-roll ads slipping through on YouTube.
+
+- **YouTube pre-roll/mid-roll blocking re-enabled** — the app previously withheld uBlock's YouTube
+  scriptlets because an old engine bug could black-screen the player; the upstream fix landed, so
+  YouTube now gets the full treatment. Still best-effort (YouTube actively fights blockers). If a
+  YouTube video ever goes black, flip **Settings → Privacy → YouTube ad-blocking** off and reload
+  the video.
+- **Fixed: full filter lists never actually cached** — a bug silently downgraded the engine to a
+  reduced ads-only list on most launches. The full uBlock-style lists (network + cosmetic +
+  scriptlets) now download once, cache properly, and load instantly on later launches.
+- **Ad lists auto-refresh while the app runs** — stale lists rebuild in the background on the
+  schedule set in Settings → Advanced (default daily), with no interruption to playback; if a
+  refresh fails, the previous lists stay active. A new **Update ad lists now** button plus a status
+  line ("Full lists · updated 3h ago") live in Settings → Privacy.
+- **Fixed: rail edge fades could fail to appear** on the Dashboard until you scrolled.
+
+---
+
 ## v0.4.0 — The cinematic pass (July 2026)
 
 The first release of the v0.4 series — a visual overhaul informed by a 5-agent study of the best

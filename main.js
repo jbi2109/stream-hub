@@ -41,6 +41,7 @@ const MAIN_DEFAULTS = {
   googleUaSpoof: true,     // present Google sign-in as Firefox ("browser not secure" fix)
   autoUpdateCheck: true,   // check for updates on launch
   catalogTimeoutSec: 60,   // live-catalog fetch abort
+  youtubeScriptlets: true, // inject uBlock scriptlets on YouTube to block pre-roll/mid-roll ads (kill-switch)
 };
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 let ms = { ...MAIN_DEFAULTS };
@@ -144,44 +145,82 @@ app.on('web-contents-created', (_e, contents) => {
 // the video domain and need cosmetic/scriptlet injection.
 let blocker = null;          // kept so the ⚙ ad-block toggle can disable/re-enable live
 let blockingEnabled = false;
-async function enableAdblock() {
-  if (process.env.SH_TEST_BLOCK_PATTERN) {
-    blocker = ElectronBlocker.parse(process.env.SH_TEST_BLOCK_PATTERN); // deterministic e2e rule
-  } else {
+let adblockEngine = 'off';   // 'off' | 'ads-only' | 'full' — surfaced to the Privacy panel via adblock-status
+let adlistsBuiltAt = 0;      // ms epoch of the last successful build (drives auto-refresh + the status line)
+let buildInFlight = null;    // coalesces concurrent builds onto one promise
+
+// Build (or rebuild) the ad-block engine. No session side effects — the caller swaps it in via swapBlocker.
+// Concurrent callers coalesce onto the same in-flight build.
+function buildBlocker({ forceRefresh } = {}) {
+  if (buildInFlight) return buildInFlight;
+  const p = (async () => {
+    if (process.env.SH_TEST_BLOCK_PATTERN) {
+      const b = ElectronBlocker.parse(process.env.SH_TEST_BLOCK_PATTERN); // deterministic e2e rule
+      adblockEngine = 'full'; adlistsBuiltAt = Date.now();
+      return b;
+    }
     const cachePath = path.join(app.getPath('userData'), 'adblock-full.bin');
+    const oldPath = cachePath + '.old';
     // ponytail: refresh age is the ⚙ adlistRefreshHours setting; YouTube fights blockers so stale lists rot
-    let fresh = false;
-    try { fresh = (Date.now() - fs.statSync(cachePath).mtimeMs) < (ms.adlistRefreshHours || 24) * 3600 * 1000; } catch {}
-    const cache = fresh
-      ? { path: cachePath, read: fs.promises.readFile, write: fs.promises.writeFile }
-      : { path: cachePath, write: fs.promises.writeFile }; // missing/stale -> fetch latest lists
+    let stale = true;
+    try { stale = (Date.now() - fs.statSync(cachePath).mtimeMs) >= (ms.adlistRefreshHours || 24) * 3600 * 1000; } catch {}
+    // FULL cache object ALWAYS (incl. read): a missing/corrupt/version-mismatched bin makes read() reject and
+    // the engine self-heals by refetching the lists + rewriting the cache. (The old bug passed no `read` when
+    // the bin was stale/missing → fromCached's unconditional read(path) threw → silent downgrade to ads-only,
+    // and adblock-full.bin was never written.)
+    const cache = { path: cachePath, read: fs.promises.readFile, write: fs.promises.writeFile };
+    // Rotate the current bin aside when we mean to refetch, so a failed download can fall back to the stale one.
+    if (stale || forceRefresh) { try { fs.renameSync(cachePath, oldPath); } catch {} } // file may not exist yet
     try {
-      blocker = await ElectronBlocker.fromPrebuiltFull(fetch, cache);
+      const b = await ElectronBlocker.fromPrebuiltFull(fetch, cache);
+      adblockEngine = 'full'; adlistsBuiltAt = Date.now();
+      try { fs.rmSync(oldPath, { force: true }); } catch {} // fresh build landed — drop the backup
+      return b;
     } catch (e) {
-      console.error('full adblock list unavailable, trying ads-only:', e.message);
+      console.error('full adblock list unavailable, trying fallbacks:', e.message);
+      // A stale full engine beats none: restore the rotated-aside bin and load it offline. Still full lists,
+      // just old — adlistsBuiltAt keeps the last real fetch time so the status reads stale, not "updated now".
       try {
-        blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch);
-      } catch (e2) {
-        console.error('adblock unavailable, continuing without:', e2.message);
-        return;
+        if (fs.existsSync(oldPath)) {
+          fs.renameSync(oldPath, cachePath);
+          const b = await ElectronBlocker.fromPrebuiltFull(fetch, cache);
+          adblockEngine = 'full';
+          return b;
+        }
+      } catch (e2) { console.error('stale full-list restore failed:', e2.message); }
+      try {
+        const b = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch);
+        adblockEngine = 'ads-only';
+        return b;
+      } catch (e3) {
+        console.error('adblock unavailable, continuing without:', e3.message);
+        adblockEngine = 'off';
+        return null;
       }
     }
-  }
-  // YouTube: inject cosmetic element-hiding CSS (hides Sponsored feed tiles + masthead) but NOT the
-  // scriptlets. uBlock's YouTube scriptlets (json-prune ytInitialPlayerResponse, set-constant …) mangle
-  // the player's init data → black, silent player; CSS element-hiding can't. `getInjectionRules:false`
-  // asks the engine for styles without the +js() scriptlets. Ghostery calls onInjectCosmeticFilters
-  // fresh per frame, so wrapping it here scopes this to YouTube; every other site keeps full blocking,
-  // and network blocking stays on everywhere.
+  })();
+  buildInFlight = p;
+  p.finally(() => { if (buildInFlight === p) buildInFlight = null; }); // clear when settled
+  return p;
+}
+
+// Layer the YouTube ad-block policy onto a freshly built engine. By default YT hosts get FULL injection
+// (incl. uBlock's +js() scriptlets) — the ONLY thing that blocks YT pre-roll/mid-roll ads, and 2.18.1's
+// scriptlets inject safely via the engine's try/catch'd executeJavaScript. The ⚙ youtubeScriptlets
+// kill-switch (read LIVE per frame — no rebuild) falls back to cosmetic-CSS-only on YT hosts: hides
+// Sponsored feed tiles / masthead but withholds scriptlets, for the rare case a YT video goes black.
+// Ghostery calls onInjectCosmeticFilters fresh per frame, so wrapping it here scopes this to YouTube.
+function applyYtPolicy(b) {
+  if (!b) return b;
   const YT_HOSTS = /(^|\.)(youtube\.com|youtube-nocookie\.com|googlevideo\.com|youtu\.be)$/i;
   const ytTestHost = process.env.SH_TEST_YT_HOST; // e2e hook: treat a fixture host as "YouTube"
-  const origInject = blocker.onInjectCosmeticFilters;
-  blocker.onInjectCosmeticFilters = async (event, url, msg) => {
+  const origInject = b.onInjectCosmeticFilters;
+  b.onInjectCosmeticFilters = async (event, url, msg) => {
     try {
       const host = new URL(url).hostname;
-      if (YT_HOSTS.test(host) || (ytTestHost && url.includes(ytTestHost))) {
+      if (ms.youtubeScriptlets === false && (YT_HOSTS.test(host) || (ytTestHost && url.includes(ytTestHost)))) {
         const first = msg === undefined;
-        const { active, styles } = blocker.getCosmeticsFilters({
+        const { active, styles } = b.getCosmeticsFilters({
           domain: host.split('.').slice(-2).join('.'), hostname: host, url,
           classes: msg?.classes, hrefs: msg?.hrefs, ids: msg?.ids,
           getBaseRules: first, getInjectionRules: false, getExtendedRules: false,
@@ -194,13 +233,27 @@ async function enableAdblock() {
     } catch {}
     return origInject(event, url, msg);
   };
+  return b;
+}
 
-  blocker.enableBlockingInSession(session.defaultSession); // webview shares default session
+// Hot-swap the live engine. Disable the OLD one FIRST (Electron allows ONE webRequest listener per event,
+// and the adapter's ipcMain.handle channels THROW on duplicate registration), then enable the NEW one.
+function swapBlocker(newB) {
+  if (blockingEnabled && blocker) blocker.disableBlockingInSession(session.defaultSession);
+  newB.enableBlockingInSession(session.defaultSession); // webview shares default session
+  blocker = newB;
   blockingEnabled = true;
 }
 
+async function enableAdblock() {
+  const b = applyYtPolicy(await buildBlocker());
+  if (!b) return; // total build failure — leave blocking off (engine 'off')
+  swapBlocker(b);
+}
+
 // Sync blocking with the ⚙ adblock setting — live, no restart. First enable builds the engine lazily
-// (covers launching with ad-block off, then turning it on).
+// (covers launching with ad-block off, then turning it on); the off→on path reuses the existing wrapped
+// blocker via enableBlockingInSession, so a toggle never rebuilds/refetches.
 async function applyAdblock() {
   const want = ms.adblock !== false;
   if (want === blockingEnabled) return;
@@ -210,6 +263,20 @@ async function applyAdblock() {
   } else if (blocker) {
     blocker.disableBlockingInSession(session.defaultSession);
     blockingEnabled = false;
+  }
+}
+
+// Manual ("Update ad lists now") / automatic ad-list refresh: rebuild from fresh lists and hot-swap.
+// On any failure, log and keep the current engine enabled (a working stale blocker beats a dropped one).
+async function refreshAdlists() {
+  try {
+    const b = applyYtPolicy(await buildBlocker({ forceRefresh: true }));
+    if (!b) throw new Error('ad-list rebuild produced no engine'); // total failure: keep the old one live
+    swapBlocker(b);
+    return { ok: true, at: adlistsBuiltAt, engine: adblockEngine };
+  } catch (e) {
+    console.error('adlist refresh failed, keeping current lists:', e.message);
+    return { ok: false, at: adlistsBuiltAt, engine: adblockEngine, error: e.message };
   }
 }
 
@@ -302,6 +369,13 @@ app.whenReady().then(() => {
     cb({ requestHeaders: details.requestHeaders });
   });
   if (ms.adblock !== false) enableAdblock().catch((e) => console.error('adblock init failed:', e.message));
+  // Auto-refresh the ad-lists while the app runs, once they age past the cache-staleness threshold.
+  // Skipped under the deterministic test engine (parse() lists never go stale / need re-fetching).
+  if (!process.env.SH_TEST_BLOCK_PATTERN) {
+    setInterval(() => {
+      if (blockingEnabled && Date.now() - adlistsBuiltAt > (ms.adlistRefreshHours || 24) * 3600e3) refreshAdlists();
+    }, 3600e3);
+  }
 
   // TMDB catalog fetch (runs here to avoid the renderer CSP). Renderer passes api_key.
   const TMDB_BASE = process.env.SH_TEST_TMDB_BASE || 'https://api.themoviedb.org';
@@ -326,6 +400,10 @@ app.whenReady().then(() => {
     await applyAdblock().catch((e) => console.error('adblock toggle:', e.message));
     return { ok: true };
   });
+
+  // ⚙ ad-list refresh + status for the Privacy panel ("Update ad lists now" + the status line).
+  ipcMain.handle('refresh-adlists', () => refreshAdlists());
+  ipcMain.handle('adblock-status', () => ({ enabled: blockingEnabled, engine: adblockEngine, at: adlistsBuiltAt }));
 
   // Version string for the sidebar footer, and a manual "check for updates" trigger.
   ipcMain.handle('app-version', () => app.getVersion());

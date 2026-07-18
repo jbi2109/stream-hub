@@ -23,7 +23,9 @@ function dashRail(title, seeAll, items) {
     rail.classList.toggle('fade-r', rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 8);
   };
   rail.onscroll = fades;
-  requestAnimationFrame(fades);
+  // ResizeObserver (not a one-shot rAF): fires once layout actually settles — however late the rail
+  // attaches or images shift it — and again on window resizes, so the fade state can't go stale.
+  new ResizeObserver(fades).observe(rail);
   sec.append(head, rail);
   return sec;
 }

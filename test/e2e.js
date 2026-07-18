@@ -1207,10 +1207,11 @@ async function main() {
   await closeTarget(loginWin.id);
   ok('login: in-page nav to a google-login host opens a standalone window, not the webview');
 
-  // 32z. v0.2.3: YouTube hosts get cosmetic element-hiding CSS (hides Sponsored feed tiles / masthead)
-  //       but NOT scriptlets (which break the player — enforced by getInjectionRules:false in main.js +
-  //       the manual player check; scriptlet bodies aren't resolvable under the parse() test engine).
-  //       The '###sh-cosmetic' rule hides #sh-cosmetic on the normal host AND the YouTube host.
+  // 32z. v0.4.1: YouTube hosts now get FULL injection by default (scriptlets ON — 2.18.1 injects them
+  //       safely, and scriptlets are the only thing that blocks YT pre-rolls). Cosmetic element-hiding
+  //       (Sponsored feed tiles / masthead) still applies; the '###sh-cosmetic' rule hides #sh-cosmetic on
+  //       the normal host AND the YouTube host. The cosmetic-only carve-out is now the youtubeScriptlets=
+  //       false kill-switch path (exercised by test 37b), not the default.
   await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/cosmetic-check'`);
   const ccTarget = await until(async () =>
     (await targets()).find((t) => t.url.startsWith(`${SITE}/cosmetic-check`) && t.webSocketDebuggerUrl), 'guest for cosmetic-check');
@@ -1224,7 +1225,7 @@ async function main() {
   await until(() => ytGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display === 'none'`),
     'cosmetic CSS also injected on the YouTube host (sponsored-tile hiding restored)');
   ytGuest.close();
-  ok('adblock: YouTube gets cosmetic CSS (hides sponsored tiles), scriptlets withheld');
+  ok('adblock: YouTube gets full injection by default (scriptlets on); cosmetic hiding still applies');
 
   // 33. WebAuthn neutered in guest pages (kills Google's "Choose a passkey" prompt)
   await page.eval(`
@@ -1289,6 +1290,60 @@ async function main() {
   assert.deepStrictEqual(msFile.extraAuthHosts, [UA_ECHO_HOST], 'extraAuthHosts should persist as an array');
   stGuest.close();
   ok('⚙ settings: changes persist to userData/settings.json for the next launch');
+
+  // ---------- v0.4.1 YouTube scriptlet kill-switch + ad-list refresh/status ----------
+
+  // 37b. YouTube ad-blocking kill-switch: turning youtubeScriptlets OFF falls back to the cosmetic-only
+  //      carve-out on YT hosts (still hides #sh-cosmetic), and persists youtubeScriptlets:false.
+  const ytToggle = `[...document.querySelectorAll('#settings .set-row')].find(r => r.textContent.includes('YouTube ad-blocking')).querySelector('input[type=checkbox]')`;
+  await page.eval(`${ytToggle}.click()`); // off -> cosmetic-only carve-out on YT hosts
+  await sleep(400); // let set-setting land in the main process
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${YT_FIX}/'`);
+  const kkTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(YT_FIX) && t.webSocketDebuggerUrl), 'guest for yt-fix (kill-switch)');
+  const kkGuest = await CDP.connect(kkTarget.webSocketDebuggerUrl);
+  await until(() => kkGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display === 'none'`),
+    'cosmetic-only carve-out still hides #sh-cosmetic on YT with scriptlets off');
+  kkGuest.close();
+  const msKill = JSON.parse(fs.readFileSync(path.join(PROFILE, 'settings.json'), 'utf8'));
+  assert.strictEqual(msKill.youtubeScriptlets, false, 'youtubeScriptlets:false should persist to settings.json');
+  await page.eval(`${ytToggle}.click()`); // back on (full injection default)
+  await sleep(400);
+  ok('⚙ YouTube kill-switch: cosmetic-only carve-out hides sponsored tiles; persists youtubeScriptlets');
+
+  // 37c. sh.refreshAdlists() hot-swaps the engine with the ordered disable→enable — network blocking must
+  //      survive the swap AND the YT/cosmetic wrapper must be re-applied on the new engine.
+  const refreshRes = await page.eval(`sh.refreshAdlists()`);
+  assert.strictEqual(refreshRes.ok, true, 'refreshAdlists should report ok');
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/post-refresh'`);
+  const prTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(`${SITE}/post-refresh`) && t.webSocketDebuggerUrl), 'guest after refresh');
+  const prGuest = await CDP.connect(prTarget.webSocketDebuggerUrl);
+  assert.strictEqual(await prGuest.eval(`fetch('${SITE}/ads-test-marker.js').then(() => 'loaded', () => 'blocked')`), 'blocked',
+    'network blocking must survive the engine swap');
+  await until(() => prGuest.eval(`getComputedStyle(document.getElementById('sh-cosmetic')).display === 'none'`),
+    'cosmetic wrapper re-applied on the swapped-in engine');
+  prGuest.close();
+  ok('⚙ refreshAdlists: ordered swap keeps network blocking + re-applies the cosmetic wrapper');
+
+  // 37d. sh.adblockStatus() reports the live engine state (test mode builds the parse() engine as 'full').
+  const adState = await page.eval(`sh.adblockStatus()`);
+  assert.strictEqual(adState.enabled, true, 'adblockStatus.enabled should be true');
+  assert.ok(adState.at > 0, 'adblockStatus.at should be a real build timestamp');
+  assert.strictEqual(adState.engine, 'full', 'test-mode engine should report as full');
+  ok('⚙ adblockStatus reports enabled/full with a build timestamp');
+
+  // 37e. Privacy panel renders the YouTube toggle, the Update button, and the live status line.
+  await page.eval(`document.getElementById('settings-btn').click()`);
+  await page.eval(`[...document.querySelectorAll('#settings .settings-tabs .tab')].find(t => t.textContent === 'Privacy & blocking').click()`);
+  assert.ok(await page.eval(`[...document.querySelectorAll('#settings .set-panel:not([hidden]) .set-row')].some(r => r.textContent.includes('YouTube ad-blocking'))`),
+    'Privacy panel should have the YouTube ad-blocking row');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#settings .set-panel:not([hidden]) button')].some(b => b.textContent === 'Update ad lists now')`),
+    'Privacy panel should have the Update ad lists button');
+  assert.ok(await page.eval(`!!document.getElementById('adblock-state')`), 'Privacy panel should have the #adblock-state status node');
+  await until(() => page.eval(`document.getElementById('adblock-state').textContent.includes('Full lists')`),
+    '#adblock-state resolves to Full lists in test mode');
+  ok('⚙ Privacy panel: YouTube toggle + Update button + live ad-block status');
 
   // ---------- v0.3.2 topbar episode switcher + auto-play next ----------
 

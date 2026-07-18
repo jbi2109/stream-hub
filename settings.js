@@ -18,6 +18,7 @@ const SETTINGS_DEFAULTS = {
   captureDebounce: 600,     // ms before a watched page is captured
   // ⚙ main-process settings (mirrored to userData/settings.json via sh.setSetting; live-applied)
   adblock: true,            // ad-blocking on/off
+  youtubeScriptlets: true,  // YT pre-roll blocking via uBlock scriptlets; kill-switch
   extraAuthHosts: '',       // comma-separated extra hosts allowed to open login pop-ups
   googleUaSpoof: true,      // present Google sign-in as Firefox ("browser not secure" fix)
   autoUpdateCheck: true,    // check for updates on launch
@@ -32,6 +33,7 @@ function saveSettings() { store('settings', settings); }
 function mainSubset(s) {
   return {
     adblock: s.adblock !== false,
+    youtubeScriptlets: s.youtubeScriptlets !== false,
     progressPollMs: +s.progressPollMs || 5000,
     adlistRefreshHours: +s.adlistRefreshHours || 24,
     extraAuthHosts: String(s.extraAuthHosts || '').split(',').map((x) => x.trim()).filter(Boolean),
@@ -187,11 +189,53 @@ function buildPlayback() {
   return p;
 }
 
+// Fills #adblock-state from the main-process engine status, and greys out the YouTube toggle + the Update
+// button while master ad-blocking is off. Fire-and-forget; re-run on entering the Privacy tab (panels are
+// built once at load, before the async engine build finishes). Reuses dashboard.js's global relTime().
+async function renderAdblockState() {
+  const el = document.getElementById('adblock-state');
+  if (!el) return;
+  let st = null;
+  try { st = await window.sh?.adblockStatus?.(); } catch {}
+  const on = !!(st && st.enabled && st.engine !== 'off');
+  if (!on) el.textContent = 'Ad-blocking is off';
+  else if (st.engine === 'ads-only') el.textContent = '⚠ Reduced blocking — full-list download failed';
+  else el.textContent = `Full lists · updated ${relTime(st.at)}`; // relTime already reads "… ago" / "just now"
+  const panel = settingsPanels.privacy;
+  if (panel) {
+    const ytCb = [...panel.querySelectorAll('.set-row')].find((r) => r.textContent.includes('YouTube ad-blocking'))
+      ?.querySelector('input[type=checkbox]');
+    const updBtn = el.closest('.set-btn-row')?.querySelector('button');
+    if (ytCb) ytCb.disabled = !on;
+    if (updBtn) updBtn.disabled = !on;
+  }
+}
+
 function buildPrivacy() {
   const p = mk('div', 'set-panel');
 
+  // await the push BEFORE re-rendering the status: set-setting runs applyAdblock before resolving, so an
+  // un-awaited renderAdblockState would race it and read the PRE-toggle engine state.
+  const pushThenRender = async () => { await pushMain(); renderAdblockState(); };
+
   p.append(settingRow('Ad-blocking', 'Full uBlock-style lists (network + cosmetic). Applies immediately.',
-    toggleControl('adblock', pushMain)));
+    toggleControl('adblock', pushThenRender)));
+
+  p.append(settingRow('YouTube ad-blocking',
+    'Also blocks YouTube pre-roll/mid-roll ads with uBlock scriptlets. Best-effort — YouTube fights back. If a YouTube video ever goes black, turn this off and reload the video.',
+    toggleControl('youtubeScriptlets', pushThenRender)));
+
+  const updRow = mk('div', 'set-btn-row');
+  const updBtn = actionButton('Update ad lists now', null, async () => {
+    const st = document.getElementById('adblock-state');
+    if (st) st.textContent = 'Updating ad lists…';
+    const r = await window.sh.refreshAdlists();
+    if (st && !r.ok) st.textContent = 'Update failed — still using the previous lists';
+    else renderAdblockState();
+  });
+  const stSpan = mk('span', 'set-status', ''); stSpan.id = 'adblock-state';
+  updRow.append(updBtn, stSpan);
+  p.append(settingRow('Ad-block lists', 'Downloaded uBlock-style filter lists; refreshed automatically while the app runs.', updRow));
 
   const hosts = document.createElement('input');
   hosts.className = 'set-input'; hosts.id = 'extra-auth-hosts';
@@ -203,6 +247,7 @@ function buildPrivacy() {
   p.append(settingRow('Google sign-in fix', 'Presents Google login as Firefox so it isn’t blocked as an "insecure browser". Turn off only if sign-in misbehaves.',
     toggleControl('googleUaSpoof', pushMain)));
 
+  renderAdblockState(); // fire-and-forget: fills #adblock-state once the engine has built
   return p;
 }
 
@@ -273,7 +318,7 @@ function buildAdvanced() {
 
   p.append(settingRow('Progress poll interval (ms)', 'How often playback position is read. Applies to newly opened players.',
     numControl('progressPollMs', 1000)));
-  p.append(settingRow('Ad-list refresh (hours)', 'Ad-block list cache age before re-downloading. Applies on next launch.',
+  p.append(settingRow('Ad-list refresh (hours)', 'Lists auto-refresh this often while the app runs.',
     numControl('adlistRefreshHours', 1)));
   p.append(settingRow('Live catalog timeout (s)', 'How long a slow live catalog may load before it is marked failed.',
     numControl('catalogTimeoutSec', 5)));
@@ -317,6 +362,7 @@ function showSettingsTab(id) {
   settingsTab = id;
   for (const [tid, panel] of Object.entries(settingsPanels)) panel.hidden = tid !== id;
   for (const b of settingsTabsBar.children) b.classList.toggle('active', b.dataset.tab === id);
+  if (id === 'privacy') renderAdblockState?.(); // panels build before the engine does — re-query on entry
 }
 
 function buildSettings() {
