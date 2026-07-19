@@ -133,7 +133,7 @@ body {
 webview { width: 100%; height: 100%; }
 webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 
-#home, #browse, #detail, #settings {
+#dashboard, #home, #browse, #detail, #person, #settings {
   position: absolute;
   inset: 0;
   overflow-y: auto;
@@ -655,8 +655,9 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 .detail-info h1 { font-size: 34px; margin-bottom: 6px; }
 .detail-tagline { color: var(--muted); font-style: italic; margin-bottom: 12px; }
 .detail-meta { color: var(--text); font-size: 14px; margin-bottom: 12px; }
+.detail-crew { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
 .detail-genres { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
-.detail-genres span { background: var(--panel-2); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--text); }
+.detail-genres span { background: var(--panel-2); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--text); cursor: pointer; }
 .detail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .detail-actions button {
   background: var(--panel-2); border: none; color: var(--text);
@@ -667,6 +668,20 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 .detail-section { padding: 8px 24px 4px; margin-top: 14px; }
 .detail-section h2 { font-size: 18px; margin-bottom: 10px; }
 .detail-section p { color: var(--text); line-height: 1.55; max-width: 900px; }
+
+/* R2: recommendation/similar rails + photos grid + lightbox */
+.detail-rail { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.detail-rail .card { flex: 0 0 clamp(112px, 30vw, var(--poster-min, 160px)); }
+.detail-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.detail-photos img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; cursor: pointer; }
+.lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 8px; }
+
+/* person / actor page */
+.person-header { display: flex; gap: 20px; padding: 20px 0; align-items: flex-start; }
+.person-photo { width: 180px; border-radius: 12px; object-fit: cover; flex: none; }
+.person-info h1 { font-size: 30px; margin-bottom: 6px; }
+.person-role { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+.person-bio { color: var(--text); line-height: 1.55; max-width: 800px; font-size: 14px; }
 
 .episodes-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .season-select {
@@ -681,9 +696,11 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 .episode-body { padding: 8px 10px; overflow: hidden; }
 .episode-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .episode-ov { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.episode.unaired { opacity: .55; cursor: default; }
+.ep-chip { font-size: 11px; color: var(--muted); }
 
 .cast-row, .providers { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
-.cast { width: 110px; min-width: 110px; text-align: center; }
+.cast { width: 110px; min-width: 110px; text-align: center; cursor: pointer; }
 .cast img { width: 110px; height: 150px; object-fit: cover; border-radius: 8px; background: var(--panel-3); }
 .cast img.noimg { visibility: hidden; }
 .cast-name { font-size: 12px; font-weight: 600; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -830,7 +847,6 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 }
 
 /* ---------- dashboard (landing view) ---------- */
-#dashboard { overflow-y: auto; }
 .dash-section { margin-bottom: 20px; position: relative; } /* anchor for the absolute rail chevrons */
 .dash-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
 .dash-head h2 { margin: 0; font-size: 16px; }

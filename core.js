@@ -129,6 +129,7 @@ function hideAll() {
   $('home').hidden = true;
   $('browse').hidden = true;
   $('detail').hidden = true;
+  $('person').hidden = true;
   $('settings').hidden = true;
   webview.hidden = true;
   window.sh?.setPlayerVisible?.(false); // player hidden -> stop the main-process progress poll

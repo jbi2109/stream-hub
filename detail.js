@@ -1,6 +1,38 @@
 // Native detail page (TMDB metadata; Watch loads the source embed player).
 
 const IMG = (p, size) => (p ? `https://image.tmdb.org/t/p/${size}${p}` : '');
+const fmtRuntime = (m) => m ? (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}` : `${m}m`) : '';
+
+let detailOrigin = null;   // { kind, id } — where the person page returns to
+
+// A horizontal poster rail (Recommendations / More Like This). Empty -> null so the caller hides it.
+function detailRail(title, kind, items) {
+  const rows = (items || []).filter((r) => r.poster_path || r.title || r.name).slice(0, 20);
+  if (!rows.length) return null;                               // empty → hidden (house style)
+  const sec = mk('div', 'detail-section'); sec.append(mk('h2', null, title));
+  const rail = mk('div', 'detail-rail'); rail.append(...rows.map((r) => posterCard(kind, r)));
+  sec.append(rail); return sec;
+}
+
+// Photos lightbox — a single module-level overlay; Esc closes it via keyboard.js's chain.
+let lightboxEl = null;
+function openLightbox(shots, i) {
+  closeLightbox();
+  const ov = mk('div', 'modal-overlay lightbox');
+  const img = document.createElement('img'); img.src = IMG(shots[i].file_path, 'w1280'); ov.append(img);
+  ov.onclick = (e) => { if (e.target === ov) closeLightbox(); };   // click backdrop to close
+  document.body.append(ov); lightboxEl = ov;
+}
+function closeLightbox() { if (lightboxEl) { lightboxEl.remove(); lightboxEl = null; } }
+
+// Genre chip -> browse that genre. Anime detail carries type='tv' (TV genre-ids -> TV tab).
+function openGenre(type, g) {
+  const tab = type === 'movie' ? 'movie' : 'tv';
+  browseTab = tab; browseFilters = loadFiltersFor(tab);
+  browseFilters.genre = String(g.id);
+  browseFiltersAll[tab] = browseFilters; store('browseFilters', browseFiltersAll);
+  browsePage = 1; showBrowse();
+}
 
 function detailBackTo() { showBrowse(); }
 
@@ -24,7 +56,7 @@ async function showDetail(kind, id) {
   let d;
   try {
     // include_image_language is required or TMDB omits logos from the images append
-    d = await tmdbGet(`/${type}/${id}`, { append_to_response: 'credits,videos,external_ids,watch/providers,images', include_image_language: 'en,null' });
+    d = await tmdbGet(`/${type}/${id}`, { append_to_response: 'credits,videos,external_ids,watch/providers,images,recommendations,similar', include_image_language: 'en,null' });
   } catch { d = null; }
   if (!d || d.error || (!d.title && !d.name)) {
     $('detail').replaceChildren(detailHeaderBar(), stateNode('error', 'Could not load details (check your TMDB key).'));
@@ -44,12 +76,12 @@ function detailHeaderBar() {
 }
 
 function renderDetail(kind, type, id, d) {
+  detailOrigin = { kind, id };
   const el = $('detail');
   const title = d.title || d.name;
   const posterUrl = IMG(d.poster_path, 'w342'); // carried into openOn so capture uses the TMDB title/poster
   const year = (d.release_date || d.first_air_date || '').slice(0, 4);
   const rating = d.vote_average ? d.vote_average.toFixed(1) : null;
-  const genres = (d.genres || []).map((g) => g.name);
   const trailer = (d.videos?.results || []).find((v) => v.site === 'YouTube' && /Trailer|Teaser/i.test(v.type))
     || (d.videos?.results || []).find((v) => v.site === 'YouTube');
 
@@ -98,11 +130,22 @@ function renderDetail(kind, type, id, d) {
   const bits = [];
   if (year) bits.push(year);
   if (type === 'tv') { if (d.number_of_seasons) bits.push(`${d.number_of_seasons} Season${d.number_of_seasons > 1 ? 's' : ''}`); if (d.number_of_episodes) bits.push(`${d.number_of_episodes} Episodes`); }
-  else if (d.runtime) bits.push(`${d.runtime}m`);
+  else if (d.runtime) bits.push(fmtRuntime(d.runtime));
   if (rating) bits.push(`★ ${rating}`);
   meta.textContent = bits.join('  ·  ');
   info.append(meta);
-  if (genres.length) { const g = document.createElement('div'); g.className = 'detail-genres'; g.append(...genres.map((n) => { const s = document.createElement('span'); s.textContent = n; return s; })); info.append(g); }
+  const who = type === 'movie' ? (d.credits?.crew || []).find((c) => c.job === 'Director') : (d.created_by || [])[0];
+  if (who) info.append(mk('div', 'detail-crew', `${type === 'movie' ? 'Director' : 'Creator'}: ${who.name}`));
+  if ((d.genres || []).length) {
+    const g = document.createElement('div'); g.className = 'detail-genres';
+    g.append(...d.genres.map((gen) => {
+      const s = document.createElement('span'); s.textContent = gen.name; s.tabIndex = 0;
+      s.onclick = () => openGenre(type, gen);
+      s.onkeydown = (e) => { if (e.key === 'Enter') openGenre(type, gen); };
+      return s;
+    }));
+    info.append(g);
+  }
 
   // TV: season + episode selectors bound to the Watch button
   let curSeason = type === 'tv' ? ((d.seasons || []).find((s) => s.season_number > 0)?.season_number ?? 1) : null;
@@ -199,6 +242,7 @@ function renderDetail(kind, type, id, d) {
     row.className = 'cast-row';
     row.append(...cast.map((c) => {
       const castCard = document.createElement('div'); castCard.className = 'cast';
+      castCard.tabIndex = 0; castCard.onclick = () => showPerson(c.id);
       const img = document.createElement('img'); img.loading = 'lazy'; img.src = IMG(c.profile_path, 'w185'); img.onerror = () => img.classList.add('noimg');
       const nm = document.createElement('div'); nm.className = 'cast-name'; nm.textContent = c.name;
       const ch = document.createElement('div'); ch.className = 'cast-char'; ch.textContent = c.character || '';
@@ -223,6 +267,25 @@ function renderDetail(kind, type, id, d) {
     sec.append(row);
     el.append(sec);
   }
+
+  // photos (backdrops) -> lightbox
+  const shots = (d.images?.backdrops || []).filter((b) => b.file_path).slice(0, 12);
+  if (shots.length) {
+    const sec = mk('div', 'detail-section'); sec.append(mk('h2', null, 'Photos'));
+    const grid = mk('div', 'detail-photos');
+    grid.append(...shots.map((b, i) => {
+      const img = document.createElement('img'); img.loading = 'lazy'; img.src = IMG(b.file_path, 'w780');
+      img.onclick = () => openLightbox(shots, i);
+      return img;
+    }));
+    sec.append(grid); el.append(sec);
+  }
+
+  // recommendations + more-like-this rails (empty -> hidden)
+  const recSec = detailRail('Recommendations', kind, d.recommendations?.results);
+  if (recSec) el.append(recSec);
+  const simSec = detailRail('More Like This', kind, d.similar?.results);
+  if (simSec) el.append(simSec);
 }
 
 function episodeCard(kind, type, id, ep, onPick, title, poster) {
@@ -240,11 +303,53 @@ function episodeCard(kind, type, id, ep, onPick, title, poster) {
   const ov = document.createElement('div'); ov.className = 'episode-ov'; ov.textContent = ep.overview || '';
   body.append(t, ov);
   el.append(still, body);
+  const unaired = ep.air_date && Date.parse(ep.air_date) > Date.now();   // unknown air_date → treated as aired
+  if (unaired) { el.classList.add('unaired'); body.append(mk('span', 'ep-chip', 'Coming Soon')); }
   // Select the episode (highlight) — the "Watch on" source list then plays the selected episode.
-  el.onclick = () => {
-    [...el.parentElement.children].forEach((c) => c.classList.remove('selected'));
-    el.classList.add('selected');
-    onPick();
-  };
+  if (!unaired) {
+    el.onclick = () => {
+      [...el.parentElement.children].forEach((c) => c.classList.remove('selected'));
+      el.classList.add('selected');
+      onPick();
+    };
+  }
   return el;
+}
+
+function personBackBar() {
+  const bar = mk('div', 'detail-back');
+  const back = document.createElement('button');
+  back.textContent = '← Back';
+  back.onclick = () => { detailOrigin ? showDetail(detailOrigin.kind, detailOrigin.id) : showBrowse(); };
+  bar.append(back); return bar;
+}
+async function showPerson(id) {
+  hideAll(); $('person').hidden = false;
+  $('person').replaceChildren(stateNode('loading', 'Loading…'));
+  let d; try { d = await tmdbGet(`/person/${id}`, { append_to_response: 'combined_credits,images' }); } catch { d = null; }
+  if (!d || d.error || !d.name) { $('person').replaceChildren(personBackBar(), stateNode('error', 'Could not load this person.')); return; }
+  renderPerson(d);
+}
+function renderPerson(d) {
+  const el = $('person');
+  const header = mk('div', 'person-header');
+  const photo = document.createElement('img'); photo.className = 'person-photo';
+  photo.src = IMG((d.images?.profiles?.[0]?.file_path) || d.profile_path, 'w342');
+  photo.onerror = () => photo.remove();
+  const info = mk('div', 'person-info');
+  info.append(mk('h1', null, d.name));
+  if (d.known_for_department) info.append(mk('div', 'person-role', d.known_for_department));
+  if (d.biography) info.append(mk('p', 'person-bio', d.biography.slice(0, 600)));
+  header.append(photo, info);
+  el.replaceChildren(personBackBar(), header);
+  // "Known For" rail — combined credits mix movie + tv, so each card MUST route to its own media_type
+  // (do NOT use detailRail, which forces one kind). Dedupe by id, sort by popularity.
+  const cast = (d.combined_credits?.cast || []).filter((c) => c.poster_path && (c.media_type === 'movie' || c.media_type === 'tv'));
+  const seen = new Set(); const uniq = cast.filter((c) => !seen.has(c.id) && seen.add(c.id)).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  if (uniq.length) {
+    const sec = mk('div', 'detail-section'); sec.append(mk('h2', null, 'Known For'));
+    const rail = mk('div', 'detail-rail');
+    rail.append(...uniq.slice(0, 20).map((c) => posterCard(c.media_type, c)));   // per-card kind → correct showDetail
+    sec.append(rail); el.append(sec);
+  }
 }

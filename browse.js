@@ -11,8 +11,21 @@ let browseFilters = loadFiltersFor('movie');
 const debouncedBrowse = () => { clearTimeout(browseTimer); browseTimer = setTimeout(renderBrowse, 350); };
 
 // Full TMDB object (details/season/discover), not just the .results list.
-async function tmdbGet(path, params) {
-  return window.sh.tmdb(path, { api_key: tmdbKey, ...params });
+const tmdbCache = new Map();                 // key -> { at, p:Promise }
+const TMDB_CACHE_V = 1;                        // versioned keys
+const TMDB_TTL = 300000;                        // 5 min for detail/discover/season/search/person
+const isConfigPath = (p) => p.startsWith('/genre/') || p.startsWith('/configuration/') || p.startsWith('/watch/providers/');
+// ponytail: capMap is FIFO (approx-LRU via delete-on-hit re-insert); real LRU only if 500 entries thrash.
+async function tmdbGet(path, params = {}) {
+  const norm = new URLSearchParams({ ...params }); norm.sort();          // stable key, param-order-independent
+  const key = TMDB_CACHE_V + '|' + path + '?' + norm.toString();          // api_key intentionally NOT in key (content is key-independent)
+  const ttl = isConfigPath(path) ? Infinity : TMDB_TTL;
+  const hit = tmdbCache.get(key);
+  if (hit && Date.now() - hit.at < ttl) { tmdbCache.delete(key); tmdbCache.set(key, hit); return hit.p; } // LRU bump
+  const p = window.sh.tmdb(path, { api_key: tmdbKey, ...params });        // in-flight promise-dedup
+  p.then((d) => { if (!d || d.error) tmdbCache.delete(key); }, () => tmdbCache.delete(key)); // negative-cache: don't retain failures
+  tmdbCache.set(key, { at: Date.now(), p }); capMap(tmdbCache, 500);
+  return p;
 }
 
 // Cached title+poster for a TMDB id (or null). Used to title Continue/Watch-Later entries from the

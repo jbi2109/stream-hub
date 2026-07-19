@@ -72,6 +72,7 @@ const tmdb = http.createServer((req, res) => {
     res.end(JSON.stringify({ episodes: [
       { episode_number: 1, season_number: 1, name: 'Ep One', overview: 'first', still_path: '/s1.jpg' },
       { episode_number: 2, season_number: 1, name: 'Ep Two', overview: 'second', still_path: '/s2.jpg' },
+      { episode_number: 99, season_number: 1, name: 'Future Ep', air_date: '2099-01-01', overview: '', still_path: '' },
     ] }));
   } else if (/\/3\/(movie|tv)\/\d+$/.test(p)) {
     res.end(JSON.stringify({
@@ -80,11 +81,14 @@ const tmdb = http.createServer((req, res) => {
       release_date: '2026-01-01', first_air_date: '2026-01-01', runtime: 70,
       number_of_seasons: 2, number_of_episodes: 10, genres: [{ id: 18, name: 'Drama' }],
       seasons: [{ season_number: 1, name: 'Season 1', episode_count: 6 }, { season_number: 2, name: 'Season 2', episode_count: 4 }],
-      credits: { cast: [{ id: 1, name: 'Actor One', character: 'Hero', profile_path: '/a.jpg' }] },
+      credits: { crew: [{ job: 'Director', name: 'Jane Doe' }], cast: [{ id: 1, name: 'Actor One', character: 'Hero', profile_path: '/a.jpg' }] },
+      created_by: [{ name: 'Jane Doe' }],
       videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abc123' }] },
       external_ids: { imdb_id: 'tt123' },
       'watch/providers': { results: { US: { flatrate: [{ provider_name: 'Netflix', logo_path: '/n.jpg' }] } } },
-      images: { logos: [{ file_path: '/logo.png', iso_639_1: 'en' }] }, // v0.4.0 logo art
+      images: { logos: [{ file_path: '/logo.png', iso_639_1: 'en' }], backdrops: [{ file_path: '/bd1.jpg' }, { file_path: '/bd2.jpg' }] }, // logos v0.4.0; backdrops R2 photos
+      recommendations: { results: [{ id: 51, title: 'Rec Movie', poster_path: '/r.jpg' }] },
+      similar: { results: [{ id: 52, title: 'Similar Movie', poster_path: '/s.jpg' }] },
     }));
   } else if (/\/genre\/(movie|tv)\/list$/.test(p)) {
     res.end(JSON.stringify({ genres: [{ id: 28, name: 'Action & Adventure' }, { id: 16, name: 'Animation' }, { id: 18, name: 'Drama' }] }));
@@ -99,6 +103,11 @@ const tmdb = http.createServer((req, res) => {
     const page = +(q.get('page') || 1);
     const t = `Disc P${page} G${q.get('with_genres') || 'all'} L${q.get('with_original_language') || '-'} C${q.get('with_origin_country') || '-'}`;
     res.end(JSON.stringify({ page, total_pages: 3, results: [{ id: 42, title: t, name: t, poster_path: '/x.jpg', backdrop_path: '/b.jpg' }] }));
+  } else if (/\/3\/person\/\d+$/.test(p)) {
+    res.end(JSON.stringify({ id: 61, name: 'Ava Mensah', known_for_department: 'Directing',
+      biography: 'A prolific fixture director known for green test runs.', profile_path: '/pp.jpg',
+      combined_credits: { cast: [{ id: 71, media_type: 'movie', title: 'Person Film', poster_path: '/pf.jpg', popularity: 9 }] },
+      images: { profiles: [{ file_path: '/pp.jpg' }] } }));
   } else {
     res.end(JSON.stringify({ page: 1, total_pages: 1, results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
   }
@@ -566,6 +575,72 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#detail .detail-actions button')].find(b => b.textContent.includes('Watch Later')).click()`);
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, wlBefore + 1, 'detail Watch Later did not add');
   ok('detail: + Watch Later adds an entry');
+
+  // 24d. C1: tmdbGet promise-dedupes + caches by path/params (same object for repeat calls within TTL)
+  const cacheDedup = await page.eval(`(async () => {
+    const a = tmdbGet('/movie/42', {});
+    const b = tmdbGet('/movie/42', {});
+    const same = (await a) === (await b);
+    const keyed = [...tmdbCache.keys()].some((k) => k.includes('/movie/42'));
+    return same && tmdbCache.size > 0 && keyed;
+  })()`);
+  assert.ok(cacheDedup, 'tmdbGet should promise-dedupe and cache /movie/42 within the TTL');
+  ok('cache: tmdbGet dedupes + caches (same object, key retained)');
+
+  // 24e. C7: movie detail shows a formatted runtime (fmtRuntime) + a Director line from credits.crew
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .detail-crew')`), 'movie detail with crew line');
+  assert.ok(await page.eval(`/\\dh|\\dm/.test(document.querySelector('#detail .detail-meta').textContent)`), 'detail-meta should show a formatted h/m runtime');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .detail-crew').textContent`), 'Director: Jane Doe', 'movie detail should show the director');
+  ok('detail: fmtRuntime in meta + Director/Creator line');
+
+  // 24f. C5: a future-dated episode is flagged "Coming Soon" and cannot be selected (Watch gated)
+  await page.eval(`showDetail('tv', 42)`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .episode').length >= 1 && !!document.querySelector('#detail .episode.unaired')`), 'tv detail with an unaired episode');
+  assert.ok(await page.eval(`document.querySelector('#detail .episode.unaired .ep-chip').textContent.includes('Coming Soon')`), 'unaired episode shows a Coming Soon chip');
+  await page.eval(`document.querySelector('#detail .episode.unaired').click()`);
+  await sleep(200);
+  assert.ok(!(await page.eval(`document.querySelector('#detail .episode.unaired').classList.contains('selected')`)), 'an unaired episode must not be selectable');
+  ok('detail: unaired episodes flagged Coming Soon and not selectable');
+
+  // 24g. B7: Recommendations + More Like This rails render on the detail page (from the one-call fetch)
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`document.querySelectorAll('#detail .detail-rail').length >= 2`), 'detail recommendation/similar rails');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#detail .detail-rail')].every(r => !!r.querySelector('.card'))`), 'each detail rail should hold poster cards');
+  ok('detail: Recommendations + More Like This rails render');
+
+  // 24h. A13: Photos grid opens a lightbox; Esc closes the lightbox WITHOUT closing the detail page
+  assert.ok(await page.eval(`!!document.querySelector('#detail .detail-photos img')`), 'detail photos grid missing');
+  await page.eval(`document.querySelector('#detail .detail-photos img').click()`);
+  assert.ok(await page.eval(`!!document.querySelector('.modal-overlay.lightbox')`), 'clicking a photo should open the lightbox');
+  await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await sleep(150);
+  assert.ok(!(await page.eval(`!!document.querySelector('.modal-overlay.lightbox')`)), 'Esc should close the lightbox');
+  assert.strictEqual(await page.eval(`document.getElementById('detail').hidden`), false, 'Esc must not fall through and close the detail page');
+  ok('detail: photo lightbox opens; Esc closes it without leaving the detail page');
+
+  // 24i. B3: genre chip deep-links into a filtered Browse view (then reset to avoid filter contamination)
+  await page.eval(`document.querySelector('#detail .detail-genres span').click()`);
+  await until(() => page.eval(`!document.getElementById('browse').hidden`), 'genre chip opened Browse');
+  assert.ok(['movie', 'tv'].includes(await page.eval(`browseTab`)), 'genre chip should switch to the movie/tv browse tab');
+  assert.strictEqual(await page.eval(`browseFilters.genre`), '18', 'genre chip should apply its genre id as the browse filter');
+  assert.strictEqual(await page.eval(`document.getElementById('detail').hidden`), true, 'detail should hide after a genre deep-link');
+  // reset the touched tab's saved filter so later browse/discover/persistence tests see clean state
+  await page.eval(`browseFiltersAll['movie'] = {}; store('browseFilters', browseFiltersAll); browseFilters = loadFiltersFor(browseTab)`);
+  ok('detail: genre chip deep-links to filtered Browse');
+
+  // 24j. B2: person page renders directly; cast→person navigation; Esc returns to the detail page
+  await page.eval(`showPerson(61)`);
+  await until(() => page.eval(`!document.getElementById('person').hidden && !!document.querySelector('#person h1')`), 'person page');
+  assert.strictEqual(await page.eval(`document.querySelector('#person h1').textContent`), 'Ava Mensah', 'person name');
+  assert.ok(await page.eval(`!!document.querySelector('#person .detail-rail .card')`), 'person Known-For rail should render');
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!!document.querySelector('#detail .cast')`), 'detail cast row');
+  await page.eval(`document.querySelector('#detail .cast').click()`);
+  await until(() => page.eval(`!document.getElementById('person').hidden`), 'cast click opens person');
+  await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && document.getElementById('person').hidden`), 'Esc returns to detail');
+  ok('person: page renders + cast→person + Esc back to detail');
 
   // 25. Anime tab uses TMDB discover; Live tab shows tiles of live sources
   await page.eval(`document.getElementById('browse-btn').click()`);

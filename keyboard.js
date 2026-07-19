@@ -3,7 +3,7 @@
 // precedence chain (modal → settings → detail/live-picker → player) shared with exitPlayer, which is
 // also reachable from the main process while the guest webview owns the keyboard.
 
-const NAV_SEL = '.card, .tile, .episode, .match-card, .src-row';
+const NAV_SEL = '.card, .tile, .episode, .match-card, .src-row, .cast';
 
 // True while a form control owns the keyboard — native select arrows / text entry / wizard Enter win.
 const typing = () => {
@@ -15,8 +15,9 @@ const typing = () => {
 
 let paletteEl = null, helpEl = null, whatsNewEl = null;
 
-const modalOpen = () => !!paletteEl || !!helpEl || !!whatsNewEl || !$('wizard').hidden;
+const modalOpen = () => !!paletteEl || !!helpEl || !!whatsNewEl || !$('wizard').hidden || !!lightboxEl;
 function closeTopModal() {
+  if (lightboxEl) { closeLightbox(); return true; } // topmost — a photo lightbox over the detail page
   if (paletteEl) { closePalette(); return true; }
   if (helpEl) { closeHelp(); return true; }
   if (whatsNewEl) { closeWhatsNew(); return true; }
@@ -180,7 +181,7 @@ function moveGrid(key) {
   const onItem = active && active.matches && active.matches(NAV_SEL);
   if (!onItem) {
     // seed: focus the first item in the visible view
-    const view = ['dashboard', 'browse', 'detail', 'home', 'settings'].map((id) => $(id)).find((el) => el && !el.hidden);
+    const view = ['dashboard', 'browse', 'detail', 'person', 'home', 'settings'].map((id) => $(id)).find((el) => el && !el.hidden);
     const first = view && view.querySelector(NAV_SEL);
     if (!first) return false;
     first.focus();
@@ -220,6 +221,7 @@ function moveGrid(key) {
 
 function goBack() {
   if (closeTopModal()) return;
+  if (!$('person').hidden) { detailOrigin ? showDetail(detailOrigin.kind, detailOrigin.id) : showBrowse(); return; }
   if (!$('settings').hidden) { showBrowse(); return; }
   if (!$('detail').hidden) {
     // #detail doubles as the live source page — go back to the Live grid there (its Back button's path);

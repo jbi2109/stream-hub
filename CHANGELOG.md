@@ -5,6 +5,26 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.4.6 — TMDB depth: recommendations, photos & actor pages (July 2026)
+
+More to explore around every title — and a properly-scrolling, snappier app.
+
+- **Recommendations & "More Like This"** — every movie/TV detail page now ends with two rows of
+  related titles pulled from TMDB, so there's always somewhere to go next.
+- **Actor & crew pages** — click any cast member to open a dedicated page with their photo, role,
+  bio, and a **Known For** row of their popular movies and shows (each opening its own detail page).
+- **Photos + lightbox** — a **Photos** row of backdrops on the detail page; click one to view it
+  full-screen (Esc or click-away to close).
+- **Clickable genres** — the genre chips on a detail page now deep-link into a filtered Browse view.
+- **Coming Soon episodes** — unaired episodes are marked **Coming Soon** and can't be picked to watch.
+- **Detail polish** — formatted runtimes (`2h 14m`) and a Director/Creator line, plus a shared TMDB
+  response cache that makes revisiting a title or bouncing between pages instant (and trims redundant
+  requests).
+- **Fixed: the Dashboard now scrolls** — the landing page was clipped at the fold, hiding the lower
+  rails; it now scrolls all the way down.
+
+---
+
 ## v0.4.5 — Dashboard polish & Netflix-style touches (July 2026)
 
 A round of dashboard finish work benchmarked against the big streaming apps.

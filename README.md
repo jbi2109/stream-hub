@@ -32,8 +32,9 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 - **Browse (TMDB)** — discover Movies, TV, and Anime
   from [TMDB](https://www.themoviedb.org/), **filter by genre / year / language / country / provider and sort**,
   **page** through the whole catalog (20 at a time), search, and open a title's **native detail page**
-  (cinematic full-bleed backdrop with TMDB logo art, overview, genres, rating, cast, seasons +
-  episode picker with stills, in-app trailer, "where to watch"). Pick which **source** to play on (defaults to your last-used), and the
+  (cinematic full-bleed backdrop with TMDB logo art, overview, genres, rating, seasons +
+  episode picker with stills, in-app trailer, "where to watch", photo gallery, **Recommendations** and
+  **More Like This** rows, and a clickable **cast** row that opens each actor's **person page**). Pick which **source** to play on (defaults to your last-used), and the
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
   top-bar switchers to swap **sources and episodes** mid-watch, plus an optional **⏭ auto-play next
   episode** near the end of each one. The left **rail** splits the views cleanly — 🔎
@@ -142,7 +143,7 @@ one and **Import** in the other to carry your setup over.
 | `sources.js` | Settings source list + play-URL building/routing. |
 | `browse.js` | TMDB browse (Movies/TV/Anime): filters, pagination, poster grid. |
 | `live.js` | Live TV engine: catalog fetching/parsing (single- + two-hop), match grouping, source pages. |
-| `detail.js` | Native TMDB detail page + episode picker. |
+| `detail.js` | Native TMDB detail page + episode picker + actor/person pages. |
 | `library.js` | Continue Watching / Watch Later grid. |
 | `dashboard.js` | Landing dashboard: Continue/Trending/Live-now rails + first-run onboarding. |
 | `wizard.js` | Guided "Add player / source" modal. |
@@ -160,7 +161,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 141-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 148-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, the native detail page, per-source embed patterns, the source
