@@ -5,6 +5,14 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.3 — Hidden page scrollbar (July 2026)
+
+- **The far-right page scrollbar is gone.** The main screens now scroll with the mouse wheel, trackpad,
+  or keyboard — without the visible scrollbar cluttering the right edge (matching the rails, which already
+  scroll bar-free).
+
+---
+
 ## v0.5.2 — Unified search (July 2026)
 
 One search, one place. The three overlapping search boxes are gone.

@@ -162,8 +162,13 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
   position: absolute;
   inset: 0;
   overflow-y: auto;
+  scrollbar-width: none;          /* hide the page scrollbar — wheel/keyboard still scroll (Firefox/standard) */
   padding: 20px 24px 40px;
 }
+/* Chromium (Electron): hide the far-right page scrollbar on the main views + settings body */
+#dashboard::-webkit-scrollbar, #home::-webkit-scrollbar, #browse::-webkit-scrollbar,
+#detail::-webkit-scrollbar, #person::-webkit-scrollbar, #settings::-webkit-scrollbar,
+#search::-webkit-scrollbar, .settings-body::-webkit-scrollbar { display: none; }
 #detail { padding: 0 0 40px; }
 #settings { padding: 0; overflow: hidden; }
 
@@ -329,7 +334,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 .settings-tabs .tab:hover { background: var(--panel-2); color: var(--text); }
 .settings-tabs .tab.active { background: var(--panel-2); color: var(--text); }
 
-.settings-body { flex: 1; overflow-y: auto; padding: 22px 28px 40px; }
+.settings-body { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 22px 28px 40px; }
 .set-panel { max-width: 900px; margin: 0 auto; } /* R4: center the panel, kill the right void */
 .set-row {
   display: flex;
