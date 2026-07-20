@@ -124,6 +124,7 @@ function setActiveRail(id) {
 
 function hideAll() {
   hideHoverPreview();                     // single choke point for view switches: drop the fixed hover preview (browse.js global)
+  $('topbar').classList.add('off');       // webview-nav chrome is watching-only; open()/resumeLast() re-show it
   $('topbar').classList.remove('at-top'); // detail's scroll-blend must not linger on other views
   $('dashboard').hidden = true;
   $('home').hidden = true;
@@ -158,6 +159,7 @@ function open(url, track = true) {
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
+  $('topbar').classList.remove('off'); // watching → show the webview-nav chrome
   window.sh?.setPlayerVisible?.(true); // player shown -> (re)arm the main-process progress poll
   webview.src = url;
   autoAdvanced = false; // each opened episode may auto-advance once
@@ -177,6 +179,7 @@ function resumeLast() {
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
+  $('topbar').classList.remove('off'); // watching → show the webview-nav chrome
   window.sh?.setPlayerVisible?.(true); // player shown again -> re-arm the main-process progress poll
   if (webview.getAttribute('src') !== lp.url) webview.src = lp.url; // reveal if loaded, reload if moved on
   if (lp.live && lp.match) {

@@ -52,7 +52,7 @@
   /* softer elevation + adjusted status colors for light */
   --shadow-1:0 1px 2px rgba(0,0,0,.10); --shadow-2:0 4px 12px rgba(0,0,0,.14);
   --shadow-3:0 10px 30px rgba(0,0,0,.18); --shadow-4:0 20px 60px rgba(0,0,0,.24);
-  --warn:#b7791f; --success:#1f7a4d; --live:#c62828;
+  --warn:#b7791f; --success:#1f7a4d; --live:#c62828; --danger:#c62828;
 }
 
 * { box-sizing: border-box; margin: 0; }
@@ -109,6 +109,7 @@ body {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
+#topbar.off { display: none; } /* webview-nav chrome — only shown while watching (core.js open/resumeLast/hideAll) */
 #topbar button {
   background: none;
   border: none;
@@ -194,6 +195,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 #view .subtabs .tab.active { background: var(--accent); color: var(--on-accent); }
 
 #view .empty { color: var(--muted); font-size: 13px; max-width: 520px; line-height: 1.5; }
+.empty-cta { display: block; width: fit-content; margin-top: var(--sp-3); } /* Browse CTA drops below the empty-state teaching text */
 #view .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--poster-min, 160px), 1fr));
@@ -212,6 +214,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
   padding: 8px 12px;
   font-size: 13px;
 }
+.browse-search:focus { outline: none; border-color: var(--accent); } /* accent focus, matching .pill-select/.wiz-input (Browse/Live/Search) */
 
 /* filter pills (genre / year / sort / provider) */
 .browse-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
@@ -834,7 +837,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
   height: 24px;
   font-size: 13px;
 }
-.card .card-actions button:hover { background: rgba(220, 60, 60, .9); }
+.card .card-actions button:hover { background: var(--danger); }
 .card .card-actions .type-select {
   background: var(--scrim);
   border: none;

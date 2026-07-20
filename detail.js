@@ -293,7 +293,7 @@ function renderDetail(kind, type, id, d) {
     const grid = mk('div', 'detail-photos');
     grid.append(...shots.map((b, i) => {
       const img = document.createElement('img'); img.loading = 'lazy'; img.src = IMG(b.file_path, 'w780');
-      img.onerror = function () { this.onerror = null; this.removeAttribute('src'); this.classList.add('noimg'); }; // keep the el (clickable) — no torn-image glyph
+      img.onerror = function () { this.onerror = null; this.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; this.classList.add('noimg'); }; // transparent 1×1 → no torn-image glyph; el stays clickable
       img.onclick = () => openLightbox(shots, i);
       return img;
     }));

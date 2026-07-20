@@ -5,6 +5,23 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.1 — Polish (July 2026)
+
+Targeted fixes on top of the cinematic redesign.
+
+- **Consistent accent focus rings** — the search box in Search, Browse, and Live now shows the same
+  accent focus outline as every other control, instead of the browser's default.
+- **A legible danger color in light theme** — error chips and destructive buttons now use a light-theme
+  red that stays readable on light backgrounds.
+- **A cleaner top bar** — the empty address bar no longer shows on the app's own screens; it appears
+  only while you're watching, where its back/forward/source controls belong.
+- **A friendlier empty Library** — Continue Watching and Watch Later now teach you what to do and offer
+  a **Browse** button when they're empty, instead of a blank grid.
+- **A distinct YouTube icon** — the rail's YouTube button now has its own badge glyph rather than
+  reusing the generic play icon.
+
+---
+
 ## v0.5.0 — Cinematic redesign (July 2026)
 
 A top-to-bottom visual refresh, plus global search and a friendlier Browse.

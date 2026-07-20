@@ -198,9 +198,13 @@ function renderHome() {
   ];
 
   if (list.length === 0) {
-    nodes.push(emptyMsg(isCont
-      ? 'Play something — it shows up here automatically.'
-      : 'Hit “+ Watch Later” on a show or movie to save it here.'));
+    const empty = stateNode('empty', isCont
+      ? 'Nothing here yet — play something and it shows up automatically.'
+      : 'Nothing saved yet — find something to watch.');
+    const cta = mk('button', 'set-btn empty-cta', 'Browse');
+    cta.onclick = () => showBrowse();
+    empty.append(cta);
+    nodes.push(empty);
   } else {
     const grid = document.createElement('div');
     grid.className = 'grid anim-in';
