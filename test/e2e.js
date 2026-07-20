@@ -562,6 +562,20 @@ async function main() {
   await page.eval(`document.querySelector('#search .grid .card').click()`);
   await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail h1')`), 'search result opens detail');
   ok('search: multi-search keeps movie+tv (drops people), card opens detail');
+
+  // 23c. Search type chips: All shows movie+tv; Movies narrows to movies; TV narrows to TV.
+  await page.eval(`document.getElementById('search-btn').click()`);
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].map(t => t.textContent).join(',')`), 'All,Movies,TV', 'search hub should offer All/Movies/TV chips');
+  await page.eval(`(() => { const s = document.querySelector('#search .browse-search'); s.value = 'fix'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`document.querySelectorAll('#search .grid .card').length === 2`), 'All chip shows both the movie and the TV result');
+  // Movies chip -> only the movie card
+  await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].find(b => b.textContent === 'Movies').click()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#search .grid .card')].map(c => c.textContent); return ts.length === 1 && ts[0].includes('Search Movie'); })()`), 'Movies chip narrows to the movie result only');
+  // TV chip -> only the tv card
+  await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].find(b => b.textContent === 'TV').click()`);
+  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#search .grid .card')].map(c => c.textContent); return ts.length === 1 && ts[0].includes('Search Show'); })()`), 'TV chip narrows to the TV result only');
+  await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].find(b => b.textContent === 'All').click()`); // reset to All for later tests
+  ok('search: All/Movies/TV chips narrow the multi-search by media type');
   // restore browse view for the next test
   await page.eval(`document.getElementById('browse-btn').click()`);
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse grid restored after search');
@@ -1683,8 +1697,9 @@ async function main() {
   assert.strictEqual(await page.eval(`browseTab`), 'tv', 'digit 2 should switch to the TV tab');
   await kd('4');
   await until(() => page.eval(`browseTab === 'live' && !!document.querySelector('#browse .match-grid')`), 'digit 4 opens the live grid');
-  await kd('/');
-  assert.ok(await page.eval(`document.activeElement.classList.contains('browse-search')`), '/ should focus the visible search');
+  await kd('/'); // / now opens the global search hub from anywhere (Netflix-style), not the per-view box
+  assert.strictEqual(await page.eval(`document.getElementById('search').hidden`), false, '/ should open the #search hub');
+  assert.ok(await page.eval(`document.activeElement.matches('#search .browse-search')`), '/ should focus the hub search input');
   await kd('Escape'); // blurs the search
   const lpBefore = await page.eval(`localStorage.getItem('lastPlayed')`);
   await kd('5');

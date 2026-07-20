@@ -194,6 +194,9 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 #view .subtabs .tab:hover { background: var(--panel-3); }
 #view .subtabs .tab.active { background: var(--accent); color: var(--on-accent); }
 
+/* search hub: the All/Movies/TV type chips reuse the .subtabs pill look; only the spacing is view-specific */
+#view .search-types { margin-bottom: var(--sp-4); }
+
 #view .empty { color: var(--muted); font-size: 13px; max-width: 520px; line-height: 1.5; }
 .empty-cta { display: block; width: fit-content; margin-top: var(--sp-3); } /* Browse CTA drops below the empty-state teaching text */
 #view .grid {

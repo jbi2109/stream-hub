@@ -32,7 +32,7 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 - **Browse (TMDB)** — discover Movies, TV, and Anime
   from [TMDB](https://www.themoviedb.org/), with **progressive-disclosure filters** (Genre + Sort inline,
   the rest — year / language / country / provider — behind a **Filters** button),
-  **page** through the whole catalog (20 at a time), search, and open a title's **native detail page**
+  **page** through the whole catalog (20 at a time) and open a title's **native detail page**
   (cinematic full-bleed backdrop with TMDB logo art, a loud **▶ Play** action, overview, genres, rating, seasons +
   episode picker with stills, in-app trailer, "where to watch", photo gallery, and **unified rails** —
   **Recommendations**, **More Like This**, cast, and photos all page with chevrons + edge-fades like the
@@ -40,7 +40,7 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
   top-bar switchers to swap **sources and episodes** mid-watch, plus an optional **⏭ auto-play next
   episode** near the end of each one. The left **rail** splits the views cleanly — a 🔎 **Search**
-  button (global search across Movies + TV), 🎬 Browse (Movies/TV/Anime), 📺 **Live TV**, ▶ **YouTube**, and a ⏯ **Resume** button that jumps
+  button (one global search across Movies + TV, with **All / Movies / TV** chips to narrow), 🎬 Browse (Movies/TV/Anime), 📺 **Live TV**, ▶ **YouTube**, and a ⏯ **Resume** button that jumps
   straight back to whatever you were last watching. Live TV shows your live sources as tiles, or —
   for a **live catalog** source (a JSON API of live streams you add by URL) — one **searchable,
   category-filtered grid** merged across catalogs (with a **Live now** filter, **Most watched** sort,
@@ -87,7 +87,7 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 | `4` / `5` | Open Live TV / YouTube |
 | `← ↑ → ↓` | Move around a grid (on the Dashboard: ←/→ walk a rail, ↑/↓ hop rails) |
 | `Enter` | Open the focused item |
-| `/` | Focus search |
+| `/` | Open the global search hub |
 | `Ctrl+K` | Command palette (works while watching too) |
 | `Esc` | Close / back / exit the player (returns to where you launched from) |
 | `?` | Shortcuts overlay |
@@ -164,7 +164,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 154-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 155-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, global search, the native detail page, per-source embed patterns, the source

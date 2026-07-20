@@ -44,14 +44,8 @@ function paletteActions() {
   acts.push(
     ['Add player / source', () => openAddWizard()],
     ['Refresh live catalogs', () => { liveCatalogCache.clear(); resolvedCache.clear(); browseTab = 'live'; showBrowse(); }],
-    ['Focus search', focusSearch],
   );
   return acts;
-}
-
-function focusSearch() {
-  const s = [...document.querySelectorAll('.browse-search')].find((el) => el.offsetParent !== null);
-  if (s) s.focus();
 }
 
 function openPalette() {
@@ -262,7 +256,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (modalOpen() || typing()) return; // palette input / wizard / form controls own their keys
   if (e.key === '?') { openHelp(); return; }
-  if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) { e.preventDefault(); focusSearch(); return; }
+  if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) { e.preventDefault(); showSearch(); return; } // / and Ctrl+F open the global search hub
   if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '0' && e.key <= '5') {
     if (e.key === '0') showDashboard();
     else if (e.key === '4') { browseTab = 'live'; showBrowse(); }

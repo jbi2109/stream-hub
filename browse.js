@@ -1,15 +1,12 @@
 // Browse: TMDB catalog (Movies/TV/Anime) + the Live TV tab (catalog JSON APIs + plain sites).
 
 let browseTab = 'movie'; // 'movie' | 'tv' | 'anime' | 'live' | 'youtube'
-let browseQuery = '';
-let browseTimer = null;
 let browsePage = 1;
 let browseFiltersExpanded = false; // Year/Language/Country/Provider collapsed behind the Filters toggle
 // Filter selections persist per tab (movie/tv/anime keep separate sets — genre ids differ per media type).
 let browseFiltersAll = load('browseFilters', {});
 const loadFiltersFor = (tab) => ({ genre: '', year: '', sort: '', provider: '', language: '', country: '', ...(browseFiltersAll[tab] || {}) });
 let browseFilters = loadFiltersFor('movie');
-const debouncedBrowse = () => { clearTimeout(browseTimer); browseTimer = setTimeout(renderBrowse, 350); };
 
 // Full TMDB object (details/season/discover), not just the .results list.
 const tmdbCache = new Map();                 // key -> { at, p:Promise }
@@ -230,16 +227,20 @@ function posterCard(kind, item, rank) {
   return el;
 }
 
-// --- global search (#search view) — multi-search across movies + TV ---
-let searchQuery = '', searchTimer = null;
+// --- global search (#search view) — the one content search: multi-search across movies + TV,
+// narrowed by All/Movies/TV type chips. This is THE search; Browse is pure discovery (no search box).
+let searchQuery = '', searchType = 'all', searchTimer = null;
 function renderSearch() {
-  const input = mk('input', 'browse-search'); input.placeholder = 'Search movies, shows, people…'; input.value = searchQuery;
+  const input = mk('input', 'browse-search'); input.placeholder = 'Search movies & shows…'; input.value = searchQuery;
   const grid = mk('div', 'grid');
+  // type chips reuse the in-view .subtabs pill styling; clicking one narrows the current results (cheap — C1 cache serves the repeat /search/multi).
+  const types = tabBar([['all', 'All'], ['movie', 'Movies'], ['tv', 'TV']], searchType,
+    (id) => { searchType = id; runSearch(grid); }, 'subtabs search-types');
   input.oninput = () => { searchQuery = input.value.trim(); clearTimeout(searchTimer); searchTimer = setTimeout(() => runSearch(grid), 300); };
-  $('search').replaceChildren(input, grid);
+  $('search').replaceChildren(input, types, grid);
   if (!tmdbKey) { grid.replaceChildren(stateNode('empty', 'Add a TMDB key in Settings to search.')); }
   else if (searchQuery) runSearch(grid);
-  else grid.replaceChildren(stateNode('empty', 'Search across movies, TV, and people.'));
+  else grid.replaceChildren(stateNode('empty', 'Search across movies and TV.'));
   input.focus();
 }
 async function runSearch(grid) {
@@ -247,7 +248,7 @@ async function runSearch(grid) {
   const d = await tmdbGet('/search/multi', { query: q });
   if (searchQuery !== q) return;                                   // stale
   // ponytail: person results dropped for v0.5.0 — add a person branch (name+known-for) when search grows a People tab.
-  const rows = (d?.results || []).filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && (r.poster_path || r.title || r.name));
+  const rows = (d?.results || []).filter((r) => (searchType === 'all' ? (r.media_type === 'movie' || r.media_type === 'tv') : r.media_type === searchType) && (r.poster_path || r.title || r.name));
   grid.replaceChildren(rows.length ? undefined : stateNode('empty', 'No results.'));
   if (rows.length) grid.replaceChildren(...rows.map((r) => posterCard(r.media_type, r)));   // click → showDetail(kind,id) for free
 }
@@ -257,7 +258,6 @@ function browseTabBar() {
   const tabs = [['movie', 'Movies'], ['tv', 'TV'], ['anime', 'Anime']];
   return tabBar(tabs, browseTab, (id) => {
     browseTab = id;
-    browseQuery = '';
     browsePage = 1;
     browseFilters = loadFiltersFor(id); // each tab remembers its own selections
     renderBrowse();
@@ -279,14 +279,6 @@ async function renderBrowse() {
   }
 
   const mt = browseTab === 'movie' ? 'movie' : 'tv';
-
-  // search box
-  const search = document.createElement('input');
-  search.className = 'browse-search';
-  search.placeholder = `Search ${browseTab === 'anime' ? 'anime' : browseTab === 'movie' ? 'movies' : 'TV'}...`;
-  search.value = browseQuery;
-  search.oninput = () => { browseQuery = search.value; browsePage = 1; debouncedBrowse(); };
-  nodes.push(search);
 
   // filter bar (genre / year / sort / provider) — populated once the cached option lists resolve
   const filterBar = document.createElement('div');
@@ -335,7 +327,7 @@ async function renderBrowse() {
   );
 
   // results
-  const data = await fetchBrowse(browseTab, browseQuery, browseFilters, browsePage);
+  const data = await fetchBrowse(browseTab, browseFilters, browsePage);
   if (browseTab !== tabAtRender) return;
   const results = (data && data.results) || [];
   if (!results.length) grid.replaceChildren(stateNode('empty', 'No results (check your TMDB key / filters).'));
@@ -354,21 +346,13 @@ async function renderBrowse() {
   const info = document.createElement('span'); info.className = 'pager-info';
   info.textContent = `Page ${browsePage}${totalPages > 1 ? ' / ' + totalPages : ''}`;
   pager.replaceChildren(pageBtn('‹ Prev', browsePage <= 1, -1), info, pageBtn('Next ›', browsePage >= totalPages, 1));
-
-  // keep focus in the search box while typing
-  if (browseQuery) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
 }
 
-// Returns the full TMDB response ({ results, page, total_pages }). Search honors year only; browsing
-// (no query) uses /discover with all four filters.
-async function fetchBrowse(tab, query, filters, page) {
+// Returns the full TMDB response ({ results, page, total_pages }). Browse is discovery-only:
+// always /discover with all four filters (content search lives in the #search hub now).
+async function fetchBrowse(tab, filters, page) {
   const mt = tab === 'movie' ? 'movie' : 'tv';
   const yearKey = mt === 'movie' ? 'primary_release_year' : 'first_air_date_year';
-  if (query) {
-    const p = { query, page };
-    if (filters.year) p[yearKey] = filters.year; // ponytail: TMDB search ignores genre/sort/provider
-    return tmdbGet(`/search/${mt}`, p);
-  }
   const p = { page, sort_by: filters.sort || 'popularity.desc' };
   const genres = [];
   if (tab === 'anime') genres.push('16'); // keep anime = animation

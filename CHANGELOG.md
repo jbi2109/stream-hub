@@ -5,6 +5,19 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.2 — Unified search (July 2026)
+
+One search, one place. The three overlapping search boxes are gone.
+
+- **A single global search hub** — the 🔎 button and the `/` shortcut now open one search that spans
+  movies & shows, with **All / Movies / TV** chips to narrow the results. It opens from anywhere.
+- **Browse is now pure discovery** — the per-tab search box is gone; Browse is just tabs, filters, grid,
+  and pager. Looking for a specific title? Use the search hub.
+- **A simpler command palette** — its **Search** command opens the same hub; the redundant "Focus search"
+  entry has been removed.
+
+---
+
 ## v0.5.1 — Polish (July 2026)
 
 Targeted fixes on top of the cinematic redesign.
