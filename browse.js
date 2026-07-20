@@ -4,6 +4,7 @@ let browseTab = 'movie'; // 'movie' | 'tv' | 'anime' | 'live' | 'youtube'
 let browseQuery = '';
 let browseTimer = null;
 let browsePage = 1;
+let browseFiltersExpanded = false; // Year/Language/Country/Provider collapsed behind the Filters toggle
 // Filter selections persist per tab (movie/tv/anime keep separate sets — genre ids differ per media type).
 let browseFiltersAll = load('browseFilters', {});
 const loadFiltersFor = (tab) => ({ genre: '', year: '', sort: '', provider: '', language: '', country: '', ...(browseFiltersAll[tab] || {}) });
@@ -181,6 +182,7 @@ function positionHoverPreview(cardEl, node) {
   left = Math.max(8, Math.min(left, window.innerWidth - w - 8));   // clamp to viewport
   let top = r.top - h - 8;                                          // prefer above
   if (top < 8) top = r.bottom + 8;                                 // flip below if no room
+  top = Math.max(8, Math.min(top, window.innerHeight - h - 8));    // clamp: never off-screen / over the topbar
   node.style.left = left + 'px'; node.style.top = top + 'px';
 }
 
@@ -226,6 +228,28 @@ function posterCard(kind, item, rank) {
     el.addEventListener('mouseleave', () => { clearTimeout(hpTimer); scheduleHide(); });
   }
   return el;
+}
+
+// --- global search (#search view) — multi-search across movies + TV ---
+let searchQuery = '', searchTimer = null;
+function renderSearch() {
+  const input = mk('input', 'browse-search'); input.placeholder = 'Search movies, shows, people…'; input.value = searchQuery;
+  const grid = mk('div', 'grid');
+  input.oninput = () => { searchQuery = input.value.trim(); clearTimeout(searchTimer); searchTimer = setTimeout(() => runSearch(grid), 300); };
+  $('search').replaceChildren(input, grid);
+  if (!tmdbKey) { grid.replaceChildren(stateNode('empty', 'Add a TMDB key in Settings to search.')); }
+  else if (searchQuery) runSearch(grid);
+  else grid.replaceChildren(stateNode('empty', 'Search across movies, TV, and people.'));
+  input.focus();
+}
+async function runSearch(grid) {
+  const q = searchQuery; if (!q) { renderSearch(); return; }
+  const d = await tmdbGet('/search/multi', { query: q });
+  if (searchQuery !== q) return;                                   // stale
+  // ponytail: person results dropped for v0.5.0 — add a person branch (name+known-for) when search grows a People tab.
+  const rows = (d?.results || []).filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && (r.poster_path || r.title || r.name));
+  grid.replaceChildren(rows.length ? undefined : stateNode('empty', 'No results.'));
+  if (rows.length) grid.replaceChildren(...rows.map((r) => posterCard(r.media_type, r)));   // click → showDetail(kind,id) for free
 }
 
 // VOD tabs only — Live TV + YouTube are reached from the rail (📺 / ▶), not this bar.
@@ -292,13 +316,22 @@ async function renderBrowse() {
     browsePage = 1;
     renderBrowse();
   };
+  // Genre + Sort stay visible; Year/Language/Country/Provider hide behind the Filters toggle.
+  const adv = (sel) => { sel.classList.add('filter-adv'); return sel; };
+  const activeAdv = ['year', 'language', 'country', 'provider'].filter((k) => browseFilters[k]).length;
+  if (activeAdv) browseFiltersExpanded = true; // never hide an active advanced filter
+  const toggle = mk('button', 'filter-toggle', 'Filters');
+  if (activeAdv) toggle.append(mk('span', 'filter-badge', String(activeAdv)));
+  toggle.onclick = () => { browseFiltersExpanded = filterBar.classList.toggle('expanded'); };
+  filterBar.classList.toggle('expanded', browseFiltersExpanded);
   filterBar.replaceChildren(
     pillSelect('All Genres', '', genres, browseFilters.genre, (v) => setFilter('genre', v)),
-    pillSelect('All Years', '', browseYears(), browseFilters.year, (v) => setFilter('year', v)),
-    pillSelect('All Languages', '', languages, browseFilters.language, (v) => setFilter('language', v)),
-    pillSelect('All Countries', '', countries, browseFilters.country, (v) => setFilter('country', v)),
+    adv(pillSelect('All Years', '', browseYears(), browseFilters.year, (v) => setFilter('year', v))),
+    adv(pillSelect('All Languages', '', languages, browseFilters.language, (v) => setFilter('language', v))),
+    adv(pillSelect('All Countries', '', countries, browseFilters.country, (v) => setFilter('country', v))),
     pillSelect('Most Popular', 'popularity.desc', browseSorts(mt).slice(1), browseFilters.sort, (v) => setFilter('sort', v)),
-    pillSelect('All Providers', '', providers, browseFilters.provider, (v) => setFilter('provider', v)),
+    adv(pillSelect('All Providers', '', providers, browseFilters.provider, (v) => setFilter('provider', v))),
+    toggle,
   );
 
   // results

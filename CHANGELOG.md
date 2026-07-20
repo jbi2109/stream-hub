@@ -5,6 +5,30 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.0 — Cinematic redesign (July 2026)
+
+A top-to-bottom visual refresh, plus global search and a friendlier Browse.
+
+- **A refreshed cinematic-dark design system** — a consistent type scale, real elevation/shadows, and
+  smoother motion throughout, with status colors that stay legible in both the light and dark themes.
+- **Global search** — a new search view (the 🔎 button on the rail, or press `/`) searches across
+  movies and TV in one place; each result opens straight to its detail page.
+- **A loud ▶ Play on every detail page** — the primary action is now unmistakable instead of hiding
+  among the source rows.
+- **One unified rail system everywhere** — the Recommendations, More Like This, cast, and photo rails
+  on detail pages now behave exactly like the dashboard's: chevron paging and soft edge-fades, with the
+  clutter of native scrollbars gone.
+- **Progressive-disclosure filters** — Browse keeps **Genre** and **Sort** inline and tucks Year,
+  Language, Country, and Provider behind a **Filters** button (with a count when any are active), so the
+  common case is uncluttered and the power filters are one click away.
+- **Denser Live TV** and **friendlier source labels** — live listings pack more in, and sources read by
+  name instead of a raw `host:port`.
+- **Fixed icons** — a proper **Library** icon and a real **Search** button on the rail.
+- **Polish & fixes** — Settings tidy-up, a clearer add-source wizard hint, neutral (no longer double-blue)
+  Top-10 rank badges, and consistent keyboard focus rings.
+
+---
+
 ## v0.4.6 — TMDB depth: recommendations, photos & actor pages (July 2026)
 
 More to explore around every title — and a properly-scrolling, snappier app.

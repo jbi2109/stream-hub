@@ -141,8 +141,8 @@ function sourceControl(item, isCont) {
     sel.className = 'card-source';
     sel.title = 'Continue on which source';
     sel.onclick = (e) => e.stopPropagation();
-    if (!curSrc) { // saved source no longer in the list — keep its host visible as the current value
-      const o = document.createElement('option'); o.textContent = hostOf(item.url) || 'source'; o.selected = true; o.disabled = true; sel.append(o);
+    if (!curSrc) { // saved source no longer in the list — show a friendly label, not the raw host:port
+      const o = document.createElement('option'); o.textContent = 'Saved source'; o.selected = true; o.disabled = true; sel.append(o);
     }
     for (const s of srcs) {
       const o = document.createElement('option'); o.value = s.url; o.textContent = s.name;
@@ -160,7 +160,7 @@ function sourceControl(item, isCont) {
   }
   const lbl = document.createElement('div');
   lbl.className = 'card-source-label';
-  lbl.textContent = curSrc ? curSrc.name : (hostOf(item.url) || '');
+  lbl.textContent = curSrc ? curSrc.name : 'Saved source'; // friendly fallback, not the raw host:port
   return lbl;
 }
 

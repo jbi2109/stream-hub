@@ -53,34 +53,8 @@ function railShell(title, seeAll, skel, skelN) {
   head.append(link);
   const rail = mk('div', 'rail anim-in');
   rail.append(...skeletonCards(skelN, skel));
-  // chevron scroll buttons (siblings of the rail; CSS absolute-positions them over its edges so they
-  // never shift the rail layout). Reduced-motion → instant scroll. NAV_SEL doesn't match <button>, so
-  // keyboard grid nav skips them.
-  const chevL = mk('button', 'rail-chev prev'); chevL.append(icon('chevron-l'));
-  const chevR = mk('button', 'rail-chev next'); chevR.append(icon('chevron-r'));
-  const scrollBy = (dir) => rail.scrollBy({ left: dir * rail.clientWidth * 0.8, behavior: document.body.classList.contains('reduced-motion') ? 'auto' : 'smooth' });
-  chevL.onclick = () => scrollBy(-1); chevR.onclick = () => scrollBy(1);
-  // edge fades hint at scrollability (mask toggled by can-scroll state). Reading scrollLeft/clientWidth/
-  // scrollWidth forces layout; scroll + ResizeObserver can fire many times a frame, so coalesce to one
-  // rAF. State is per-rail (this closure) so two rails scrolling the same frame each recompute. The same
-  // reads also toggle the chevrons' disabled state at the scroll ends.
-  let fadePending = false;
-  const fades = () => {
-    if (fadePending) return;
-    fadePending = true;
-    requestAnimationFrame(() => {
-      fadePending = false;
-      rail.classList.toggle('fade-l', rail.scrollLeft > 8);
-      rail.classList.toggle('fade-r', rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 8);
-      chevL.disabled = rail.scrollLeft <= 8;
-      chevR.disabled = rail.scrollLeft + rail.clientWidth >= rail.scrollWidth - 8;
-    });
-  };
-  rail.onscroll = fades;
-  // ResizeObserver (not a one-shot rAF): fires once layout actually settles — however late the rail
-  // attaches or images shift it — and again on window resizes, so the fade state can't go stale.
-  new ResizeObserver(fades).observe(rail);
-  sec.append(head, rail, chevL, chevR);
+  sec.append(head, rail);          // rail's parent is the .dash-section (position:relative)
+  wireRail(rail);                  // chevrons land in the .dash-section, fades on the rail — behavior identical
   return sec;
 }
 

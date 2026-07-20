@@ -128,6 +128,7 @@ function hideAll() {
   $('dashboard').hidden = true;
   $('home').hidden = true;
   $('browse').hidden = true;
+  $('search').hidden = true;
   $('detail').hidden = true;
   $('person').hidden = true;
   $('settings').hidden = true;
@@ -209,6 +210,14 @@ function showBrowse() {
   setActiveRail(browseTab === 'live' ? 'live-btn' : 'browse-btn');
   $('browse').hidden = false;
   renderBrowse();
+}
+
+// Global search — renderSearch lives in browse.js (needs tmdbGet/posterCard/stateNode).
+function showSearch() {
+  hideAll();
+  setActiveRail('search-btn');
+  $('search').hidden = false;
+  renderSearch();
 }
 
 function showSettings() {

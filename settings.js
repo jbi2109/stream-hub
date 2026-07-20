@@ -60,8 +60,9 @@ const settingsPanels = {}; // id -> panel node (built once, kept so wired contro
 // ---- small control builders ----
 
 // A settings row: label + one-line hint on the left, the control on the right.
-function settingRow(label, hint, control) {
+function settingRow(label, hint, control, tall) {
   const row = mk('div', 'set-row');
+  if (tall) row.classList.add('tall'); // stack label above a full-width control (tall multi-item controls)
   const lab = mk('div', 'set-label');
   lab.append(mk('div', 'set-label-t', label));
   if (hint) lab.append(mk('div', 'set-hint', hint));
@@ -195,7 +196,7 @@ function buildGeneral() {
       (v) => { settings.defaultBrowseTab = v; saveSettings(); })));
 
   p.append(settingRow('Dashboard rails', 'Choose which rails appear on the dashboard and their order.',
-    dashRailsControl()));
+    dashRailsControl(), true));
 
   return p;
 }

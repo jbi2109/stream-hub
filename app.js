@@ -24,6 +24,7 @@ $('watch-later').onclick = async () => {
 $('browse-btn').onclick = () => { if (browseTab === 'live') browseTab = settings.defaultBrowseTab || 'movie'; showBrowse(); };
 $('dash-btn').onclick = showDashboard;
 $('home-btn').onclick = showHome;
+$('search-btn').onclick = showSearch;
 $('live-btn').onclick = () => { browseTab = 'live'; showBrowse(); };
 $('youtube-btn').onclick = () => open('https://www.youtube.com', false); // untracked: don't clobber Resume
 $('resume-btn').onclick = resumeLast;

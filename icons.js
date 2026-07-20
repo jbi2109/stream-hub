@@ -5,6 +5,7 @@
 const ICON_PATHS = {
   home: 'M12 3l9 8h-3v9h-4v-6h-4v6H6v-9H3z',
   search: 'M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z',
+  library: 'M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z', // bookmark/collection — reads as "saved/library"
   film: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4z',
   tv: 'M21 3H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5v2h8v-2h5a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 14H3V5h18z',
   play: 'M8 5v14l11-7z',
@@ -42,7 +43,7 @@ function icon(name) {
 // and users' muscle memory select by those, never by glyph).
 (function applyChromeIcons() {
   const map = [
-    ['dash-btn', 'home'], ['home-btn', 'search'], ['browse-btn', 'film'], ['live-btn', 'tv'],
+    ['dash-btn', 'home'], ['home-btn', 'library'], ['search-btn', 'search'], ['browse-btn', 'film'], ['live-btn', 'tv'],
     ['youtube-btn', 'play'], ['resume-btn', 'resume'], ['settings-btn', 'settings'],
     ['back', 'back'], ['forward', 'forward'], ['src-home', 'home'], ['autonext-btn', 'next-ep'],
   ];

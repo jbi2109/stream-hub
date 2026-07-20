@@ -13,6 +13,7 @@
     <div class="rail-top">
       <button id="dash-btn" class="rail-btn" title="Home"></button>
       <button id="home-btn" class="rail-btn" title="Library"></button>
+      <button id="search-btn" class="rail-btn" title="Search"></button>
       <button id="browse-btn" class="rail-btn" title="Movies/TV Shows"></button>
       <button id="live-btn" class="rail-btn" title="Live TV"></button>
       <button id="youtube-btn" class="rail-btn" title="YouTube"></button>
@@ -36,6 +37,7 @@
     <div id="view">
       <div id="dashboard" hidden></div>
       <div id="browse"></div>
+      <div id="search" hidden></div>
       <div id="detail" hidden></div>
       <div id="person" hidden></div>
       <div id="home" hidden></div>
@@ -51,6 +53,7 @@
   <!-- classic scripts sharing one global scope; load order: core first, settings before app, app (bootstrap) last -->
   <script src="core.js"></script>
   <script src="icons.js"></script>
+  <script src="rail.js"></script>
   <script src="media.js"></script>
   <script src="sources.js"></script>
   <script src="browse.js"></script>

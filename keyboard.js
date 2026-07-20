@@ -31,6 +31,7 @@ function closeTopModal() {
 function paletteActions() {
   const acts = [
     ['Open Dashboard', showDashboard],
+    ['Search', showSearch],
     ['Browse Movies', () => { browseTab = 'movie'; showBrowse(); }],
     ['Browse TV', () => { browseTab = 'tv'; showBrowse(); }],
     ['Browse Anime', () => { browseTab = 'anime'; showBrowse(); }],

@@ -108,6 +108,13 @@ const tmdb = http.createServer((req, res) => {
       biography: 'A prolific fixture director known for green test runs.', profile_path: '/pp.jpg',
       combined_credits: { cast: [{ id: 71, media_type: 'movie', title: 'Person Film', poster_path: '/pf.jpg', popularity: 9 }] },
       images: { profiles: [{ file_path: '/pp.jpg' }] } }));
+  } else if (/\/search\/multi$/.test(p)) {
+    // mixed movie/tv/person — the app keeps movie+tv, drops the person (v0.5.0)
+    res.end(JSON.stringify({ results: [
+      { id: 71, media_type: 'movie', title: 'Search Movie', poster_path: '/s.jpg' },
+      { id: 72, media_type: 'tv', name: 'Search Show', poster_path: '/s.jpg' },
+      { id: 73, media_type: 'person', name: 'Someone', profile_path: '/p.jpg' },
+    ] }));
   } else {
     res.end(JSON.stringify({ page: 1, total_pages: 1, results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
   }
@@ -241,6 +248,13 @@ async function main() {
   assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 3, 'expected 3 browse tabs (Movies/TV/Anime — Live+YouTube moved to the rail)');
   assert.ok(await page.eval(`(document.querySelector('#browse .empty')||{}).textContent?.includes('TMDB')`), 'no-key prompt should mention TMDB');
   ok('boot: dashboard landing + onboarding card; Browse shows 3 tabs + no-key prompt');
+
+  // 1b. v0.5.0 shell: the Search rail button reveals the #search view with a search input (full search lands R5)
+  await page.eval(`document.getElementById('search-btn').click()`);
+  assert.strictEqual(await page.eval(`document.getElementById('search').hidden`), false, 'search view should show after clicking the rail Search button');
+  assert.ok(await page.eval(`!!document.querySelector('#search .browse-search')`), 'search view should contain a .browse-search input');
+  await page.eval(`showBrowse()`); // navigate away so later tests keep their expected view state
+  ok('search: rail Search button reveals the #search view with a search input');
 
   // 2. add local test source + click it -> interaction regression check
   await page.eval(`addSource({ name: 'LocalTest', url: '${SITE}', category: 'vod' })`);
@@ -540,6 +554,18 @@ async function main() {
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse movie grid');
   ok('browse: TMDB grid renders poster cards');
 
+  // 23b. Global search: /search/multi returns movie+tv+person; the person is dropped, cards route to detail
+  await page.eval(`document.getElementById('search-btn').click()`);
+  assert.strictEqual(await page.eval(`document.getElementById('search').hidden`), false, 'search view should show');
+  await page.eval(`(() => { const s = document.querySelector('#search .browse-search'); s.value = 'fix'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`document.querySelectorAll('#search .grid .card').length === 2`), 'search grid shows 2 cards (person dropped)');
+  await page.eval(`document.querySelector('#search .grid .card').click()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail h1')`), 'search result opens detail');
+  ok('search: multi-search keeps movie+tv (drops people), card opens detail');
+  // restore browse view for the next test
+  await page.eval(`document.getElementById('browse-btn').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse grid restored after search');
+
   // 24. clicking a Movies poster opens the native detail page; Watch loads the source embed URL
   await page.eval(`document.querySelector('#browse .grid .card').click()`);
   await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail h1')`), 'movie detail page');
@@ -609,6 +635,11 @@ async function main() {
   assert.ok(await page.eval(`[...document.querySelectorAll('#detail .detail-rail')].every(r => !!r.querySelector('.card'))`), 'each detail rail should hold poster cards');
   ok('detail: Recommendations + More Like This rails render');
 
+  // 24g2. R2: detail rails join the ONE unified rail system — native scrollbar hidden + hover chevrons.
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('#detail .detail-rail')).scrollbarWidth`), 'none', 'a detail rail hides its native scrollbar (unified rail system)');
+  assert.ok(await page.eval(`(() => { const r = document.querySelector('#detail .detail-rail'); return r.parentElement.classList.contains('has-rail') && !!r.parentElement.querySelector('.rail-chev.next'); })()`), 'a detail rail parent gets has-rail + chevrons via wireRail');
+  ok('detail: rails join the unified rail system (hidden scrollbar + chevrons)');
+
   // 24h. A13: Photos grid opens a lightbox; Esc closes the lightbox WITHOUT closing the detail page
   assert.ok(await page.eval(`!!document.querySelector('#detail .detail-photos img')`), 'detail photos grid missing');
   await page.eval(`document.querySelector('#detail .detail-photos img').click()`);
@@ -641,6 +672,14 @@ async function main() {
   await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await until(() => page.eval(`!document.getElementById('detail').hidden && document.getElementById('person').hidden`), 'Esc returns to detail');
   ok('person: page renders + cast→person + Esc back to detail');
+
+  // 24k. R3: ▶ Play is the loud PRIMARY action — first child of .detail-actions, routes to the default source
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .detail-play')`), 'detail Play button');
+  assert.ok(await page.eval(`document.querySelector('#detail .detail-actions').firstElementChild.classList.contains('detail-play')`), '▶ Play must be the first child of .detail-actions');
+  await page.eval(`document.querySelector('#detail .detail-play').click()`); // Play on the default source
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/embed/movie/42')`), 'Play opened the default source embed');
+  ok('detail: ▶ Play is the primary action and routes to the default source');
 
   // 25. Anime tab uses TMDB discover; Live tab shows tiles of live sources
   await page.eval(`document.getElementById('browse-btn').click()`);
@@ -1010,6 +1049,21 @@ async function main() {
   assert.ok(await page.eval(`document.querySelector('#home .grid .card .card-source-label').textContent === 'MyLive'`), 'live entry should show a read-only source label');
   ok('card: live / non-rebuildable entries show a read-only source label');
 
+  // 32r2. R4: an entry whose source host matches no current source shows a friendly label,
+  //           not the raw loopback host:port.
+  await page.eval(`document.getElementById('home-btn').click()`);
+  await page.eval(`
+    sources.length = 0; cont.length = 0; later.length = 0;
+    later.push({ key: 'live#2', title: 'Orphan Game', url: 'http://127.0.0.1:9911/live/abc', poster: '', season: null, episode: null, type: 'live', addedAt: Date.now() });
+    store('sources', sources); store('watchlater', later);
+    topTab = 'later'; subTab = 'all'; showHome();
+  `);
+  await until(() => page.eval(`!!document.querySelector('#home .grid .card .card-source-label')`), 'orphan-source card label');
+  const orphanLabel = await page.eval(`document.querySelector('#home .grid .card .card-source-label').textContent`);
+  assert.ok(!/\d+\.\d+\.\d+\.\d+/.test(orphanLabel), 'unresolvable source shows a friendly label, not a raw IP host:port');
+  assert.strictEqual(orphanLabel, 'Saved source', 'unresolvable source falls back to "Saved source"');
+  ok('card: unresolvable source host shows a friendly label, not host:port');
+
   // 32s. v0.2.0: the rail opens the Settings screen; its tabs switch panels
   await page.eval(`document.getElementById('settings-btn').click()`);
   assert.strictEqual(await page.eval(`document.getElementById('settings').hidden`), false, 'settings should open from the rail');
@@ -1218,6 +1272,19 @@ async function main() {
   await until(() => page.eval(`document.querySelectorAll('#browse .browse-filters select').length === 6 && document.querySelectorAll('#browse .browse-filters select')[0].value === '28'`), 'Movies genre selection restored after a tab round-trip');
   await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('G28'))`), 'restored genre still drives the discover query');
   ok('browse: filter selections persist per tab');
+
+  // 32F1c. R4 progressive disclosure: Year/Language/Country/Provider hide behind a Filters toggle;
+  //         the toggle is a button (not a select, so the 6-select order is untouched); badge counts active.
+  await page.eval(`browseFilters.year=''; browseFilters.language=''; browseFilters.country=''; browseFilters.provider=''; browseFiltersExpanded=false; browsePage=1; renderBrowse()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .browse-filters .filter-adv').length === 4`), 'four advanced selects tagged .filter-adv');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .browse-filters select').length`), 6, 'still exactly 6 selects (the toggle is a button)');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#browse .browse-filters .filter-adv')].every(s => getComputedStyle(s).display === 'none')`), 'advanced filters hidden by default');
+  await page.eval(`document.querySelector('#browse .filter-toggle').click()`);
+  assert.ok(await page.eval(`[...document.querySelectorAll('#browse .browse-filters .filter-adv')].every(s => getComputedStyle(s).display !== 'none')`), 'clicking the Filters toggle reveals the advanced selects');
+  await page.eval(`(() => { const s = document.querySelectorAll('#browse .browse-filters select')[2]; s.value='ko'; s.dispatchEvent(new Event('change')); })()`); // Language
+  await page.eval(`(() => { const s = document.querySelectorAll('#browse .browse-filters select')[3]; s.value='KR'; s.dispatchEvent(new Event('change')); })()`); // Country
+  await until(() => page.eval(`(() => { const b = document.querySelector('#browse .filter-toggle .filter-badge'); return b && b.textContent === '2'; })()`), 'the Filters badge counts the two active advanced filters');
+  ok('browse: advanced filters collapse behind the Filters toggle; badge counts active ones');
 
   // 32F3. v0.2.10 fix: opening the YouTube tab must NOT wipe the Resume target (untracked open).
   await page.eval(`document.getElementById('home-btn').click(); sources.length = 0; store('sources', sources); addSource({ name: 'TwoHop', category: 'live', catalogUrl: '${CATALOG_TWOHOP}/api/matches/live' }); renderSources();`);

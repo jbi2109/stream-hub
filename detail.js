@@ -11,7 +11,7 @@ function detailRail(title, kind, items) {
   if (!rows.length) return null;                               // empty → hidden (house style)
   const sec = mk('div', 'detail-section'); sec.append(mk('h2', null, title));
   const rail = mk('div', 'detail-rail'); rail.append(...rows.map((r) => posterCard(kind, r)));
-  sec.append(rail); return sec;
+  sec.append(rail); wireRail(rail); return sec;
 }
 
 // Photos lightbox — a single module-level overlay; Esc closes it via keyboard.js's chain.
@@ -19,7 +19,9 @@ let lightboxEl = null;
 function openLightbox(shots, i) {
   closeLightbox();
   const ov = mk('div', 'modal-overlay lightbox');
-  const img = document.createElement('img'); img.src = IMG(shots[i].file_path, 'w1280'); ov.append(img);
+  const img = document.createElement('img'); img.src = IMG(shots[i].file_path, 'w1280');
+  const close = mk('button', 'lightbox-close', '×'); close.onclick = closeLightbox; close.setAttribute('aria-label', 'Close');
+  ov.append(img, close);
   ov.onclick = (e) => { if (e.target === ov) closeLightbox(); };   // click backdrop to close
   document.body.append(ov); lightboxEl = ov;
 }
@@ -152,8 +154,17 @@ function renderDetail(kind, type, id, d) {
   let curEpisode = type === 'tv' ? 1 : null;
 
   const playSrcs = sourcesFor(kind);
+  // the source the app already treats as default (URL-keyed globals: defaultSource picked in Settings,
+  // else last-watched, else the first available) — mirrors sources.js's playingSource() resolution.
+  const defSrc = playSrcs.find((s) => s.url === defaultSource) || playSrcs.find((s) => s.url === lastSourceUrl) || playSrcs[0];
   const actions = document.createElement('div');
   actions.className = 'detail-actions';
+  // ▶ Play is the loud primary action — FIRST child, routes straight to the default source.
+  const playBtn = mk('button', 'detail-play');
+  playBtn.append(icon('play'), document.createTextNode(type === 'tv' ? ` Play S${curSeason} E${curEpisode}` : ' Play'));
+  if (defSrc) playBtn.onclick = () => openOn(defSrc, kind, type, id, curSeason, curEpisode, title, posterUrl); // closure reads live curSeason/curEpisode
+  else { playBtn.disabled = true; playBtn.title = 'Add a source in Settings first'; }
+  actions.append(playBtn);
   if (trailer) {
     const tb = document.createElement('button');
     tb.append(icon('play'), document.createTextNode(' Trailer')); // word kept — selected by text (users + e2e)
@@ -164,6 +175,11 @@ function renderDetail(kind, type, id, d) {
   wl.textContent = '+ Watch Later';
   wl.onclick = () => addLater(kind, type, id, title, posterUrl, curSeason, curEpisode);
   actions.append(wl);
+  if (!playSrcs.length) { // no source at all → give a way out instead of a dead disabled button
+    const hint = mk('span', 'detail-play-hint', 'Add a source in Settings to watch');
+    hint.style.cursor = 'pointer'; hint.onclick = () => showSettings();
+    actions.append(hint);
+  }
   info.append(actions);
 
   hero.append(poster, info);
@@ -250,6 +266,7 @@ function renderDetail(kind, type, id, d) {
       return castCard;
     }));
     sec.append(row);
+    wireRail(row);
     el.append(sec);
   }
 
@@ -265,6 +282,7 @@ function renderDetail(kind, type, id, d) {
     row.className = 'providers';
     row.append(...flat.slice(0, 12).map((pv) => { const img = document.createElement('img'); img.src = IMG(pv.logo_path, 'w92'); img.title = pv.provider_name; return img; }));
     sec.append(row);
+    wireRail(row);
     el.append(sec);
   }
 
@@ -275,6 +293,7 @@ function renderDetail(kind, type, id, d) {
     const grid = mk('div', 'detail-photos');
     grid.append(...shots.map((b, i) => {
       const img = document.createElement('img'); img.loading = 'lazy'; img.src = IMG(b.file_path, 'w780');
+      img.onerror = function () { this.onerror = null; this.removeAttribute('src'); this.classList.add('noimg'); }; // keep the el (clickable) — no torn-image glyph
       img.onclick = () => openLightbox(shots, i);
       return img;
     }));
@@ -350,6 +369,6 @@ function renderPerson(d) {
     const sec = mk('div', 'detail-section'); sec.append(mk('h2', null, 'Known For'));
     const rail = mk('div', 'detail-rail');
     rail.append(...uniq.slice(0, 20).map((c) => posterCard(c.media_type, c)));   // per-card kind → correct showDetail
-    sec.append(rail); el.append(sec);
+    sec.append(rail); wireRail(rail); el.append(sec);
   }
 }
