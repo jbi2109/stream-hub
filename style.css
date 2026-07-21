@@ -928,10 +928,13 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 
 /* ---------- dashboard (landing view) ---------- */
 .dash-section { margin-bottom: 20px; position: relative; } /* anchor for the absolute rail chevrons */
-.dash-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
-.dash-head h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; }
+/* title left; toggle + See-all grouped on the right — h2's auto margin absorbs the gap either way */
+.dash-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.dash-head h2 { margin: 0; margin-right: auto; font-size: 16px; letter-spacing: -0.01em; }
 .dash-seeall { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
 .dash-seeall:hover { color: var(--accent); }
+/* per-rail Movies/TV toggle: the shared .segmented pill group, sized down for the rail header */
+.rail-type button { padding: 3px 10px; font-size: 11px; }
 /* horizontal card rail (same scroller pattern as .cast-row) */
 .rail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 8px; }
 /* every horizontal rail gets chevrons (.rail-chev) + edge fades via wireRail, so hide the native

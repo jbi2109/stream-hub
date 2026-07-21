@@ -5,6 +5,13 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.4 — Movies/TV on dashboard rails (July 2026)
+
+- The **Trending / Top 10 / Top Rated / Newest / Upcoming** rails now have a **Movies / TV** toggle right
+  in their header, remembered per rail — so you can keep e.g. **Top 10 TV** on your dashboard.
+
+---
+
 ## v0.5.3 — Hidden page scrollbar (July 2026)
 
 - **The far-right page scrollbar is gone.** The main screens now scroll with the mouse wheel, trackpad,

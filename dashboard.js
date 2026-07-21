@@ -7,6 +7,12 @@
 
 const DASH_RAIL_MAX = 15;
 
+// v0.5.4: per-rail Movies/TV type for the media-type-agnostic discover rails (trending/top10/toprated/
+// newest/upcoming), persisted per rail id. Genre/continue/live rails have no toggle and stay movie-only.
+let dashRailType = load('dashRailType', {});
+const railType = (id) => dashRailType[id] || 'movie';
+const setRailType = (id, mt) => { dashRailType[id] = mt; store('dashRailType', dashRailType); };
+
 // Movie-only genre rails (default off).
 // ponytail: movie-only genre rails avoid the movie/TV genre-id split; add TV genre rails only if asked.
 const DASH_GENRES = [['28', 'Action'], ['35', 'Comedy'], ['27', 'Horror'], ['10749', 'Romance'], ['878', 'Sci-Fi & Fantasy'], ['16', 'Animation']];
@@ -19,18 +25,18 @@ const seeAllLive = () => { browseTab = 'live'; showBrowse(); };
 const DASH_RAILS = [
   { id: 'continue', title: 'Continue Watching', seeAll: showHome, skel: 'skel-wide', skelN: 5, special: 'continue',
     build: async () => cont.slice(0, DASH_RAIL_MAX).map(resumeCard) },
-  { id: 'trending', title: 'Trending', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
-    build: async () => (await discoverRail('trending')).map((r) => posterCard('movie', r)) },
-  { id: 'top10', title: 'Top 10 Today', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 10,
-    build: async () => (await discoverRail('trending')).slice(0, 10).map((r, i) => posterCard('movie', r, i + 1)) }, // R2: rank badge (i+1 => 01..10)
+  { id: 'trending', title: 'Trending', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6, type: true,
+    build: async () => { const mt = railType('trending'); return (await discoverRail('trending', mt)).map((r) => posterCard(mt, r)); } },
+  { id: 'top10', title: 'Top 10 Today', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 10, type: true,
+    build: async () => { const mt = railType('top10'); return (await discoverRail('top10', mt)).slice(0, 10).map((r, i) => posterCard(mt, r, i + 1)); } }, // R2: rank badge (i+1 => 01..10)
   { id: 'live', title: 'Live now', seeAll: seeAllLive, skel: 'skel-wide', skelN: 4, special: 'live',
     build: async () => [] }, // unused — fillRail's live branch is cache-only
-  { id: 'toprated', title: 'Top Rated', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
-    build: async () => (await discoverRail('toprated')).map((r) => posterCard('movie', r)) },
-  { id: 'newest', title: 'Newest', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
-    build: async () => (await discoverRail('newest')).map((r) => posterCard('movie', r)) },
-  { id: 'upcoming', title: 'Upcoming', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
-    build: async () => (await discoverRail('upcoming')).map((r) => posterCard('movie', r)) },
+  { id: 'toprated', title: 'Top Rated', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6, type: true,
+    build: async () => { const mt = railType('toprated'); return (await discoverRail('toprated', mt)).map((r) => posterCard(mt, r)); } },
+  { id: 'newest', title: 'Newest', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6, type: true,
+    build: async () => { const mt = railType('newest'); return (await discoverRail('newest', mt)).map((r) => posterCard(mt, r)); } },
+  { id: 'upcoming', title: 'Upcoming', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6, type: true,
+    build: async () => { const mt = railType('upcoming'); return (await discoverRail('upcoming', mt)).map((r) => posterCard(mt, r)); } },
   ...DASH_GENRES.map(([gid, name]) => ({
     id: 'genre:' + gid, title: name, seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6,
     build: async () => (await discoverRail('genre:' + gid)).map((r) => posterCard('movie', r)),
@@ -42,20 +48,44 @@ const RAIL_BY_ID = Object.fromEntries(DASH_RAILS.map((r) => [r.id, r]));
 const DEFAULT_DASH_RAILS = ['continue', 'trending', 'top10', 'live'];
 const enabledRails = () => (settings.dashRails || DEFAULT_DASH_RAILS).map((id) => RAIL_BY_ID[id]).filter(Boolean);
 
-// One rail SHELL: title + "See all →" + a horizontal scroller of skeletons. Always returned (fillRail
-// swaps in real cards or removes the section), so R3's lazy observer always has a target.
-function railShell(title, seeAll, skel, skelN) {
+// One rail SHELL: title + optional Movies/TV toggle + "See all →" + a horizontal scroller of skeletons.
+// Always returned (fillRail swaps in real cards or removes the section), so R3's lazy observer always has
+// a target. Takes the whole descriptor so a type-toggle rail (r.type) can render its own control.
+function railShell(r) {
   const sec = mk('div', 'dash-section');
   const head = mk('div', 'dash-head');
-  head.append(mk('h2', null, title));
+  head.append(mk('h2', null, r.title));
+  if (r.type) head.append(railTypeToggle(sec, r)); // v0.5.4: compact Movies/TV segmented control
   const link = mk('button', 'dash-seeall', 'See all →');
-  link.onclick = seeAll;
+  link.onclick = r.seeAll;
   head.append(link);
   const rail = mk('div', 'rail anim-in');
-  rail.append(...skeletonCards(skelN, skel));
+  rail.append(...skeletonCards(r.skelN, r.skel));
   sec.append(head, rail);          // rail's parent is the .dash-section (position:relative)
   wireRail(rail);                  // chevrons land in the .dash-section, fades on the rail — behavior identical
   return sec;
+}
+
+// Movies/TV segmented control for a type-toggle rail. On flip: persist the choice, re-skeleton just this
+// rail, and re-fill it (fillRail -> r.build re-reads railType(id), refetches via discoverRail with the new
+// mt, re-renders the cards). Only this rail re-renders — never the whole dashboard. Buttons stay out of
+// NAV_SEL (like .dash-seeall) so they're skipped by the rail's keyboard grid-nav.
+function railTypeToggle(sec, r) {
+  const seg = mk('div', 'segmented rail-type');
+  const btn = (mt, label) => {
+    const b = mk('button', railType(r.id) === mt ? 'on' : null, label);
+    b.onclick = () => {
+      if (mt === railType(r.id)) return;
+      setRailType(r.id, mt);
+      [...seg.children].forEach((c) => c.classList.toggle('on', c === b)); // active segment = the new type
+      const rail = sec.querySelector('.rail');
+      rail.replaceChildren(...skeletonCards(r.skelN, r.skel)); // re-skeleton, then re-fill for the new mt
+      fillRail(sec, r);
+    };
+    return b;
+  };
+  seg.append(btn('movie', 'Movies'), btn('tv', 'TV'));
+  return seg;
 }
 
 // ---------- Continue Watching resume cards (16:9; the Library grid keeps the 2:3 poster card) ----------
@@ -262,20 +292,22 @@ function cachedLiveNow() {
 const railCache = new Map();  // id -> { at, results }
 const RAIL_TTL = 300000;      // 5 min
 const today = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-function railQuery(id) {
+function railQuery(id, mt = 'movie') {
+  // genre rails are movie-only (the movie/TV genre-id split differs) — the toggle never reaches them.
   if (id.startsWith('genre:')) return { path: '/discover/movie', query: { with_genres: id.slice(6), sort_by: 'popularity.desc' } };
+  const df = mt === 'tv' ? 'first_air_date' : 'primary_release_date'; // TV uses first_air_date, movies primary_release_date
   return ({
-    trending: { path: '/discover/movie', query: { sort_by: 'popularity.desc' } },
-    toprated: { path: '/discover/movie', query: { sort_by: 'vote_average.desc', 'vote_count.gte': 200 } },
-    newest:   { path: '/discover/movie', query: { sort_by: 'primary_release_date.desc', 'vote_count.gte': 10, 'primary_release_date.lte': today() } },
-    upcoming: { path: '/discover/movie', query: { sort_by: 'primary_release_date.asc', 'primary_release_date.gte': today() } },
+    trending: { path: `/discover/${mt}`, query: { sort_by: 'popularity.desc' } },
+    toprated: { path: `/discover/${mt}`, query: { sort_by: 'vote_average.desc', 'vote_count.gte': 200 } },
+    newest:   { path: `/discover/${mt}`, query: { sort_by: `${df}.desc`, 'vote_count.gte': 10, [`${df}.lte`]: today() } },
+    upcoming: { path: `/discover/${mt}`, query: { sort_by: `${df}.asc`, [`${df}.gte`]: today() } },
   })[id];
 }
-async function discoverRail(id) {
-  const key = id === 'top10' ? 'trending' : id; // top10 shares trending's data
+async function discoverRail(id, mt = 'movie') {
+  const key = (id === 'top10' ? 'trending' : id) + ':' + mt; // top10 shares trending's data; movie/TV cache apart
   const hit = railCache.get(key);
   if (hit && Date.now() - hit.at < RAIL_TTL) return hit.results;
-  const q = railQuery(key);
+  const q = railQuery(id === 'top10' ? 'trending' : id, mt);
   const d = q ? await tmdbGet(q.path, q.query) : null;
   const results = ((d && d.results) || []).filter((r) => r.poster_path || r.title || r.name).slice(0, DASH_RAIL_MAX);
   railCache.set(key, { at: Date.now(), results }); capMap(railCache, 24);
@@ -369,7 +401,7 @@ async function renderDashboard() {
   // observer can fill on demand; R1 fills them all eagerly below. Empties remove themselves in fillRail.
   const sections = [];
   for (const r of enabledRails()) {
-    const sec = railShell(r.title, r.seeAll, r.skel, r.skelN);
+    const sec = railShell(r);
     sec._rail = r;
     sections.push(sec);
   }

@@ -99,9 +99,11 @@ const tmdb = http.createServer((req, res) => {
   } else if (/\/configuration\/countries$/.test(p)) {
     res.end(JSON.stringify([{ iso_3166_1: 'US', english_name: 'United States' }, { iso_3166_1: 'KR', english_name: 'South Korea' }, { iso_3166_1: 'JP', english_name: 'Japan' }]));
   } else if (/\/discover\/(movie|tv)$/.test(p)) {
-    // echo page + filters into the title so pagination + each filter are assertable
+    // echo media type + page + filters into the title so the movie/TV split, pagination, and each filter
+    // are all assertable (media as MOVIE/TV — 'MOVIE' never contains the 'TV' substring, so it's clean)
+    const media = p.endsWith('/tv') ? 'TV' : 'MOVIE';
     const page = +(q.get('page') || 1);
-    const t = `Disc P${page} G${q.get('with_genres') || 'all'} L${q.get('with_original_language') || '-'} C${q.get('with_origin_country') || '-'}`;
+    const t = `Disc P${page} ${media} G${q.get('with_genres') || 'all'} L${q.get('with_original_language') || '-'} C${q.get('with_origin_country') || '-'}`;
     res.end(JSON.stringify({ page, total_pages: 3, results: [{ id: 42, title: t, name: t, poster_path: '/x.jpg', backdrop_path: '/b.jpg' }] }));
   } else if (/\/3\/person\/\d+$/.test(p)) {
     res.end(JSON.stringify({ id: 61, name: 'Ava Mensah', known_for_department: 'Directing',
@@ -2021,6 +2023,47 @@ async function main() {
 
   // restore the default rail set for the tests that follow
   await page.eval(`settings.dashRails = ['continue', 'trending', 'top10', 'live']; saveSettings();`);
+
+  // ---------- v0.5.4 per-rail Movies/TV toggle ----------
+  const secBy = (title) => `[...document.querySelectorAll('#dashboard .dash-section')].find(s => (s.querySelector('h2')||{}).textContent === '${title}')`;
+
+  // 65f. the discover rails get a Movies/TV control in their .dash-head; continue/live/genre rails do NOT.
+  await page.eval(`settings.dashRails = ['continue', 'trending', 'live', 'genre:28']; saveSettings(); showDashboard();`);
+  await until(() => page.eval(`(() => { const s = ${secBy('Trending')}; return s && s.querySelector('.dash-head .rail-type'); })()`), 'Trending rail renders a Movies/TV toggle');
+  assert.strictEqual(await page.eval(`(() => { const s = ${secBy('Trending')}; return [...s.querySelectorAll('.rail-type button')].map(b => b.textContent).join(','); })()`), 'Movies,TV', 'toggle offers Movies + TV segments');
+  assert.ok(await page.eval(`(() => { const s = ${secBy('Continue Watching')}; return s && !s.querySelector('.rail-type'); })()`), 'Continue rail must have no type toggle');
+  assert.ok(await page.eval(`(() => { const s = ${secBy('Action')}; return s && !s.querySelector('.rail-type'); })()`), 'genre rail must have no type toggle (movie-only)');
+  // only the one type:true rail (Trending) in this set carries a toggle — covers continue/live/genre having none
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#dashboard .rail-type').length`), 1, 'exactly one toggle (Trending); continue/live/genre rails render none');
+  ok('dashboard toggle: discover rails get Movies/TV; continue/live/genre do not');
+
+  // 65g. clicking TV re-fetches /discover/tv and renders TV-echoed cards; the segment goes active.
+  await until(() => page.eval(`(() => { const s = ${secBy('Trending')}; return [...s.querySelectorAll('.rail .card')].some(c => c.textContent.includes('Disc P1 MOVIE')); })()`), 'Trending starts on Movies (movie-echoed cards)');
+  await page.eval(`(() => { const s = ${secBy('Trending')}; [...s.querySelectorAll('.rail-type button')].find(b => b.textContent === 'TV').click(); })()`);
+  await until(() => page.eval(`(() => { const s = ${secBy('Trending')}; return [...s.querySelectorAll('.rail .card')].some(c => c.textContent.includes('Disc P1 TV')); })()`), 'clicking TV re-fetches /discover/tv (TV-echoed cards)');
+  assert.ok(await page.eval(`(() => { const s = ${secBy('Trending')}; return [...s.querySelectorAll('.rail-type button')].find(x => x.textContent === 'TV').classList.contains('on'); })()`), 'the TV segment is active after the flip');
+  ok('dashboard toggle: TV flips the rail to /discover/tv and marks the segment active');
+
+  // 65h. the per-rail type persists: a full dashboard re-render keeps Trending on TV (reads dashRailType).
+  await page.eval(`showDashboard()`);
+  await until(() => page.eval(`(() => { const s = ${secBy('Trending')}; return [...s.querySelectorAll('.rail .card')].some(c => c.textContent.includes('Disc P1 TV')); })()`), 'Trending re-renders on TV after showDashboard()');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('dashRailType')).trending`), 'tv', 'dashRailType persists trending=tv');
+  assert.ok(await page.eval(`(() => { const s = ${secBy('Trending')}; return [...s.querySelectorAll('.rail-type button')].find(x => x.textContent === 'TV').classList.contains('on'); })()`), 'the TV segment stays active on re-render');
+  ok('dashboard toggle: per-rail type persists across a dashboard re-render');
+
+  // 65i. discoverRail caches movie/TV under different keys (top10 shares trending's data, split by mt).
+  const [hasMovie, hasTv, distinct] = await page.eval(`(async () => {
+    railCache.clear();
+    const m = await discoverRail('top10', 'movie');
+    const t = await discoverRail('top10', 'tv');
+    return [railCache.has('trending:movie'), railCache.has('trending:tv'), m[0].title.includes('MOVIE') && t[0].title.includes('TV')];
+  })()`);
+  assert.ok(hasMovie && hasTv, "discoverRail('top10',...) caches under trending:movie and trending:tv");
+  assert.ok(distinct, 'movie and TV results are distinct (movie- vs TV-echoed)');
+  ok('dashboard toggle: discoverRail movie/TV cache under separate keys');
+
+  // clean up: reset per-rail types + restore the default rail set for the tests that follow
+  await page.eval(`dashRailType = {}; store('dashRailType', dashRailType); settings.dashRails = ['continue', 'trending', 'top10', 'live']; saveSettings();`);
 
   // 66. detail: cinematic backdrop + logo art + scroll-linked cover; the live picker stays plain
   await page.eval(`showDetail('movie', 42)`);
