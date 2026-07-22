@@ -217,6 +217,7 @@ function posterCard(kind, item, rank) {
   if (!isNaN(rt) && rt <= Date.now() && Date.now() - rt <= 21 * 86400000) wrap.append(mk('span', 'tile-tag new', 'New'));
   el.append(wrap);
   el.onclick = () => showDetail(kind, item.id);
+  el._preview = { kind, id: item.id }; // input.js reads this for the touch long-press / gamepad Y preview
   // Netflix expand-on-hover: after ~1s, show the floating preview card (complements the .poster-overlay).
   // Gated on real hover capability so touch devices (no hover) never trigger it.
   if (matchMedia('(hover: hover)').matches) {

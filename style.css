@@ -1253,3 +1253,32 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 .hp-cta { display: flex; gap: 8px; }
 .hp-cta .hero-btn { padding: 6px 12px; font-size: 13px; }
 body:not(.reduced-motion) .hover-preview { animation: sh-enter var(--dur-mid, 180ms) ease; }
+
+/* ---------- v0.5.5: adaptive input (touch + gamepad / D-pad) ---------- */
+/* Focus parity on EVERY input: whatever hover reveals, a focused card reveals too. */
+.card:focus-within .card-actions { display: flex; }
+
+/* Touch has no hover and no cursor: make every hover-revealed affordance permanent and grow the
+   targets to the 44px minimum. Scoped to body.input-touch so mouse users keep the clean surface. */
+/* 44px targets make the row as wide as the card, so touch mode moves it off the top-left S/E badge
+   and parks it above the progress bar instead. */
+body.input-touch .card .card-actions { display: flex; top: auto; bottom: 10px; }
+body.input-touch .card .card-actions button { width: 44px; height: 44px; font-size: 16px; }
+body.input-touch .card .card-actions .type-select { height: 44px; font-size: 13px; max-width: 96px; }
+body.input-touch .has-rail .rail-chev:not([disabled]) { opacity: 1; width: 44px; height: 44px; }
+body.input-touch .rail-chev svg { width: 26px; height: 26px; }
+body.input-touch #sources-overlay { opacity: 1; }
+/* NOT the poster play glyph: on touch a poster is obviously tappable, and pinning it on every tile is
+   noise (the glyph is a hover affordance, not information). */
+body.input-touch #topbar button { min-width: 44px; min-height: 44px; }
+body.input-touch .rail-btn { min-height: 44px; }
+body.input-touch .pager-btn, body.input-touch .set-btn, body.input-touch .tab { min-height: 44px; }
+
+/* Gamepad moves focus from script, where :focus-visible is unreliable — ring plain :focus instead,
+   and mirror the hover layers so the focused card reads exactly like a hovered one. */
+/* cards carry their own poster ring below — an outline around card+title on top of it reads as two rings */
+body.input-gamepad :focus:not(.card):not(.match-card) { outline: var(--focus-ring); outline-offset: 2px; }
+body.input-gamepad .card:focus .poster-wrap { box-shadow: 0 0 0 2px var(--accent), var(--shadow-2); }
+body.input-gamepad .poster-card:focus .poster { transform: scale(1.08); opacity: .75; }
+body.input-gamepad .poster-card:focus .poster-overlay { opacity: 1; }
+body.input-gamepad .match-card:focus .match-thumb { box-shadow: 0 0 0 2px var(--accent), var(--shadow-2); }

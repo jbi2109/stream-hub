@@ -5,6 +5,28 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.5 — Touch and controller support (July 2026)
+
+Stream Hub now adapts to however you're driving it — mouse, touchscreen, or a game controller / TV
+remote D-pad. There's no mode to switch: it follows the device you just used.
+
+- **Touch support.** On a touchscreen the affordances that used to need a hover are simply always there:
+  a saved card's edit / remove / category controls, the rail scroll arrows, and the player's Sources
+  button. Touch targets grow to a comfortable 44px, and **press-and-hold a poster** to see the
+  title preview that a mouse gets by hovering.
+- **Controller / D-pad navigation.** Plug in a controller and the D-pad or left stick moves the
+  selection through every grid and rail, exactly like the arrow keys — with hold-to-repeat.
+  **A** opens, **B** goes back, **X** searches, **Y** previews the highlighted title,
+  **LB / RB** page a rail sideways, and **Start** opens the command palette. Standard Xbox layout;
+  a one-time hint shows the map on first connect, and the `?` overlay now lists it too.
+- **Selection is always visible.** Whatever moved the focus — keyboard, controller, or Tab — the
+  highlighted card now gets the same accent ring and expanded artwork a hovered card gets, so you can
+  always see where you are.
+- Note: while a video is actually playing, the embedded page owns the input, so controller buttons
+  don't reach the app until you leave the player (`Esc` still exits from anywhere).
+
+---
+
 ## v0.5.4 — Movies/TV on dashboard rails (July 2026)
 
 - The **Trending / Top 10 / Top Rated / Newest / Upcoming** rails now have a **Movies / TV** toggle right

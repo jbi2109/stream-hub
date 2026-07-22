@@ -94,6 +94,17 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 | `Esc` | Close / back / exit the player (returns to where you launched from) |
 | `?` | Shortcuts overlay |
 
+## Touch and controller
+
+The app follows whatever you last used — no mode to switch.
+
+- **Touch** — hover-only controls (card actions, rail arrows, the player's Sources button) become
+  permanent, targets grow to 44px, and a **long-press on a poster** opens the preview card.
+- **Controller / D-pad** — D-pad or left stick moves the selection (hold to repeat); **A** opens,
+  **B** back, **X** search, **Y** preview, **LB/RB** page a rail, **Start** the command palette.
+  Standard Xbox layout. While a video is playing the embedded page owns the input — press `Esc` to
+  come back to the app first.
+
 ## Download (Windows)
 
 Grab the latest **`Stream Hub Setup <version>.exe`** from the
@@ -166,7 +177,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 159-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 163-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, global search, the native detail page, per-source embed patterns, the source

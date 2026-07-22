@@ -2110,6 +2110,68 @@ async function main() {
   assert.ok(capRes.hasWindow, 'entries within the cap window are kept');
   ok('capMap: FIFO eviction keeps the newest max entries, drops the oldest');
 
+  // ---------- v0.5.5 adaptive input: touch + gamepad / D-pad ----------
+
+  // 69. input mode follows the device: a touch pointerdown flips the body class and permanently reveals
+  //     the hover-only card actions (touch can't hover); a real mouse press flips it straight back.
+  await page.eval(`cont = [{ key: 'probe', title: 'Probe', url: '${SITE}/tv/428', season: 1, episode: 1, type: 'tv' }]; store('continue', cont); showHome();`);
+  await until(() => page.eval(`!!document.querySelector('#home .card .card-actions')`), 'library card with actions rendered');
+  const touchDown = `document.querySelector('#home .card').dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'PT', bubbles: true, clientX: 5, clientY: 5 }))`;
+  await page.eval(touchDown.replace('PT', 'touch'));
+  assert.ok(await page.eval(`document.body.classList.contains('input-touch')`), 'touch pointerdown -> body.input-touch');
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('#home .card .card-actions')).display`), 'flex', 'touch mode reveals the hover-only card actions');
+  assert.ok(await page.eval(`parseInt(getComputedStyle(document.querySelector('#home .card .card-actions button')).height) >= 44`), 'touch targets grow to >= 44px');
+  await page.eval(touchDown.replace('PT', 'mouse'));
+  assert.ok(await page.eval(`document.body.classList.contains('input-pointer') && !document.body.classList.contains('input-touch')`), 'mouse pointerdown -> body.input-pointer');
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('#home .card .card-actions')).display`), 'none', 'pointer mode hides the actions again (hover-revealed)');
+  ok('input: touch/pointer mode class flips and drives the touch affordances');
+
+  // 69b. focus parity: a focused card shows its actions on ANY input (keyboard/gamepad reach them too).
+  await page.eval(`document.querySelector('#home .card').focus()`);
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('#home .card .card-actions')).display`), 'flex', 'a focused card reveals its actions');
+  await page.eval(`document.activeElement.blur(); cont.length = 0; store('continue', cont);`);
+  ok('input: focus parity — hover-only card actions are reachable by focus');
+
+  // 70. touch long-press is the hover equivalent: press and hold a poster card -> the expand preview,
+  //     and the click that press also produces is swallowed (it must not open the detail page).
+  await page.eval(`browseTab = 'movie'; showBrowse();`);
+  await until(() => page.eval(`!!document.querySelector('#browse .poster-card')`), 'browse poster cards rendered for long-press');
+  await page.eval(`LONGPRESS_MS = 0; hideHoverPreview();`);
+  await page.eval(`document.querySelector('#browse .poster-card').dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true, clientX: 5, clientY: 5 }))`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview') && !document.querySelector('.hover-preview').hidden`), 'long-press opens the hover preview');
+  await page.eval(`document.querySelector('#browse .poster-card').dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
+  assert.ok(await page.eval(`document.getElementById('detail').hidden`), 'the long-press click is swallowed (detail page not opened)');
+  await page.eval(`hideHoverPreview(); LONGPRESS_MS = 500;`);
+  ok('input: touch long-press opens the preview and suppresses the follow-up click');
+
+  // 71. gamepad: a stubbed pad drives the SAME focus engine the arrow keys use. D-pad right steps the
+  //     grid, A activates, B goes back — each fired once per press (edge-detected, not per frame).
+  await page.eval(`window.__realPads = navigator.getGamepads;
+    window.__pad = { connected: true, axes: [0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+    navigator.getGamepads = () => [window.__pad];`);
+  // the discover fixture yields a single card — append two probe cards so there is a step to make
+  await page.eval(`document.querySelector('#browse .grid').append(
+    posterCard('movie', { id: 42, title: 'Pad A', poster_path: '/x.jpg' }),
+    posterCard('movie', { id: 42, title: 'Pad B', poster_path: '/x.jpg' }));`);
+  // focus + press + read in ONE eval: a pending browse re-render between evals would detach the nodes we hold
+  const padStep = await page.eval(`(() => {
+    const c = [...document.querySelectorAll('#browse .poster-card')];
+    c[0].focus();
+    __pad.buttons[15].pressed = true; pollPads();
+    const moved = document.activeElement === c[1];
+    pollPads();                                  // still held, inside the repeat delay
+    return { moved, gamepad: document.body.classList.contains('input-gamepad'), norepeat: document.activeElement === c[1] };
+  })()`);
+  assert.ok(padStep.gamepad, 'a pad input flips body.input-gamepad');
+  assert.ok(padStep.moved, 'D-pad right moves focus one card along');
+  assert.ok(padStep.norepeat, 'a held direction does not repeat before the delay');
+  await page.eval(`__pad.buttons[15].pressed = false; pollPads(); __pad.buttons[0].pressed = true; pollPads();`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden`), 'A activates the focused card (opens its detail page)');
+  await page.eval(`__pad.buttons[0].pressed = false; pollPads(); __pad.buttons[1].pressed = true; pollPads();`);
+  await until(() => page.eval(`document.getElementById('detail').hidden && !document.getElementById('browse').hidden`), 'B goes back to Browse');
+  await page.eval(`__pad.buttons[1].pressed = false; pollPads(); navigator.getGamepads = window.__realPads; setInputMode('pointer');`);
+  ok('input: gamepad D-pad moves focus, A activates, B goes back (edge-detected per press)');
+
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);
 }

@@ -98,10 +98,21 @@ const SHORTCUTS = [
   ['5', 'Open YouTube'],
   ['← ↑ → ↓', 'Move around a grid'],
   ['Enter', 'Open the focused item'],
-  ['/', 'Focus search'],
+  ['/', 'Open search'],
   ['Ctrl+K', 'Command palette (works while watching too)'],
   ['Esc', 'Close / back / exit the player'],
   ['?', 'This overlay'],
+];
+
+// Controller/D-pad map (input.js polls the Gamepad API) — standard Xbox button layout.
+const PAD_HELP = [
+  ['D-pad / stick', 'Move around'],
+  ['A', 'Open the focused item'],
+  ['B', 'Back'],
+  ['X', 'Search'],
+  ['Y', 'Preview the focused title'],
+  ['LB / RB', 'Page a rail sideways'],
+  ['Start', 'Command palette'],
 ];
 
 function openHelp() {
@@ -111,6 +122,12 @@ function openHelp() {
   const cardEl = mk('div', 'palette-card help-card');
   cardEl.append(mk('h3', null, 'Keyboard shortcuts'));
   for (const [key, what] of SHORTCUTS) {
+    const row = mk('div', 'help-row');
+    row.append(mk('span', 'help-key', key), mk('span', null, what));
+    cardEl.append(row);
+  }
+  cardEl.append(mk('h3', null, 'Controller'));
+  for (const [key, what] of PAD_HELP) {
     const row = mk('div', 'help-row');
     row.append(mk('span', 'help-key', key), mk('span', null, what));
     cardEl.append(row);
