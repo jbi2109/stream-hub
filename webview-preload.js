@@ -66,3 +66,42 @@ try {
     if (document.documentElement) start(); else document.addEventListener('readystatechange', start, { once: true });
   }
 } catch (e) {}
+
+// Controller support while a video is playing. Chromium only updates gamepad state for the FOCUSED
+// document, and the guest owns focus whenever the player is up — so the host renderer's poll goes dead,
+// exactly like the keyboard does (which is why main forwards Escape / Ctrl+K from before-input-event).
+// There is no before-input-event for gamepads, so poll here and forward the same two actions.
+// Only B (back) and Start (palette) are forwarded: the D-pad has nothing to move while the player is
+// full-frame, and A belongs to the embedded player's own controls.
+try {
+  if (window.top === window) {
+    const { ipcRenderer } = require('electron');
+    const BTN = { B: 1, START: 9 };
+    const down = new Set();
+    let primed = false, raf = null;
+
+    const pollGuestPad = () => {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const pad = [...pads].find((p) => p && p.connected);
+      if (!pad) { down.clear(); primed = false; return false; }
+      for (const [name, i] of Object.entries(BTN)) {
+        const pressed = !!(pad.buttons[i] && pad.buttons[i].pressed);
+        if (!pressed) { down.delete(i); continue; }
+        if (down.has(i)) continue;
+        down.add(i);
+        // first sample only records what's already held — entering the player mid-press must not fire
+        if (primed) ipcRenderer.send('guest-pad', name === 'B' ? 'back' : 'palette');
+      }
+      primed = true;
+      return true;
+    };
+    window.__shPollPad = pollGuestPad; // e2e drives one tick with a stubbed navigator.getGamepads
+
+    const loop = () => { pollGuestPad(); raf = requestAnimationFrame(loop); };
+    window.addEventListener('gamepadconnected', () => { if (raf == null) loop(); });
+    window.addEventListener('gamepaddisconnected', () => {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      if (![...pads].some((p) => p && p.connected) && raf != null) { cancelAnimationFrame(raf); raf = null; }
+    });
+  }
+} catch (e) {}

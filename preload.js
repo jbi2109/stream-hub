@@ -21,4 +21,5 @@ contextBridge.exposeInMainWorld('sh', {
   adblockStatus: () => ipcRenderer.invoke('adblock-status'),  // ⚙ live engine state for the Privacy panel
   onExitPlayer: (cb) => ipcRenderer.on('exit-player', () => cb()),   // Esc pressed inside the guest player
   onOpenPalette: (cb) => ipcRenderer.on('open-palette', () => cb()), // Ctrl/Cmd+K pressed inside the guest
+  onGuestPad: (cb) => ipcRenderer.on('guest-pad', (_e, action) => cb(action)), // pad pressed while the player has focus
 });

@@ -151,6 +151,23 @@ function controlsHint() {
   toast('Controller ready — D-pad moves · A opens · B goes back · Y previews');
 }
 
+// A pad pressed while the guest player owns focus, forwarded by webview-preload.js through main.
+// Mark the button as already-down so the host loop — which never saw the press, because an unfocused
+// document gets no gamepad updates — doesn't treat the still-held button as a fresh press and fire twice.
+window.sh?.onGuestPad?.((action) => {
+  setInputMode('gamepad');
+  if (action === 'palette') { padDown.add(PAD_BTN.START); openPalette(); return; } // its input.focus() pulls focus back
+  padDown.add(PAD_BTN.B);
+  exitPlayer();
+  try { window.focus(); } catch {}   // the guest held focus; the host needs it back or its own poll stays dead
+  // Seed a visible selection in the view we landed on. The rails fill asynchronously, so the first
+  // attempt often finds only skeletons — retry once they've had a moment to arrive.
+  // ponytail: one retry is enough; if both miss, the user's next D-pad press seeds focus itself.
+  const seed = () => { if (!document.activeElement?.matches?.(NAV_SEL)) moveGrid('ArrowRight'); };
+  requestAnimationFrame(seed);
+  setTimeout(seed, 400);
+});
+
 window.addEventListener('gamepadconnected', () => { startPadLoop(); controlsHint(); });
 window.addEventListener('gamepaddisconnected', () => { if (!firstPad()) stopPadLoop(); });
 if (firstPad()) startPadLoop(); // a pad already awake at boot (Chromium usually needs input first)

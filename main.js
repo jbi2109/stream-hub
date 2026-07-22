@@ -437,6 +437,14 @@ app.whenReady().then(() => {
     e.returnValue = ms.youtubeScriptlets !== false && (YT.test(host) || (!!t && !!host && host.includes(t)));
   });
 
+  // Controller buttons pressed while the guest player has focus (webview-preload.js polls there,
+  // because Chromium only updates gamepad state for the focused document). Same routing as the
+  // Escape / Ctrl+K forward above. The action is whitelisted: guests run with contextIsolation:false,
+  // so a hostile page could reach this channel — the worst it can do is leave the player.
+  ipcMain.on('guest-pad', (e, action) => {
+    if (action === 'back' || action === 'palette') e.sender.hostWebContents?.send('guest-pad', action);
+  });
+
   // Version string for the sidebar footer, and a manual "check for updates" trigger.
   ipcMain.handle('app-version', () => app.getVersion());
   ipcMain.handle('check-update', async () => {

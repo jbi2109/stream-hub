@@ -5,6 +5,16 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.7 — Controller works while you're watching (July 2026)
+
+- **Your controller now reaches the app during playback.** Previously the embedded player took over the
+  input the moment a video started, so the pad went dead until you pressed `Esc`. **B** now leaves the
+  player (landing you back where you started, with the first item already selected) and **Start** opens
+  the command palette — the same two things `Esc` and `Ctrl+K` already did from inside the player.
+  The D-pad and **A** are deliberately left to the video player itself while it's on screen.
+
+---
+
 ## v0.5.6 — Touch/controller follow-ups (July 2026)
 
 Two rough edges found while stress-testing the v0.5.5 input model.

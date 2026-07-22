@@ -2203,6 +2203,54 @@ async function main() {
   await page.eval(`navigator.getGamepads = window.__realPads; setInputMode('pointer');`);
   ok('input: an open modal swallows pad input except B (close)');
 
+  // 72. open() must actually navigate even when the guest is already sitting on that exact URL. Re-opening
+  //     the page you are nominally already on (the YouTube rail button, re-opening a library card) has to
+  //     reload it rather than silently reveal whatever the guest drifted to. Counted from the host via
+  //     did-finish-load — connecting to the guest here races its own navigation.
+  await page.eval(`open('${SITE}/tv/428', false)`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/tv/428')`), 'player sitting on /tv/428');
+  await page.eval(`window.__loads = 0; document.getElementById('webview').addEventListener('did-finish-load', () => { window.__loads++; });`);
+  await page.eval(`showBrowse(); open('${SITE}/tv/428', false);`);
+  await until(() => page.eval(`window.__loads > 0`), 're-opening the URL the guest is already on reloads it');
+  ok('open: re-opening the URL the guest is already on triggers a real reload');
+
+  // 73. controller input while the PLAYER has focus. Chromium only updates gamepad state for the focused
+  //     document, so the host's poll is dead while watching — the guest preload polls instead and forwards
+  //     B/Start over IPC, the same shape main already uses for Escape / Ctrl+K.
+  await page.eval(`open('${SITE}/tv/428', false)`);
+  await until(() => page.eval(`!document.getElementById('webview').hidden && document.getElementById('webview').getURL().includes('/tv/428')`), 'player up for the pad-forward test');
+  // retry through the guest's own navigation races: connect only once the poller is actually installed
+  const padGuest = await until(async () => {
+    const t = (await targets()).find((x) => x.url.includes('/tv/428') && x.webSocketDebuggerUrl);
+    if (!t) return null;
+    try {
+      const c = await CDP.connect(t.webSocketDebuggerUrl);
+      if (await c.eval(`typeof window.__shPollPad`) === 'function') return c;
+      c.close();
+    } catch {}
+    return null;
+  }, 'guest with the pad poller installed');
+  // first tick only primes: a button already held when the player opens must not fire
+  await padGuest.eval(`window.__pad = { connected: true, axes: [0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+    navigator.getGamepads = () => [window.__pad];
+    __pad.buttons[1].pressed = true; window.__shPollPad();`);
+  await sleep(600);
+  assert.ok(await page.eval(`!document.getElementById('webview').hidden`), 'a button held on the priming tick must not fire');
+  await padGuest.eval(`__pad.buttons[1].pressed = false; window.__shPollPad();`);
+
+  // Start -> the host palette (its input.focus() is what pulls focus back out of the guest)
+  await padGuest.eval(`__pad.buttons[9].pressed = true; window.__shPollPad();`);
+  await until(() => page.eval(`!!paletteEl`), 'Start while watching opens the palette');
+  await page.eval(`closePalette()`);
+  await padGuest.eval(`__pad.buttons[9].pressed = false; window.__shPollPad();`);
+
+  // B -> leave the player, and the host must not re-fire the still-held button as a fresh press
+  await padGuest.eval(`__pad.buttons[1].pressed = true; window.__shPollPad();`);
+  await until(() => page.eval(`document.getElementById('webview').hidden`), 'B while watching exits the player');
+  assert.ok(await page.eval(`padDown.has(1)`), 'the forwarded button is marked down so the host loop does not double-fire it');
+  padGuest.close();
+  ok('input: controller reaches the app while the player has focus (B exits, Start opens the palette)');
+
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);
 }

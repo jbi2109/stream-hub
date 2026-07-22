@@ -102,8 +102,8 @@ The app follows whatever you last used — no mode to switch.
   permanent, targets grow to 44px, and a **long-press on a poster** opens the preview card.
 - **Controller / D-pad** — D-pad or left stick moves the selection (hold to repeat); **A** opens,
   **B** back, **X** search, **Y** preview, **LB/RB** page a rail, **Start** the command palette.
-  Standard Xbox layout. While a video is playing the embedded page owns the input — press `Esc` to
-  come back to the app first.
+  Standard Xbox layout. While a video is playing the embedded player keeps the D-pad and **A**, but
+  **B** still leaves the player and **Start** still opens the palette.
 
 ## Download (Windows)
 
@@ -177,7 +177,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 164-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 166-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home, global search, the native detail page, per-source embed patterns, the source
