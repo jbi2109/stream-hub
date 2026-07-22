@@ -2141,7 +2141,19 @@ async function main() {
   await until(() => page.eval(`!!document.querySelector('.hover-preview') && !document.querySelector('.hover-preview').hidden`), 'long-press opens the hover preview');
   await page.eval(`document.querySelector('#browse .poster-card').dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
   assert.ok(await page.eval(`document.getElementById('detail').hidden`), 'the long-press click is swallowed (detail page not opened)');
-  await page.eval(`hideHoverPreview(); LONGPRESS_MS = 500;`);
+  // ...and only THAT click. A long-press that ends by dragging off produces NO click, so the armed
+  // suppression must be dropped on the next press instead of eating an unrelated tap later.
+  await page.eval(`hideHoverPreview(); document.querySelector('#browse .poster-card').dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true, clientX: 5, clientY: 5 }))`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview') && !document.querySelector('.hover-preview').hidden`), 'second long-press arms the suppression');
+  await page.eval(`(() => {
+    const c = document.querySelector('#browse .poster-card');
+    c.dispatchEvent(new PointerEvent('pointercancel', { pointerType: 'touch', bubbles: true })); // dragged off: no click follows
+    c.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', bubbles: true }));
+    c.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  })()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden`), 'the next click is NOT swallowed');
+  await page.eval(`hideHoverPreview(); LONGPRESS_MS = 500; browseTab = 'movie'; showBrowse();`);
+  await until(() => page.eval(`!!document.querySelector('#browse .poster-card')`), 'back on browse after the suppression check');
   ok('input: touch long-press opens the preview and suppresses the follow-up click');
 
   // 71. gamepad: a stubbed pad drives the SAME focus engine the arrow keys use. D-pad right steps the
@@ -2169,8 +2181,27 @@ async function main() {
   await until(() => page.eval(`!document.getElementById('detail').hidden`), 'A activates the focused card (opens its detail page)');
   await page.eval(`__pad.buttons[0].pressed = false; pollPads(); __pad.buttons[1].pressed = true; pollPads();`);
   await until(() => page.eval(`document.getElementById('detail').hidden && !document.getElementById('browse').hidden`), 'B goes back to Browse');
-  await page.eval(`__pad.buttons[1].pressed = false; pollPads(); navigator.getGamepads = window.__realPads; setInputMode('pointer');`);
+  await page.eval(`__pad.buttons[1].pressed = false; pollPads();`);
   ok('input: gamepad D-pad moves focus, A activates, B goes back (edge-detected per press)');
+
+  // 71b. a modal owns the input: the D-pad must not move focus behind an open palette, and A must not
+  //      activate whatever sits under it — only B reaches through (goBack closes the topmost modal).
+  const padModal = await page.eval(`(() => {
+    const c = [...document.querySelectorAll('#browse .poster-card')];
+    c[0].focus(); openPalette();
+    __pad.buttons[15].pressed = true; pollPads(); __pad.buttons[15].pressed = false; pollPads();
+    // unguarded, moveGrid would seed focus into the grid behind the palette, stealing it from the input
+    const stayed = !!document.activeElement && document.activeElement.classList.contains('palette-input');
+    __pad.buttons[0].pressed = true; pollPads(); __pad.buttons[0].pressed = false; pollPads();
+    const stillOpen = !!paletteEl && document.getElementById('detail').hidden;
+    __pad.buttons[1].pressed = true; pollPads(); __pad.buttons[1].pressed = false; pollPads();
+    return { stayed, stillOpen, closed: !paletteEl };
+  })()`);
+  assert.ok(padModal.stayed, 'the D-pad does not move focus behind an open modal');
+  assert.ok(padModal.stillOpen, 'A does not activate the item under an open modal');
+  assert.ok(padModal.closed, 'B reaches through and closes the modal');
+  await page.eval(`navigator.getGamepads = window.__realPads; setInputMode('pointer');`);
+  ok('input: an open modal swallows pad input except B (close)');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

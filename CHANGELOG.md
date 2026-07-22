@@ -5,6 +5,18 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.6 — Touch/controller follow-ups (July 2026)
+
+Two rough edges found while stress-testing the v0.5.5 input model.
+
+- **Command palette and dialogs now hold the controller.** With the palette, shortcuts overlay, or the
+  add-source wizard open, the D-pad no longer moves the selection on the page behind it and **A** no
+  longer opens whatever sits underneath — only **B** reaches through, to close the dialog.
+- **A cancelled long-press no longer eats your next tap.** If you pressed and held a poster, then slid
+  your finger off without lifting, the tap after it could be ignored.
+
+---
+
 ## v0.5.5 — Touch and controller support (July 2026)
 
 Stream Hub now adapts to however you're driving it — mouse, touchscreen, or a game controller / TV

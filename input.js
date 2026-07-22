@@ -29,6 +29,7 @@ const cancelLongPress = () => clearTimeout(lpTimer);
 
 document.addEventListener('pointerdown', (e) => {
   cancelLongPress();
+  lpFired = false;   // a press that ended without a click (dragged off) must not swallow the NEXT one
   if (e.pointerType !== 'touch') return;
   const cardEl = e.target.closest && e.target.closest('.poster-card');
   if (!cardEl || !cardEl._preview) { hideHoverPreview(); return; } // tapping anywhere else dismisses it
@@ -69,9 +70,14 @@ function pollPads() {
   const pad = firstPad();
   if (!pad) { padDir = null; padDown.clear(); return false; }
 
+  // A modal (palette / help / wizard / lightbox) owns the input, exactly as in the keyboard dispatcher:
+  // only B reaches through, and goBack() closes the topmost one.
+  const blocked = modalOpen();
+
   const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
   let dir = null;
-  if (padPressed(pad, 14) || ax <= -PAD_DEADZONE) dir = 'ArrowLeft';
+  if (blocked) dir = null;
+  else if (padPressed(pad, 14) || ax <= -PAD_DEADZONE) dir = 'ArrowLeft';
   else if (padPressed(pad, 15) || ax >= PAD_DEADZONE) dir = 'ArrowRight';
   else if (padPressed(pad, 12) || ay <= -PAD_DEADZONE) dir = 'ArrowUp';
   else if (padPressed(pad, 13) || ay >= PAD_DEADZONE) dir = 'ArrowDown';
@@ -86,8 +92,11 @@ function pollPads() {
   }
 
   const edge = (i, run) => {                  // fire once per press, not once per frame
-    if (padPressed(pad, i)) { if (!padDown.has(i)) { padDown.add(i); setInputMode('gamepad'); run(); } }
-    else padDown.delete(i);
+    if (padPressed(pad, i)) {
+      if (padDown.has(i)) return;
+      padDown.add(i); setInputMode('gamepad');
+      if (!blocked || i === PAD_BTN.B) run(); // releases stay tracked even when a modal swallows the press
+    } else padDown.delete(i);
   };
   edge(PAD_BTN.A, padActivate);
   edge(PAD_BTN.B, () => goBack());
