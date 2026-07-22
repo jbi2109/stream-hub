@@ -1245,7 +1245,15 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 .hover-preview { position: fixed; z-index: var(--z-modal); width: clamp(280px, 24vw, 360px);
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md);
   box-shadow: var(--shadow-3); overflow: hidden; }
-.hp-art img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--panel-2); }
+/* v0.6.0: the art is a stack of cross-faded backdrop layers; showHoverPreview toggles [hidden] on
+   .hp-art when the payload carries no art at all (collapsed by the !important rule at :60). */
+.hp-art { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: var(--panel-2); }
+.hp-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  display: block; opacity: 0; transition: opacity var(--dur-slow) ease; }
+.hp-art img.on { opacity: 1; }
+/* On EVERY layer, not just .on: toggling .on would restart the pan on each swap. All layers are
+   inserted in one replaceChildren, so their animations are start-time-synchronised. */
+body:not(.reduced-motion) .hp-art img { animation: hero-kenburns 10s ease-in-out infinite alternate; }
 .hp-body { padding: 12px 14px; }
 .hp-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .hp-meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }

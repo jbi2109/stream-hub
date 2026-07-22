@@ -138,11 +138,30 @@ function hoverDetail(kind, id) {
 }
 let HOVER_MS = 1000;                      // bare global so e2e can zero it (like heroTimer/settings)
 let hp = null, hpTimer = null, hpHide = null, hpToken = 0;
+// v0.6.0: cross-fade the preview backdrop through the frames already in the cached detail payload
+// (a real video preview is impossible under the CSP — see CHANGELOG). Bare globals so e2e can drive them.
+let hpMotion = null, HP_FRAME_MS = 2500;
+// Read the active index from the LIVE children, never from a counter: showHoverPreview rebuilds the
+// layers under a running interval (card -> card), and a stale index would toggle detached nodes.
+function hpStep() {
+  const layers = hp && hp._els.art.children;
+  if (!layers || layers.length < 2) return;
+  let i = -1;                              // no .on anywhere -> next is 0, not 1
+  for (let j = 0; j < layers.length; j++) if (layers[j].classList.contains('on')) i = j;
+  const next = (i + 1) % layers.length;
+  for (let j = 0; j < layers.length; j++) layers[j].classList.toggle('on', j === next);
+}
+// The leading clearInterval is what prevents a stale interval on card -> card: mouseenter clears the
+// pending scheduleHide, so hideHoverPreview never runs between two consecutive shows.
+function startHpMotion(n) {
+  clearInterval(hpMotion); hpMotion = null;
+  if (n < 2 || document.body.classList.contains('reduced-motion')) return;
+  hpMotion = setInterval(hpStep, HP_FRAME_MS);
+}
 function hoverPreviewNode() {              // build the singleton once, lazily, appended to document.body
   if (hp) return hp;
   hp = mk('div', 'hover-preview'); hp.hidden = true;
-  const art = mk('div', 'hp-art'); const img = document.createElement('img'); img.loading = 'lazy';
-  img.onerror = () => { img.style.display = 'none'; }; art.append(img);
+  const art = mk('div', 'hp-art');   // layers are built per-show by showHoverPreview (v0.6.0)
   const body = mk('div', 'hp-body');
   const title = mk('div', 'hp-title'); const meta = mk('div', 'hp-meta'); const ov = mk('div', 'hp-overview');
   const cta = mk('div', 'hp-cta'); const play = mk('button', 'hero-btn primary hp-play'); const later = mk('button', 'hero-btn hp-later', '+ Watch Later');
@@ -152,11 +171,11 @@ function hoverPreviewNode() {              // build the singleton once, lazily, 
   hp.addEventListener('mouseleave', scheduleHide);
   document.body.append(hp);
   document.addEventListener('scroll', hideHoverPreview, true); // capture-phase: the fixed node's anchor moves on any scroll (rail or view)
-  hp._els = { img, title, meta, ov, play, later };
+  hp._els = { art, title, meta, ov, play, later };
   return hp;
 }
 const scheduleHide = () => { clearTimeout(hpHide); hpHide = setTimeout(hideHoverPreview, 120); }; // grace period
-function hideHoverPreview() { if (hp) hp.hidden = true; hpToken++; clearTimeout(hpTimer); clearTimeout(hpHide); }
+function hideHoverPreview() { if (hp) hp.hidden = true; hpToken++; clearTimeout(hpTimer); clearTimeout(hpHide); clearInterval(hpMotion); hpMotion = null; }
 async function showHoverPreview(cardEl, kind, item) {
   const node = hoverPreviewNode(); const token = ++hpToken;
   const d = await hoverDetail(kind, item.id);
@@ -166,7 +185,21 @@ async function showHoverPreview(cardEl, kind, item) {
   const year = (d.release_date || d.first_air_date || '').slice(0, 4);
   e.meta.textContent = [year, d.vote_average ? `★ ${d.vote_average.toFixed(1)}` : '', (d.genres || []).slice(0, 3).map((g) => g.name).join(' · ')].filter(Boolean).join('   ·   ');
   e.ov.textContent = (d.overview || '').slice(0, 200);
-  e.img.style.display = ''; e.img.src = IMG(d.backdrop_path, 'w780') || '';
+  // filter the PATHS, not the IMG() output: IMG('') is '', which would still count as a frame.
+  // NOT covered by T77 — the fixture serves 3 distinct non-falsy backdrops, so filter(Boolean),
+  // the Set-dedupe and the slice cap can each be deleted with the suite still green.
+  const paths = [d.backdrop_path, ...((d.images && d.images.backdrops) || []).map((b) => b.file_path)].filter(Boolean);
+  const frames = [...new Set(paths)].slice(0, 4);
+  e.art.replaceChildren(...frames.map((p, i) => {
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.src = IMG(p, 'w780');
+    if (i === 0) img.className = 'on';
+    img.onerror = () => { img.style.display = 'none'; };
+    return img;
+  }));
+  e.art.hidden = !frames.length;   // no art at all -> collapse, exactly as today (style.css:60 [hidden] is !important)
+  startHpMotion(frames.length);
   e.play.onclick = () => { hideHoverPreview(); showDetail(kind, item.id); };
   e.later.onclick = () => { addLater(kind, kind === 'movie' ? 'movie' : 'tv', item.id, d.title || d.name, IMG(d.poster_path, 'w342')); hideHoverPreview(); };
   node.hidden = false;

@@ -5,6 +5,23 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.6.0 — Personalised rows + a moving hover preview (July 2026)
+
+- **"Because you watched …" on the dashboard.** A new rail, seeded from the last show or film you were
+  watching, recommends more like it. It re-titles and re-points itself as you watch new things, and it
+  quietly disappears when there's nothing to base it on (empty library, or no TMDB key). It sits just
+  under Continue Watching and is on by default — existing installs get it added once, unless you'd
+  already turned rails off, and you can hide or reorder it in **Settings → General** like any other rail.
+  (That Settings list shows the rail's current title as of app start.)
+- **The hover preview now moves.** Hovering a poster cross-fades through the title's backdrop images with
+  a slow Ken Burns drift, instead of showing a single still. It is **not** a video trailer — the app's
+  security policy deliberately can't embed one, and it never extracts a stream — so this animates the
+  artwork the detail page already loads, at no extra network cost. All of it stills completely under
+  "reduce motion". A title with no backdrop art shows a plain panel rather than a broken image; if one of
+  several backdrops fails to load, that frame shows as a blank panel for its turn in the rotation.
+
+---
+
 ## v0.5.8 — YouTube picks up where you left it (July 2026)
 
 - **The YouTube button no longer throws you back to the home feed.** It loads YouTube the first time you

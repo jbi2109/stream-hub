@@ -90,6 +90,13 @@ const tmdb = http.createServer((req, res) => {
       recommendations: { results: [{ id: 51, title: 'Rec Movie', poster_path: '/r.jpg' }] },
       similar: { results: [{ id: 52, title: 'Similar Movie', poster_path: '/s.jpg' }] },
     }));
+  } else if (/\/3\/(movie|tv)\/(\d+)\/recommendations$/.test(p)) {
+    // v0.6.0 "Because you watched": echo media type + seed id into the title so the BYW rail's cards
+    // are distinguishable from the generic branch's 'Fixture Title' (otherwise T75/T76 are vacuous).
+    const [, media, id] = p.match(/\/3\/(movie|tv)\/(\d+)\/recommendations$/);
+    const t = `Rec ${media.toUpperCase()} ${id}`;      // 'MOVIE' never contains the 'TV' substring
+    res.end(JSON.stringify({ page: 1, total_pages: 1,
+      results: [{ id: 900, title: t, name: t, poster_path: '/r.jpg' }] }));
   } else if (/\/genre\/(movie|tv)\/list$/.test(p)) {
     res.end(JSON.stringify({ genres: [{ id: 28, name: 'Action & Adventure' }, { id: 16, name: 'Animation' }, { id: 18, name: 'Drama' }] }));
   } else if (/\/watch\/providers\/(movie|tv)$/.test(p)) {
@@ -2236,16 +2243,26 @@ async function main() {
     __pad.buttons[1].pressed = true; window.__shPollPad();`);
   await sleep(600);
   assert.ok(await page.eval(`!document.getElementById('webview').hidden`), 'a button held on the priming tick must not fire');
-  await padGuest.eval(`__pad.buttons[1].pressed = false; window.__shPollPad();`);
+  // Self-healing: the guest document occasionally reloads under us mid-test, taking the stub with it
+  // (seen ~3 runs in 10 as `__pad is not defined`). Re-install and re-prime before each press.
+  const padSet = (btn, val) => padGuest.eval(`(() => {
+    if (typeof window.__pad === 'undefined') {
+      window.__pad = { connected: true, axes: [0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+      navigator.getGamepads = () => [window.__pad];
+      window.__shPollPad();                    // a fresh document's first tick only primes
+    }
+    window.__pad.buttons[${btn}].pressed = ${val}; window.__shPollPad();
+  })()`);
+  await padSet(1, false);
 
   // Start -> the host palette (its input.focus() is what pulls focus back out of the guest)
-  await padGuest.eval(`__pad.buttons[9].pressed = true; window.__shPollPad();`);
+  await padSet(9, true);
   await until(() => page.eval(`!!paletteEl`), 'Start while watching opens the palette');
   await page.eval(`closePalette()`);
-  await padGuest.eval(`__pad.buttons[9].pressed = false; window.__shPollPad();`);
+  await padSet(9, false);
 
   // B -> leave the player, and the host must not re-fire the still-held button as a fresh press
-  await padGuest.eval(`__pad.buttons[1].pressed = true; window.__shPollPad();`);
+  await padSet(1, true);
   await until(() => page.eval(`document.getElementById('webview').hidden`), 'B while watching exits the player');
   assert.ok(await page.eval(`padDown.has(1)`), 'the forwarded button is marked down so the host loop does not double-fire it');
   padGuest.close();
@@ -2275,6 +2292,131 @@ async function main() {
   })()`);
   assert.deepStrictEqual(ytOpen, ['https://www.youtube.com', false], 'off YouTube, the button loads the home page untracked');
   ok('youtube: the rail button returns you where you left off, and only loads fresh when elsewhere');
+
+  // 75. v0.6.0 F1: "Because you watched X" — a personalised rail seeded from the newest Continue entry.
+  //     The rail sits at index 4, i.e. BEYOND EAGER=2, and the observer is disconnected immediately after
+  //     render (T65d's technique) — so the only way it can hold cards is the special => eager gate in
+  //     renderDashboard. That makes assertion 2 the revert pin for `special: 'because'`.
+  await page.eval(`(() => { cont.length = 0;
+    cont.push({ key: 'tv#428', title: 'Seed Show', url: '${PLAYER}/embed/tv/428/1/1', poster: '',
+                season: 1, episode: 1, type: 'tv', updatedAt: Date.now(), position: null, duration: null, note: '' });
+    store('continue', cont);
+    settings.dashRails = ['continue', 'trending', 'top10', 'live', 'because']; saveSettings();
+    showDashboard(); railObserver && railObserver.disconnect(); })()`);
+  const bywSec = `[...document.querySelectorAll('#dashboard .dash-section')].find(s => (s.querySelector('h2')||{}).textContent === 'Because you watched Seed Show')`;
+  await until(() => page.eval(`!!(${bywSec})`), 'BYW rail is titled after the seed');
+  await until(() => page.eval(`(() => { const s = ${bywSec}; return s && [...s.querySelectorAll('.rail .card')].some(c => c.textContent.includes('Rec TV 428')); })()`),
+    "BYW rail eager-fills from the seed's /recommendations even below the fold");
+  assert.ok(await page.eval(`(() => { const s = ${bywSec}; return !s.querySelector('.rail-type'); })()`), 'the BYW rail must have no Movies/TV toggle (its media type comes from the seed)');
+  assert.strictEqual(await page.eval(`DEFAULT_DASH_RAILS[DEFAULT_DASH_RAILS.length - 1]`), 'because', "'because' is the LAST default rail (keeps rail index 1 = Trending for T53, and the EAGER=2 set unchanged)");
+  assert.ok(await page.eval(`SETTINGS_DEFAULTS.dashRails.includes('because')`), 'the BYW rail is on by default');
+  // ...and with NO seed it removes itself before paint, at that same below-fold index — never a
+  // "Because You Watched" skeleton. (Contract check, not a revert pin: it also passes with no feature.)
+  await page.eval(`cont.length = 0; store('continue', cont); showDashboard(); railObserver && railObserver.disconnect();`);
+  await until(() => page.eval(`![...document.querySelectorAll('#dashboard .dash-section h2')].some(h => h.textContent.startsWith('Because'))`),
+    'a seedless BYW rail removes itself even below the fold');
+  ok('dashboard: "Because you watched X" rail — seed-titled, eager below the fold, self-removing');
+
+  // 76. the seed tracks the library and the guards hold. Position is irrelevant now (special => always
+  //     eager), so use the smallest rail set that still renders Continue.
+  await page.eval(`settings.dashRails = ['continue', 'because']; saveSettings(); window.__k = tmdbKey;`);
+  // 1. a newer entry re-seeds the rail. renderDashboard() is REQUIRED — mutating cont alone renders nothing.
+  await page.eval(`(() => {
+    cont.unshift({ key: 'movie#500', title: 'Other Film', url: '${PLAYER}/embed/movie/500', poster: '',
+                   season: null, episode: null, type: 'movie', updatedAt: Date.now(), position: null, duration: null, note: '' });
+    store('continue', cont); renderDashboard(); })()`);
+  const bywAny = `[...document.querySelectorAll('#dashboard .dash-section')].find(s => ((s.querySelector('h2')||{}).textContent || '').startsWith('Because you watched'))`;
+  await until(() => page.eval(`(() => { const s = ${bywAny}; return s && (s.querySelector('h2').textContent === 'Because you watched Other Film') && [...s.querySelectorAll('.rail .card')].some(c => c.textContent.includes('Rec MOVIE 500')); })()`),
+    'a newer Continue entry re-seeds the BYW rail (heading + /movie/500 recommendations)');
+  // 2. empty library -> no rail at all (contract check; "works with an empty library" is non-negotiable)
+  await page.eval(`cont.length = 0; store('continue', cont); renderDashboard();`);
+  await until(() => page.eval(`!(${bywAny})`), 'an empty library removes the BYW rail');
+  // 3. no TMDB key -> no rail, while Continue still renders. A source must exist or renderDashboard
+  //    replaces the whole dashboard with the onboarding card. tmdbGet excludes api_key from its cache
+  //    key, so without the !tmdbKey guard this would still render from the warm cache.
+  await page.eval(`(() => {
+    cont.push({ key: 'movie#500', title: 'Other Film', url: '${PLAYER}/embed/movie/500', poster: '',
+                season: null, episode: null, type: 'movie', updatedAt: Date.now(), position: null, duration: null, note: '' });
+    store('continue', cont);
+    if (!sources.length) { sources.push({ name: 'Keep', url: '${PLAYER}', category: 'vod' }); store('sources', sources); }
+    tmdbKey = ''; renderDashboard(); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#dashboard .dash-section h2')].some(h => h.textContent === 'Continue Watching')`), 'dashboard still renders with no key');
+  assert.ok(await page.eval(`!(${bywAny})`), 'no TMDB key -> the BYW rail must not render (and must not fetch)');
+  // restore: the captured key (never a literal), and the default rail set
+  await page.eval(`tmdbKey = window.__k; delete window.__k; settings.dashRails = [...DEFAULT_DASH_RAILS]; saveSettings();`);
+  ok('dashboard: the BYW seed follows the library; empty library and missing key both remove the rail');
+
+  // 76b. v0.6.0 upgrade path. A PERSISTED dashRails beats DEFAULT_DASH_RAILS, so an existing install
+  //      would never see the new rail without a one-shot migration. The suite wipes the profile every
+  //      run, i.e. it only ever exercises the fresh-profile path — so the upgrading profile is simulated
+  //      here and migrateRailsV060() is driven directly.
+  const railsMig = await page.eval(`(() => {
+    const out = {}, before = settings.dashRails;
+    out.ranAtBoot = load('railsV060', false);                    // the boot call must have set the flag
+    // (a) pre-v0.6.0 profile: 4-rail list, no flag -> 'because' appended and persisted
+    settings.dashRails = ['continue', 'trending', 'top10', 'live']; saveSettings();
+    localStorage.removeItem('railsV060');
+    migrateRailsV060();
+    out.appended = settings.dashRails.join(',');
+    out.persisted = JSON.parse(localStorage.getItem('settings')).dashRails.join(',');
+    out.flag = load('railsV060', false);
+    // (b) flag now set: a rail the user deliberately removed is NEVER re-added
+    settings.dashRails = ['continue', 'trending', 'top10', 'live']; saveSettings();
+    migrateRailsV060();
+    out.notReadded = settings.dashRails.join(',');
+    // (c) already present (the fresh-profile shape): no duplicate
+    settings.dashRails = ['continue', 'because']; saveSettings();
+    localStorage.removeItem('railsV060');
+    migrateRailsV060();
+    out.noDuplicate = settings.dashRails.join(',');
+    // restore
+    settings.dashRails = before; saveSettings(); store('railsV060', true);
+    return out;
+  })()`);
+  assert.strictEqual(railsMig.ranAtBoot, true, 'the rail migration must run at boot (settings.js), not only on demand');
+  assert.strictEqual(railsMig.appended, 'continue,trending,top10,live,because', "the migration appends 'because' to a pre-0.6.0 rail list");
+  assert.strictEqual(railsMig.persisted, 'continue,trending,top10,live,because', 'the migrated rail list is persisted');
+  assert.strictEqual(railsMig.flag, true, 'the migration sets its one-shot flag');
+  assert.strictEqual(railsMig.notReadded, 'continue,trending,top10,live', 'with the flag set, a rail the user removed is never re-added');
+  assert.strictEqual(railsMig.noDuplicate, 'continue,because', 'the migration never duplicates a rail that is already enabled');
+  ok('dashboard rails: v0.6.0 one-shot migration adds the BYW rail to upgrading profiles, exactly once');
+
+  // 77. v0.6.0 F2: the hover preview cross-fades through the backdrop frames already in the cached detail
+  //     payload (backdrop_path + images.backdrops -> 3 distinct frames from the fixture), each layer
+  //     Ken-Burns-panning, all of it gated by reduced-motion.
+  //     HP_FRAME_MS is raised FIRST so the live interval physically cannot tick during the manual-step
+  //     assertions (until polls every 100 ms, test/cdp.js:13). Restored to its declared 2500 at the end.
+  await page.eval(`HP_FRAME_MS = 60000; hideHoverPreview();`);
+  await page.eval(`(() => { const c = posterCard('movie', { id: 42, title: 'X', poster_path: '/x.jpg' }); document.getElementById('browse').append(c); window.__hpCard = c; })()`);
+  await page.eval(`showHoverPreview(window.__hpCard, 'movie', { id: 42 })`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview:not([hidden])')`), 'hover preview shown for the motion check');
+  // 1. one layer per frame, not the single <img> of v0.4.5 (the fixture serves exactly 3: backdrop_path
+  //    + 2 images.backdrops — pinned exactly so a cap/dedupe regression cannot hide behind a >= )
+  assert.strictEqual(await page.eval(`document.querySelectorAll('.hover-preview .hp-art img').length`), 3, 'the hover preview should build one layer per backdrop frame');
+  // 2. the cross-fade interval is armed under normal motion
+  assert.ok(await page.eval(`hpMotion !== null`), 'the frame interval must be armed with >1 frame under normal motion');
+  // 3. exactly one layer is active; it starts at 0 and advances one step at a time
+  assert.strictEqual(await page.eval(`document.querySelectorAll('.hover-preview .hp-art img.on').length`), 1, 'exactly one frame layer is active');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('.hover-preview .hp-art img')].findIndex(i => i.classList.contains('on'))`), 0, 'frame 0 is active first (identical to the v0.4.5 backdrop)');
+  await page.eval(`hpStep()`);
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('.hover-preview .hp-art img')].findIndex(i => i.classList.contains('on'))`), 1, 'a step advances to the next frame');
+  assert.strictEqual(await page.eval(`document.querySelectorAll('.hover-preview .hp-art img.on').length`), 1, 'still exactly one active layer after a step');
+  // 4. the pan is on EVERY layer (not just .on), reusing the hero keyframes — no new @keyframes.
+  //    Read it off an INACTIVE layer, chosen by class rather than by index: an `.hp-art img.on`
+  //    animation (the variant this design rejects — it restarts the pan on every swap) must fail here
+  //    no matter where .on currently sits.
+  assert.strictEqual(await page.eval(`getComputedStyle([...document.querySelectorAll('.hover-preview .hp-art img')].find(i => !i.classList.contains('on'))).animationName`), 'hero-kenburns', 'each frame layer Ken-Burns-pans under normal motion, including the inactive ones');
+  // 5. teardown kills the interval (leak guard — hideHoverPreview is the single choke point)
+  await page.eval(`hideHoverPreview()`);
+  assert.strictEqual(await page.eval(`hpMotion`), null, 'hideHoverPreview must clear the frame interval');
+  // 6. reduced motion: no interval, no animation, frame 0 still shown
+  await page.eval(`document.body.classList.add('reduced-motion'); showHoverPreview(window.__hpCard, 'movie', { id: 42 });`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview:not([hidden])')`), 'hover preview re-shown under reduced motion');
+  assert.strictEqual(await page.eval(`hpMotion`), null, 'reduced motion arms no frame interval');
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('.hover-preview .hp-art img')).animationName`), 'none', 'reduced motion kills the Ken Burns pan');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('.hover-preview .hp-art img')].findIndex(i => i.classList.contains('on'))`), 0, 'reduced motion still shows frame 0');
+  await page.eval(`document.body.classList.remove('reduced-motion'); hideHoverPreview(); HP_FRAME_MS = 2500; window.__hpCard.remove(); delete window.__hpCard;`);
+  ok('hover preview: multi-frame backdrop cross-fade with a Ken Burns pan, fully gated by reduced-motion');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

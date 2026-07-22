@@ -30,6 +30,24 @@ const SETTINGS_DEFAULTS = {
 let settings = { ...SETTINGS_DEFAULTS, ...load('settings', {}) };
 function saveSettings() { store('settings', settings); }
 
+// v0.6.0 one-shot: 'because' is the first rail added to DEFAULT_DASH_RAILS that is ON by default, and
+// the line above lets a PERSISTED dashRails win over the default — so an upgrading profile (anyone who
+// has ever changed a setting) would never see it. Flag-gated so it appends exactly ONCE: a rail the user
+// later switches off in Settings stays off. Named (not an IIFE like core.js's migrate) so e2e can call
+// it directly — the suite wipes the profile every run and can only reach this path by simulation.
+// Runs HERE — after settings/saveSettings exist, before buildSettings() renders the rail list at the
+// bottom of this file, and before app.js's first showDashboard().
+function migrateRailsV060() {
+  if (load('railsV060', false)) return;
+  const ids = settings.dashRails;
+  // Array.isArray: a persisted `dashRails: null` beats the default at the spread above, and .push would
+  // throw during boot. !includes: on a FRESH profile 'because' is already there and enabledRails() does
+  // not dedupe, so an unguarded push renders the rail twice on every new install.
+  if (Array.isArray(ids) && !ids.includes('because')) { ids.push('because'); saveSettings(); }
+  store('railsV060', true);
+}
+migrateRailsV060();
+
 // The ⚙ subset in the shape main.js wants (extraAuthHosts: comma string -> array of hosts).
 function mainSubset(s) {
   return {
@@ -155,7 +173,7 @@ function dashRailsControl() {
       down.disabled = !cb.checked || i >= enabled.length - 1;
       up.onclick = () => reorder(r.id, -1);
       down.onclick = () => reorder(r.id, 1);
-      row.append(cb, mk('span', 'dashrail-name', r.title), up, down);
+      row.append(cb, mk('span', 'dashrail-name', railTitle(r)), up, down);
       return row;
     }));
   }

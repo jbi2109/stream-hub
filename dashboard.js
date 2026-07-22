@@ -20,11 +20,53 @@ const DASH_GENRES = [['28', 'Action'], ['35', 'Comedy'], ['27', 'Horror'], ['107
 const seeAllMovies = () => { browseTab = 'movie'; showBrowse(); };
 const seeAllLive = () => { browseTab = 'live'; showBrowse(); };
 
-// Rail registry. Descriptor: { id, title, seeAll, skel, skelN, special?, build:async()=>Node[] } where
-// build returns the card nodes. The 'live' special branch in fillRail bypasses build (cache-only).
+// v0.6.0 "Because you watched X". The seed is the most recent Continue entry with a TMDB identity.
+// cont is kept updatedAt-desc by captureCurrent (media.js:135), so the FIRST match is the most recent.
+// Live entries have no TMDB identity — same guard the hero uses (dashboard.js:390).
+function bywSeed() {
+  for (const c of cont) {
+    if (typeOf(c) === 'live') continue;
+    const id = tmdbIdOf(c.url);
+    if (id && c.title) return { kind: typeOf(c) === 'movie' ? 'movie' : 'tv', id, title: c.title };
+  }
+  return null;
+}
+
+// Heading. Clamp the SEED TITLE (not the whole heading) so the "Because you watched " prefix is never cut.
+// No seed -> the generic label. It is only ever READ on the dashboard for the instant between railShell
+// painting the <h2> and fillRail removing the section in the same task's microtask drain (special =>
+// eager, and a seedless build() returns [] with no await) — i.e. never on screen. The Settings rail
+// list is the one place a user actually sees it.
+const BYW_MAX = 32;
+function bywTitle() {
+  const s = bywSeed();
+  if (!s) return 'Because You Watched';
+  return 'Because you watched ' + (s.title.length > BYW_MAX ? s.title.slice(0, BYW_MAX - 1) + '…' : s.title);
+}
+
+// Rail registry. Descriptor: { id, title, seeAll, skel, skelN, special?, type?, build:async()=>Node[] }
+// where build returns the card nodes and title may be a function (v0.6.0 'because'). The 'live' special
+// branch in fillRail bypasses build (cache-only); any OTHER special value means only "fill eagerly,
+// whatever the position" — see the EAGER gate in renderDashboard.
 const DASH_RAILS = [
   { id: 'continue', title: 'Continue Watching', seeAll: showHome, skel: 'skel-wide', skelN: 5, special: 'continue',
     build: async () => cont.slice(0, DASH_RAIL_MAX).map(resumeCard) },
+  { id: 'because', title: bywTitle, skel: 'skel-poster', skelN: 6, special: 'because',
+    // special => eager-filled at ANY position (the EAGER gate in renderDashboard). Required, not an
+    // optimisation: railShell paints the <h2> synchronously, and a lazy rail below the fold is never
+    // filled at all, so a seedless 'because' would sit on the dashboard as a "Because You Watched"
+    // skeleton until the user happened to scroll to it. 'because' !== 'live', so fillRail still takes
+    // the generic build path.
+    // seeAll is assigned to link.onclick, so it is called with a MouseEvent — ignored. Re-derive the
+    // seed at CLICK time: the rail may have been built before the user watched something else.
+    seeAll: () => { const s = bywSeed(); if (s) showDetail(s.kind, s.id); },
+    build: async () => {
+      const s = bywSeed();
+      if (!s || !tmdbKey) return [];   // no seed / no key -> [] -> fillRail removes the section (no fetch)
+      const d = await tmdbGet(`/${s.kind}/${s.id}/recommendations`, {});
+      return ((d && d.results) || []).filter((r) => r.poster_path || r.title || r.name)
+        .slice(0, DASH_RAIL_MAX).map((r) => posterCard(s.kind, r));
+    } },
   { id: 'trending', title: 'Trending', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 6, type: true,
     build: async () => { const mt = railType('trending'); return (await discoverRail('trending', mt)).map((r) => posterCard(mt, r)); } },
   { id: 'top10', title: 'Top 10 Today', seeAll: seeAllMovies, skel: 'skel-poster', skelN: 10, type: true,
@@ -43,9 +85,13 @@ const DASH_RAILS = [
   })),
 ];
 const RAIL_BY_ID = Object.fromEntries(DASH_RAILS.map((r) => [r.id, r]));
+// A rail title may be a function (v0.6.0 'because' re-derives its heading from the current seed).
+const railTitle = (r) => (typeof r.title === 'function' ? r.title() : r.title);
 // Default membership + order. Mirrored into SETTINGS_DEFAULTS.dashRails (settings.js loads after this
 // file, so the literal lives here and settings references it — not the other way around).
-const DEFAULT_DASH_RAILS = ['continue', 'trending', 'top10', 'live'];
+// 'because' goes LAST: it keeps rail index 1 = Trending (T53's ArrowDown target) and leaves the
+// EAGER=2 window on continue+trending exactly as it was.
+const DEFAULT_DASH_RAILS = ['continue', 'trending', 'top10', 'live', 'because'];
 const enabledRails = () => (settings.dashRails || DEFAULT_DASH_RAILS).map((id) => RAIL_BY_ID[id]).filter(Boolean);
 
 // One rail SHELL: title + optional Movies/TV toggle + "See all →" + a horizontal scroller of skeletons.
@@ -54,7 +100,7 @@ const enabledRails = () => (settings.dashRails || DEFAULT_DASH_RAILS).map((id) =
 function railShell(r) {
   const sec = mk('div', 'dash-section');
   const head = mk('div', 'dash-head');
-  head.append(mk('h2', null, r.title));
+  head.append(mk('h2', null, railTitle(r)));
   if (r.type) head.append(railTypeToggle(sec, r)); // v0.5.4: compact Movies/TV segmented control
   const link = mk('button', 'dash-seeall', 'See all →');
   link.onclick = r.seeAll;
@@ -413,8 +459,11 @@ async function renderDashboard() {
   if (heroSec) fillHeroCarousel(heroSec, heroFetch);
 
   // Lazy-fill discover-backed rails below the fold on scroll, but fill the first 2 rails + all special
-  // rails (continue/live — local/cache, no fetch) immediately: T49 asserts the Live match-cards and the
-  // Trending cards (rail index 1) render with no scroll. root MUST be #dashboard (it's the scroller).
+  // rails immediately: T49 asserts the Live match-cards and the Trending cards (rail index 1) render with
+  // no scroll. continue/live are local/cache; 'because' (v0.6.0) is the one special that DOES fetch — it
+  // must be eager at any position because railShell paints its <h2> synchronously, so a seedless rail
+  // left unfilled would sit on the dashboard as a "Because You Watched" skeleton.
+  // root MUST be #dashboard (it's the scroller).
   railObserver = new IntersectionObserver((ents) => {
     for (const e of ents) if (e.isIntersecting) { railObserver.unobserve(e.target); fillRail(e.target, e.target._rail); }
   }, { root: $('dashboard'), rootMargin: '400px' });
