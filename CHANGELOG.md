@@ -5,6 +5,15 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.5.8 — YouTube picks up where you left it (July 2026)
+
+- **The YouTube button no longer throws you back to the home feed.** It loads YouTube the first time you
+  press it, and after that it just returns you to whatever you had open — the video you were watching,
+  where you were in it, and your place on the page. Only when the browser is somewhere else entirely
+  (a show, a stream) does it load YouTube fresh. As before, it never disturbs ⏯ Resume.
+
+---
+
 ## v0.5.7 — Controller works while you're watching (July 2026)
 
 - **Your controller now reaches the app during playback.** Previously the embedded player took over the

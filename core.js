@@ -146,21 +146,30 @@ function hideAll() {
   $('sources-overlay').hidden = true;
 }
 
-// track=true records the ⏯ Resume target. The YouTube rail button opens untracked (track=false) so browsing
-// to YouTube doesn't clobber the show you were watching (it navigates the webview but leaves Resume intact).
-function open(url, track = true) {
-  // Record the launching view for Esc-exit — but only on a fresh open; an in-player episode/source
-  // switch (webview already visible) keeps the original origin.
-  if (webview.hidden) {
-    openedFrom = !$('dashboard').hidden ? 'dashboard'
-      : !$('home').hidden ? 'home'
-      : ((browseTab === 'live' && !$('browse').hidden) || currentLiveMatch) ? 'live' : 'browse';
-  }
+// Record the launching view for Esc-exit — but only on a fresh open; an in-player episode/source
+// switch (webview already visible) keeps the original origin.
+function captureOrigin() {
+  if (!webview.hidden) return;
+  openedFrom = !$('dashboard').hidden ? 'dashboard'
+    : !$('home').hidden ? 'home'
+    : ((browseTab === 'live' && !$('browse').hidden) || currentLiveMatch) ? 'live' : 'browse';
+}
+
+// Show the webview WITHOUT navigating: the page, its scroll position and any playing video survive.
+// Shared by open() (which then sets a src), ⏯ Resume, and the YouTube rail button's return path.
+function revealWebview() {
   hideAll();
   setActiveRail(null);
   webview.hidden = false;
   $('topbar').classList.remove('off'); // watching → show the webview-nav chrome
   window.sh?.setPlayerVisible?.(true); // player shown -> (re)arm the main-process progress poll
+}
+
+// track=true records the ⏯ Resume target. The YouTube rail button opens untracked (track=false) so browsing
+// to YouTube doesn't clobber the show you were watching (it navigates the webview but leaves Resume intact).
+function open(url, track = true) {
+  captureOrigin();
+  revealWebview();
   webview.src = url;
   autoAdvanced = false; // each opened episode may auto-advance once
   if (track) {
@@ -176,11 +185,7 @@ function open(url, track = true) {
 function resumeLast() {
   if (!lastPlayed || !lastPlayed.url) return; // nothing watched yet
   const lp = lastPlayed;
-  hideAll();
-  setActiveRail(null);
-  webview.hidden = false;
-  $('topbar').classList.remove('off'); // watching → show the webview-nav chrome
-  window.sh?.setPlayerVisible?.(true); // player shown again -> re-arm the main-process progress poll
+  revealWebview();
   if (webview.getAttribute('src') !== lp.url) webview.src = lp.url; // reveal if loaded, reload if moved on
   if (lp.live && lp.match) {
     currentLiveMatch = lp.match;

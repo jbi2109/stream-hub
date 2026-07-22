@@ -2251,6 +2251,31 @@ async function main() {
   padGuest.close();
   ok('input: controller reaches the app while the player has focus (B exits, Start opens the palette)');
 
+  // 74. the YouTube rail button returns you to YouTube WHERE YOU LEFT IT. Only the first visit of a
+  //     session loads the home feed; after that the button reveals the page still in the webview rather
+  //     than reloading. ytHostRe is retargeted at the local fixture so this needs no network.
+  await page.eval(`open('${SITE}/tv/428', false)`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('/tv/428')`), 'stand-in "YouTube" page loaded');
+  await page.eval(`window.__ytLoads = 0; document.getElementById('webview').addEventListener('did-finish-load', () => { window.__ytLoads++; });
+    window.__realYtRe = ytHostRe; ytHostRe = /^127\\.0\\.0\\.1(:\\d+)?$/; showBrowse();`);
+  await sleep(1500); // let the initial navigation's own did-finish-load settle before counting
+  await page.eval(`window.__ytLoads = 0; document.getElementById('youtube-btn').click();`);
+  await until(() => page.eval(`!document.getElementById('webview').hidden`), 'the YouTube button reveals the webview');
+  await sleep(1200);
+  assert.strictEqual(await page.eval(`window.__ytLoads`), 0, 'returning to YouTube must NOT reload it');
+  assert.ok(await page.eval(`document.getElementById('webview').getURL().includes('/tv/428')`), 'you land back on the page you left, not the home feed');
+  // ...but when the webview is somewhere else entirely, it loads YouTube fresh
+  const ytOpen = await page.eval(`(() => {
+    ytHostRe = window.__realYtRe;                       // webview is on the fixture, i.e. NOT YouTube
+    const realOpen = open; let got = null;
+    open = (u, t) => { got = [u, t]; };
+    document.getElementById('youtube-btn').click();
+    open = realOpen;
+    return got;
+  })()`);
+  assert.deepStrictEqual(ytOpen, ['https://www.youtube.com', false], 'off YouTube, the button loads the home page untracked');
+  ok('youtube: the rail button returns you where you left off, and only loads fresh when elsewhere');
+
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);
 }

@@ -26,7 +26,15 @@ $('dash-btn').onclick = showDashboard;
 $('home-btn').onclick = showHome;
 $('search-btn').onclick = showSearch;
 $('live-btn').onclick = () => { browseTab = 'live'; showBrowse(); };
-$('youtube-btn').onclick = () => open('https://www.youtube.com', false); // untracked: don't clobber Resume
+// Return to YouTube where you left it. Only the first visit of a session loads the home page; after that
+// the button reveals the page still sitting in the webview (the video you were on, its position, the
+// scroll), instead of throwing you back to the feed. Untracked either way: never clobbers ⏯ Resume.
+let ytHostRe = /(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i; // e2e retargets this at a fixture host
+$('youtube-btn').onclick = () => {
+  if (!ytHostRe.test(hostOf(webview.getAttribute('src') || ''))) return open('https://www.youtube.com', false);
+  captureOrigin();
+  revealWebview();
+};
 $('resume-btn').onclick = resumeLast;
 $('settings-btn').onclick = showSettings;
 $('back').onclick = () => webview.goBack();
