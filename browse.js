@@ -8,6 +8,12 @@ let browseFiltersAll = load('browseFilters', {});
 const loadFiltersFor = (tab) => ({ genre: '', year: '', sort: '', provider: '', language: '', country: '', ...(browseFiltersAll[tab] || {}) });
 let browseFilters = loadFiltersFor('movie');
 
+// Shared across Movies/TV/Anime. Runtime-only. Discovery entries (openGenre, digit 1/2/3,
+// palette "Browse X", seeAllMovies, rail Browse button) clear this before showBrowse(); the
+// in-Browse tab bar KEEPS it. ponytail: a new discovery entry that forgets the clear silently
+// re-hides the filter bar — grep browseQuery before adding one.
+let browseQuery = '', browseSearchTimer = null;
+
 // Full TMDB object (details/season/discover), not just the .results list.
 const tmdbCache = new Map();                 // key -> { at, p:Promise }
 const TMDB_CACHE_V = 1;                        // versioned keys
@@ -261,30 +267,15 @@ function posterCard(kind, item, rank) {
   return el;
 }
 
-// --- global search (#search view) — the one content search: multi-search across movies + TV,
-// narrowed by All/Movies/TV type chips. This is THE search; Browse is pure discovery (no search box).
-let searchQuery = '', searchType = 'all', searchTimer = null;
-function renderSearch() {
-  const input = mk('input', 'browse-search'); input.placeholder = 'Search movies & shows…'; input.value = searchQuery;
-  const grid = mk('div', 'grid');
-  // type chips reuse the in-view .subtabs pill styling; clicking one narrows the current results (cheap — C1 cache serves the repeat /search/multi).
-  const types = tabBar([['all', 'All'], ['movie', 'Movies'], ['tv', 'TV']], searchType,
-    (id) => { searchType = id; runSearch(grid); }, 'subtabs search-types');
-  input.oninput = () => { searchQuery = input.value.trim(); clearTimeout(searchTimer); searchTimer = setTimeout(() => runSearch(grid), 300); };
-  $('search').replaceChildren(input, types, grid);
-  if (!tmdbKey) { grid.replaceChildren(stateNode('empty', 'Add a TMDB key in Settings to search.')); }
-  else if (searchQuery) runSearch(grid);
-  else grid.replaceChildren(stateNode('empty', 'Search across movies and TV.'));
-  input.focus();
-}
-async function runSearch(grid) {
-  const q = searchQuery; if (!q) { renderSearch(); return; }
-  const d = await tmdbGet('/search/multi', { query: q });
-  if (searchQuery !== q) return;                                   // stale
-  // ponytail: person results dropped for v0.5.0 — add a person branch (name+known-for) when search grows a People tab.
-  const rows = (d?.results || []).filter((r) => (searchType === 'all' ? (r.media_type === 'movie' || r.media_type === 'tv') : r.media_type === searchType) && (r.poster_path || r.title || r.name));
-  grid.replaceChildren(rows.length ? undefined : stateNode('empty', 'No results.'));
-  if (rows.length) grid.replaceChildren(...rows.map((r) => posterCard(r.media_type, r)));   // click → showDetail(kind,id) for free
+// / and Ctrl+F (and controller X) focus the Browse search box. Unlike the discovery entries, this
+// PRESERVES browseQuery — it's a "jump to the box" intent, not a reset. From Live it hops to a VOD tab
+// (the box lives only on Movies/TV/Anime). The input is appended before renderBrowse's first await, so
+// it's in the DOM to focus synchronously here.
+function focusBrowseSearch() {
+  if (browseTab === 'live') browseTab = settings.defaultBrowseTab || 'movie';
+  showBrowse();
+  const s = document.querySelector('#browse .browse-search');
+  if (s) s.focus();
 }
 
 // VOD tabs only — Live TV + YouTube are reached from the rail (📺 / ▶), not this bar.
@@ -313,6 +304,13 @@ async function renderBrowse() {
   }
 
   const mt = browseTab === 'movie' ? 'movie' : 'tv';
+
+  // Search box (shared across Movies/TV/Anime), between the tab bar and the filter bar. A non-empty
+  // query hides the filter bar and hits /search/{mt} instead of /discover (see drawResults / fetchBrowse).
+  const searchInput = mk('input', 'browse-search');
+  searchInput.placeholder = 'Search Movies / TV / Anime…';
+  searchInput.value = browseQuery;
+  nodes.push(searchInput);
 
   // filter bar (genre / year / sort / provider) — populated once the cached option lists resolve
   const filterBar = document.createElement('div');
@@ -360,32 +358,43 @@ async function renderBrowse() {
     toggle,
   );
 
-  // results
-  const data = await fetchBrowse(browseTab, browseFilters, browsePage);
-  if (browseTab !== tabAtRender) return;
-  const results = (data && data.results) || [];
-  if (!results.length) grid.replaceChildren(stateNode('empty', 'No results (check your TMDB key / filters).'));
-  else {
-    grid.classList.add('anim-in'); // fresh full render — entrance is fine here (never on live draw())
-    grid.replaceChildren(...results.filter((r) => r.poster_path || r.title || r.name).map((r) => posterCard(browseTab, r)));
-  }
+  // results + pager. Split into a closure so a debounced keystroke or a pager click redraws WITHOUT
+  // rebuilding the #browse subtree — a full renderBrowse would blow away the focused search box (N2).
+  const drawResults = async () => {
+    const q = browseQuery;
+    filterBar.hidden = !!q; // a query hides the discovery filters (they don't apply to /search)
+    const data = await fetchBrowse(browseTab, q, browseFilters, browsePage);
+    if (q !== browseQuery || browseTab !== tabAtRender) return; // stale keystroke / tab switch
+    let results = ((data && data.results) || []).filter((r) => r.poster_path || r.title || r.name);
+    if (browseTab === 'anime' && q) results = results.filter((r) => (r.genre_ids || []).includes(16)); // /search/tv isn't anime-only
+    if (!results.length) grid.replaceChildren(stateNode('empty', 'No results (check your TMDB key / filters).'));
+    else { grid.classList.add('anim-in'); grid.replaceChildren(...results.map((r) => posterCard(browseTab, r))); }
 
-  // pager: 20 per page, Prev disabled on page 1, Next disabled at the last page (TMDB caps at 500)
-  const totalPages = Math.min(data?.total_pages || 1, 500);
-  const pageBtn = (label, disabled, delta) => {
-    const b = document.createElement('button'); b.className = 'pager-btn'; b.textContent = label; b.disabled = disabled;
-    if (!disabled) b.onclick = () => { browsePage += delta; renderBrowse(); };
-    return b;
+    // pager: 20 per page, Prev disabled on page 1, Next disabled at the last page (TMDB caps at 500)
+    const totalPages = Math.min(data?.total_pages || 1, 500);
+    const pageBtn = (label, disabled, delta) => {
+      const b = document.createElement('button'); b.className = 'pager-btn'; b.textContent = label; b.disabled = disabled;
+      if (!disabled) b.onclick = () => { browsePage += delta; drawResults(); };
+      return b;
+    };
+    const info = document.createElement('span'); info.className = 'pager-info';
+    info.textContent = `Page ${browsePage}${totalPages > 1 ? ' / ' + totalPages : ''}`;
+    pager.replaceChildren(pageBtn('‹ Prev', browsePage <= 1, -1), info, pageBtn('Next ›', browsePage >= totalPages, 1));
   };
-  const info = document.createElement('span'); info.className = 'pager-info';
-  info.textContent = `Page ${browsePage}${totalPages > 1 ? ' / ' + totalPages : ''}`;
-  pager.replaceChildren(pageBtn('‹ Prev', browsePage <= 1, -1), info, pageBtn('Next ›', browsePage >= totalPages, 1));
+  searchInput.oninput = () => {
+    browseQuery = searchInput.value.trim();
+    clearTimeout(browseSearchTimer);
+    browsePage = 1; // a new query starts at page 1
+    browseSearchTimer = setTimeout(drawResults, 300);
+  };
+  drawResults();
 }
 
-// Returns the full TMDB response ({ results, page, total_pages }). Browse is discovery-only:
-// always /discover with all four filters (content search lives in the #search hub now).
-async function fetchBrowse(tab, filters, page) {
+// Returns the full TMDB response ({ results, page, total_pages }). A non-empty query hits
+// /search/{mt} (discovery filters don't apply there); otherwise /discover with the four filters.
+async function fetchBrowse(tab, query, filters, page) {
   const mt = tab === 'movie' ? 'movie' : 'tv';
+  if (query) return tmdbGet(`/search/${mt}`, { query, page });
   const yearKey = mt === 'movie' ? 'primary_release_year' : 'first_air_date_year';
   const p = { page, sort_by: filters.sort || 'popularity.desc' };
   const genres = [];

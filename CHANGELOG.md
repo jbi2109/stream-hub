@@ -5,6 +5,18 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.7.0 — Search moved into the Movies / TV / Anime tabs (July 2026)
+
+- **Search now lives right where you browse.** The separate Search screen (and its rail button) is gone;
+  instead there's a search box at the top of the **Movies / TV / Anime** tabs. Type to search the current
+  tab, clear it to drop back to the filtered discovery grid you already had. It's the same `/` (and
+  Ctrl+F, controller **X**) shortcut — it just jumps to that box now.
+- Search covers what searching should: it looks up titles in the tab you're on (Anime stays anime). While
+  you're searching, the genre/year/sort/provider filters step aside — they don't apply to a text search —
+  and come back the moment you clear the box.
+
+---
+
 ## v0.6.0 — Personalised rows + a moving hover preview (July 2026)
 
 - **"Because you watched …" on the dashboard.** A new rail, seeded from the last show or film you were

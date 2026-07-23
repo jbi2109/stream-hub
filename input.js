@@ -100,7 +100,7 @@ function pollPads() {
   };
   edge(PAD_BTN.A, padActivate);
   edge(PAD_BTN.B, () => goBack());
-  edge(PAD_BTN.X, () => showSearch());
+  edge(PAD_BTN.X, () => focusBrowseSearch());
   edge(PAD_BTN.Y, padPreview);
   edge(PAD_BTN.LB, () => padPage(-1));
   edge(PAD_BTN.RB, () => padPage(1));
@@ -133,7 +133,7 @@ function padPage(dir) {
   const smooth = document.body.classList.contains('reduced-motion') ? 'auto' : 'smooth';
   const rail = document.activeElement && document.activeElement.closest && document.activeElement.closest('.rail');
   if (rail) { rail.scrollBy({ left: dir * rail.clientWidth * 0.9, behavior: smooth }); return; }
-  const view = ['dashboard', 'browse', 'search', 'detail', 'person', 'home', 'settings'].map((id) => $(id)).find((el) => el && !el.hidden);
+  const view = ['dashboard', 'browse', 'detail', 'person', 'home', 'settings'].map((id) => $(id)).find((el) => el && !el.hidden);
   if (view) view.scrollBy({ top: dir * view.clientHeight * 0.9, behavior: smooth });
 }
 

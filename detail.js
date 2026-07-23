@@ -33,7 +33,7 @@ function openGenre(type, g) {
   browseTab = tab; browseFilters = loadFiltersFor(tab);
   browseFilters.genre = String(g.id);
   browseFiltersAll[tab] = browseFilters; store('browseFilters', browseFiltersAll);
-  browsePage = 1; showBrowse();
+  browsePage = 1; browseQuery = ''; showBrowse(); // discovery entry: drop any sticky Browse search
 }
 
 function detailBackTo() { showBrowse(); }

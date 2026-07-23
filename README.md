@@ -44,8 +44,10 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   dashboard — with a clickable **cast** row that opens each actor's **person page**). Pick which **source** to play on (defaults to your last-used), and the
   **Watch** button loads that source's own embed player, deep-linked to the exact episode — with
   top-bar switchers to swap **sources and episodes** mid-watch, plus an optional **⏭ auto-play next
-  episode** near the end of each one. The left **rail** splits the views cleanly — a 🔎 **Search**
-  button (one global search across Movies + TV, with **All / Movies / TV** chips to narrow), 🎬 Browse (Movies/TV/Anime), 📺 **Live TV**, ▶ **YouTube**, and a ⏯ **Resume** button that jumps
+  episode** near the end of each one. **Search lives right in the Movies/TV/Anime tabs** — a box above
+  the filters searches the current tab (press `/` or Ctrl+F to jump to it); clear it to return to the
+  filtered discovery grid. The left **rail** splits the views cleanly — 🎬 Browse (Movies/TV/Anime),
+  📺 **Live TV**, ▶ **YouTube**, and a ⏯ **Resume** button that jumps
   straight back to whatever you were last watching. Live TV shows your live sources as tiles, or —
   for a **live catalog** source (a JSON API of live streams you add by URL) — one **searchable,
   category-filtered grid** merged across catalogs (with a **Live now** filter, **Most watched** sort,
@@ -92,7 +94,7 @@ sources of its own. You add your own sites; the app just makes them nicer to use
 | `4` / `5` | Open Live TV / YouTube |
 | `← ↑ → ↓` | Move around a grid (on the Dashboard: ←/→ walk a rail, ↑/↓ hop rails) |
 | `Enter` | Open the focused item |
-| `/` | Open the global search hub |
+| `/` or `Ctrl+F` | Jump to the Browse search box (Movies / TV / Anime) |
 | `Ctrl+K` | Command palette (works while watching too) |
 | `Esc` | Close / back / exit the player (returns to where you launched from) |
 | `?` | Shortcuts overlay |
@@ -180,10 +182,10 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 171-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 174-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
-reading, the TMDB browse home, global search, the native detail page, per-source embed patterns, the source
+reading, the TMDB browse home with in-tab search, the native detail page, per-source embed patterns, the source
 picker/switcher, single- and two-hop live catalogs, the add-player wizard, the tabbed library, the
 Settings screen (theme/accent/poster + library actions), categorisation, and persistence.
 

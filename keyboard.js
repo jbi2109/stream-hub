@@ -31,10 +31,10 @@ function closeTopModal() {
 function paletteActions() {
   const acts = [
     ['Open Dashboard', showDashboard],
-    ['Search', showSearch],
-    ['Browse Movies', () => { browseTab = 'movie'; showBrowse(); }],
-    ['Browse TV', () => { browseTab = 'tv'; showBrowse(); }],
-    ['Browse Anime', () => { browseTab = 'anime'; showBrowse(); }],
+    ['Search', focusBrowseSearch],
+    ['Browse Movies', () => { browseQuery = ''; browseTab = 'movie'; showBrowse(); }],
+    ['Browse TV', () => { browseQuery = ''; browseTab = 'tv'; showBrowse(); }],
+    ['Browse Anime', () => { browseQuery = ''; browseTab = 'anime'; showBrowse(); }],
     ['Open Live TV', () => { browseTab = 'live'; showBrowse(); }],
     ['Open YouTube', () => open('https://www.youtube.com', false)], // untracked: never clobbers ⏯ Resume
     ['Open Library', showHome],
@@ -98,7 +98,7 @@ const SHORTCUTS = [
   ['5', 'Open YouTube'],
   ['← ↑ → ↓', 'Move around a grid'],
   ['Enter', 'Open the focused item'],
-  ['/', 'Open search'],
+  ['/', 'Search Movies / TV / Anime'],
   ['Ctrl+K', 'Command palette (works while watching too)'],
   ['Esc', 'Close / back / exit the player'],
   ['?', 'This overlay'],
@@ -273,12 +273,12 @@ document.addEventListener('keydown', (e) => {
   }
   if (modalOpen() || typing()) return; // palette input / wizard / form controls own their keys
   if (e.key === '?') { openHelp(); return; }
-  if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) { e.preventDefault(); showSearch(); return; } // / and Ctrl+F open the global search hub
+  if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) { e.preventDefault(); focusBrowseSearch(); return; } // / and Ctrl+F focus the Browse search box
   if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '0' && e.key <= '5') {
     if (e.key === '0') showDashboard();
     else if (e.key === '4') { browseTab = 'live'; showBrowse(); }
     else if (e.key === '5') open('https://www.youtube.com', false);
-    else { browseTab = ['movie', 'tv', 'anime'][+e.key - 1]; showBrowse(); }
+    else { browseQuery = ''; browseTab = ['movie', 'tv', 'anime'][+e.key - 1]; showBrowse(); }
     return;
   }
   if (e.key.startsWith('Arrow')) { if (moveGrid(e.key)) e.preventDefault(); return; }

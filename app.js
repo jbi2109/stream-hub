@@ -21,10 +21,9 @@ $('watch-later').onclick = async () => {
 
 // ---- rail + topbar navigation ----
 // 🔎 Browse shows Movies/TV/Anime only; if we're on Live (its tab bar was removed) reset to a VOD tab.
-$('browse-btn').onclick = () => { if (browseTab === 'live') browseTab = settings.defaultBrowseTab || 'movie'; showBrowse(); };
+$('browse-btn').onclick = () => { browseQuery = ''; if (browseTab === 'live') browseTab = settings.defaultBrowseTab || 'movie'; showBrowse(); };
 $('dash-btn').onclick = showDashboard;
 $('home-btn').onclick = showHome;
-$('search-btn').onclick = showSearch;
 $('live-btn').onclick = () => { browseTab = 'live'; showBrowse(); };
 // Return to YouTube where you left it. Only the first visit of a session loads the home page; after that
 // the button reveals the page still sitting in the webview (the video you were on, its position, the

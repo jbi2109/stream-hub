@@ -158,7 +158,7 @@ body {
 webview { width: 100%; height: 100%; }
 webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 
-#dashboard, #home, #browse, #detail, #person, #settings, #search {
+#dashboard, #home, #browse, #detail, #person, #settings {
   position: absolute;
   inset: 0;
   overflow-y: auto;
@@ -168,7 +168,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 /* Chromium (Electron): hide the far-right page scrollbar on the main views + settings body */
 #dashboard::-webkit-scrollbar, #home::-webkit-scrollbar, #browse::-webkit-scrollbar,
 #detail::-webkit-scrollbar, #person::-webkit-scrollbar, #settings::-webkit-scrollbar,
-#search::-webkit-scrollbar, .settings-body::-webkit-scrollbar { display: none; }
+.settings-body::-webkit-scrollbar { display: none; }
 #detail { padding: 0 0 40px; }
 #settings { padding: 0; overflow: hidden; }
 
@@ -199,9 +199,6 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 #view .subtabs .tab:hover { background: var(--panel-3); }
 #view .subtabs .tab.active { background: var(--accent); color: var(--on-accent); }
 
-/* search hub: the All/Movies/TV type chips reuse the .subtabs pill look; only the spacing is view-specific */
-#view .search-types { margin-bottom: var(--sp-4); }
-
 #view .empty { color: var(--muted); font-size: 13px; max-width: 520px; line-height: 1.5; }
 .empty-cta { display: block; width: fit-content; margin-top: var(--sp-3); } /* Browse CTA drops below the empty-state teaching text */
 #view .grid {
@@ -222,7 +219,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
   padding: 8px 12px;
   font-size: 13px;
 }
-.browse-search:focus { outline: none; border-color: var(--accent); } /* accent focus, matching .pill-select/.wiz-input (Browse/Live/Search) */
+.browse-search:focus { outline: none; border-color: var(--accent); } /* accent focus, matching .pill-select/.wiz-input (Browse + Live) */
 
 /* filter pills (genre / year / sort / provider) */
 .browse-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }

@@ -117,13 +117,17 @@ const tmdb = http.createServer((req, res) => {
       biography: 'A prolific fixture director known for green test runs.', profile_path: '/pp.jpg',
       combined_credits: { cast: [{ id: 71, media_type: 'movie', title: 'Person Film', poster_path: '/pf.jpg', popularity: 9 }] },
       images: { profiles: [{ file_path: '/pp.jpg' }] } }));
-  } else if (/\/search\/multi$/.test(p)) {
-    // mixed movie/tv/person — the app keeps movie+tv, drops the person (v0.5.0)
-    res.end(JSON.stringify({ results: [
-      { id: 71, media_type: 'movie', title: 'Search Movie', poster_path: '/s.jpg' },
-      { id: 72, media_type: 'tv', name: 'Search Show', poster_path: '/s.jpg' },
-      { id: 73, media_type: 'person', name: 'Someone', profile_path: '/p.jpg' },
-    ] }));
+  } else if (/\/search\/(movie|tv)$/.test(p)) {
+    // Browse search endpoint (v0.7.0): echo media + page + query so query-routing, the anime client
+    // filter (TV branch carries a genre-16 hit + a non-anime row), and pagination are all assertable.
+    const media = p.endsWith('/tv') ? 'TV' : 'MOVIE';
+    const page = +(q.get('page') || 1);
+    const query = q.get('query') || '';
+    const results = media === 'TV'
+      ? [ { id: 80, name: `Anime Hit ${query} P${page}`, genre_ids: [16, 18], poster_path: '/s.jpg', original_language: 'ja' },
+          { id: 81, name: `Live Show ${query} P${page}`, genre_ids: [18], poster_path: '/s.jpg', original_language: 'en' } ]
+      : [ { id: 82, title: `Found ${query} P${page}`, genre_ids: [28], poster_path: '/s.jpg' } ];
+    res.end(JSON.stringify({ page, total_pages: 2, results }));
   } else {
     res.end(JSON.stringify({ page: 1, total_pages: 1, results: [{ id: 42, title: 'Fixture Title', name: 'Fixture Title', poster_path: '/x.jpg' }] }));
   }
@@ -257,13 +261,6 @@ async function main() {
   assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 3, 'expected 3 browse tabs (Movies/TV/Anime — Live+YouTube moved to the rail)');
   assert.ok(await page.eval(`(document.querySelector('#browse .empty')||{}).textContent?.includes('TMDB')`), 'no-key prompt should mention TMDB');
   ok('boot: dashboard landing + onboarding card; Browse shows 3 tabs + no-key prompt');
-
-  // 1b. v0.5.0 shell: the Search rail button reveals the #search view with a search input (full search lands R5)
-  await page.eval(`document.getElementById('search-btn').click()`);
-  assert.strictEqual(await page.eval(`document.getElementById('search').hidden`), false, 'search view should show after clicking the rail Search button');
-  assert.ok(await page.eval(`!!document.querySelector('#search .browse-search')`), 'search view should contain a .browse-search input');
-  await page.eval(`showBrowse()`); // navigate away so later tests keep their expected view state
-  ok('search: rail Search button reveals the #search view with a search input');
 
   // 2. add local test source + click it -> interaction regression check
   await page.eval(`addSource({ name: 'LocalTest', url: '${SITE}', category: 'vod' })`);
@@ -563,28 +560,57 @@ async function main() {
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse movie grid');
   ok('browse: TMDB grid renders poster cards');
 
-  // 23b. Global search: /search/multi returns movie+tv+person; the person is dropped, cards route to detail
-  await page.eval(`document.getElementById('search-btn').click()`);
-  assert.strictEqual(await page.eval(`document.getElementById('search').hidden`), false, 'search view should show');
-  await page.eval(`(() => { const s = document.querySelector('#search .browse-search'); s.value = 'fix'; s.dispatchEvent(new Event('input')); })()`);
-  await until(() => page.eval(`document.querySelectorAll('#search .grid .card').length === 2`), 'search grid shows 2 cards (person dropped)');
-  await page.eval(`document.querySelector('#search .grid .card').click()`);
-  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail h1')`), 'search result opens detail');
-  ok('search: multi-search keeps movie+tv (drops people), card opens detail');
+  // --- v0.7.0: Browse search folded into the Movies/TV/Anime tabs ---
+  // N1. A Movies query routes to /search/movie and hides the discovery filter bar.
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.focus(); s.value = 'fix'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Found fix'))`), 'movie query hits /search/movie');
+  assert.strictEqual(await page.eval(`document.querySelector('#browse .browse-filters').hidden`), true, 'a query hides the filter bar');
+  ok('browse-search: Movies query hits /search/movie and hides the filter bar');
 
-  // 23c. Search type chips: All shows movie+tv; Movies narrows to movies; TV narrows to TV.
-  await page.eval(`document.getElementById('search-btn').click()`);
-  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].map(t => t.textContent).join(',')`), 'All,Movies,TV', 'search hub should offer All/Movies/TV chips');
-  await page.eval(`(() => { const s = document.querySelector('#search .browse-search'); s.value = 'fix'; s.dispatchEvent(new Event('input')); })()`);
-  await until(() => page.eval(`document.querySelectorAll('#search .grid .card').length === 2`), 'All chip shows both the movie and the TV result');
-  // Movies chip -> only the movie card
-  await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].find(b => b.textContent === 'Movies').click()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#search .grid .card')].map(c => c.textContent); return ts.length === 1 && ts[0].includes('Search Movie'); })()`), 'Movies chip narrows to the movie result only');
-  // TV chip -> only the tv card
-  await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].find(b => b.textContent === 'TV').click()`);
-  await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#search .grid .card')].map(c => c.textContent); return ts.length === 1 && ts[0].includes('Search Show'); })()`), 'TV chip narrows to the TV result only');
-  await page.eval(`[...document.querySelectorAll('#search .search-types .tab')].find(b => b.textContent === 'All').click()`); // reset to All for later tests
-  ok('search: All/Movies/TV chips narrow the multi-search by media type');
+  // N2. Focus stays in the search box across the debounced redraw (drawResults, not renderBrowse).
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.focus(); s.value = 'fixe'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Found fixe'))`), 'query redraw shows the new result');
+  assert.ok(await page.eval(`document.activeElement.matches('#browse .browse-search')`), 'focus survives the debounced redraw');
+  ok('browse-search: focus survives the debounced redraw');
+
+  // N3. Clearing the query returns to /discover and reveals the filter bar again.
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = ''; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P1 MOVIE')) && document.querySelector('#browse .browse-filters').hidden === false`), 'empty query restores discovery + filter bar');
+  ok('browse-search: clearing the query returns to discovery and shows the filter bar');
+
+  // N4. Anime tab client-filters /search/tv down to genre 16 (Animation) — the non-anime row is dropped.
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'anime').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'anime discovery grid');
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.focus(); s.value = 'x'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`(() => { const cs = [...document.querySelectorAll('#browse .grid .card')]; return cs.length === 1 && cs[0].textContent.includes('Anime Hit'); })()`), 'anime query keeps only the genre-16 result');
+  ok('browse-search: Anime query client-filters to animation only');
+
+  // N5. Paging through search results carries the query (Next -> page 2 of /search/movie; Prev then enabled).
+  await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'movie').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'movie grid ready (oninput wired)');
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.focus(); s.value = 'fix'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Found fix P1'))`), 'search page 1');
+  await page.eval(`[...document.querySelectorAll('#browse .browse-pager .pager-btn')].find(b => b.textContent.includes('Next')).click()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Found fix P2'))`), 'search page 2 carries the query');
+  assert.strictEqual(await page.eval(`[...document.querySelectorAll('#browse .browse-pager .pager-btn')].find(b => b.textContent.includes('Prev')).disabled`), false, 'Prev enabled on search page 2');
+  ok('browse-search: pagination carries the query to /search page 2');
+
+  // N6. Every discovery entry clears a sticky query (seeAllMovies + openGenre) so the filter bar returns.
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.focus(); s.value = 'zzz'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`browseQuery === 'zzz'`), 'sticky query set before seeAllMovies');
+  await page.eval(`seeAllMovies()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P1')) && document.querySelector('#browse .browse-filters').hidden === false`), 'seeAllMovies clears the query -> discovery + filter bar');
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.focus(); s.value = 'zzz'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`browseQuery === 'zzz'`), 'sticky query set before openGenre');
+  await page.eval(`openGenre('movie', { id: 18 })`);
+  await until(() => page.eval(`!document.getElementById('browse').hidden && [...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P1')) && document.querySelector('#browse .browse-filters').hidden === false`), 'openGenre clears the query -> discovery + filter bar');
+  assert.strictEqual(await page.eval(`browseQuery`), '', 'openGenre leaves no sticky query');
+  ok('browse-search: discovery entries (seeAllMovies, openGenre) clear a sticky query');
+
+  // Reset browse to a clean discovery state for the tests that follow.
+  await page.eval(`browseQuery = ''; browsePage = 1; browseTab = 'movie'; browseFiltersAll['movie'] = {}; store('browseFilters', browseFiltersAll); browseFilters = loadFiltersFor('movie'); renderBrowse();`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse grid restored after search tests');
+
   // restore browse view for the next test
   await page.eval(`document.getElementById('browse-btn').click()`);
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'browse grid restored after search');
@@ -1699,22 +1725,28 @@ async function main() {
   await until(() => page.eval(`document.getElementById('webview').getURL() === '${PLAYER}/live/8'`), 'Enter on a source row plays it');
   ok('keyboard: Enter opens a match and starts a source row');
 
-  // 46. digit tabs, / search focus, untracked YouTube (digit 5 must not clobber Resume)
+  // 46. digit tabs, / + Ctrl+F focus the Browse search box, untracked YouTube (digit 5 must not clobber Resume)
   await page.eval(`showBrowse()`);
   await page.eval(`document.activeElement && document.activeElement.blur()`);
   await kd('2');
   assert.strictEqual(await page.eval(`browseTab`), 'tv', 'digit 2 should switch to the TV tab');
   await kd('4');
   await until(() => page.eval(`browseTab === 'live' && !!document.querySelector('#browse .match-grid')`), 'digit 4 opens the live grid');
-  await kd('/'); // / now opens the global search hub from anywhere (Netflix-style), not the per-view box
-  assert.strictEqual(await page.eval(`document.getElementById('search').hidden`), false, '/ should open the #search hub');
-  assert.ok(await page.eval(`document.activeElement.matches('#search .browse-search')`), '/ should focus the hub search input');
-  await kd('Escape'); // blurs the search
+  await kd('/');
+  await until(() => page.eval(`!document.getElementById('browse').hidden && browseTab === 'movie'`), '/ leaves Live for the default Browse tab');
+  assert.ok(await page.eval(`document.activeElement.matches('#browse .browse-search')`), '/ should focus the Browse search box');
+  await kd('Escape'); // blurs the box
+  assert.ok(await page.eval(`!document.activeElement.matches('#browse .browse-search')`), 'Escape blurs the search box');
+  await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }))`);
+  assert.ok(await page.eval(`document.activeElement.matches('#browse .browse-search')`), 'Ctrl+F should focus the Browse search box');
+  await kd('Escape'); // blur
+  await kd('4'); // BACK to the live grid so test 47's Esc-to-live has a live-launched player
+  await until(() => page.eval(`browseTab === 'live' && !!document.querySelector('#browse .match-grid')`), 'digit 4 returns to the live grid');
   const lpBefore = await page.eval(`localStorage.getItem('lastPlayed')`);
   await kd('5');
   await until(() => page.eval(`document.getElementById('webview').src.includes('youtube.com')`), 'digit 5 opens YouTube');
   assert.strictEqual(await page.eval(`localStorage.getItem('lastPlayed')`), lpBefore, 'digit 5 must not clobber the Resume target');
-  ok('keyboard: digit tabs, / focuses search, YouTube stays untracked');
+  ok('keyboard: digit tabs, / + Ctrl+F focus the Browse search, YouTube stays untracked');
 
   // 47. Esc exits the player to its launching view; ? overlay; Ctrl+K palette runs an action
   await kd('Escape'); // player (launched from the live grid) -> back to live

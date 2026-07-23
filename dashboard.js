@@ -17,7 +17,7 @@ const setRailType = (id, mt) => { dashRailType[id] = mt; store('dashRailType', d
 // ponytail: movie-only genre rails avoid the movie/TV genre-id split; add TV genre rails only if asked.
 const DASH_GENRES = [['28', 'Action'], ['35', 'Comedy'], ['27', 'Horror'], ['10749', 'Romance'], ['878', 'Sci-Fi & Fantasy'], ['16', 'Animation']];
 
-const seeAllMovies = () => { browseTab = 'movie'; showBrowse(); };
+const seeAllMovies = () => { browseQuery = ''; browseTab = 'movie'; showBrowse(); };
 const seeAllLive = () => { browseTab = 'live'; showBrowse(); };
 
 // v0.6.0 "Because you watched X". The seed is the most recent Continue entry with a TMDB identity.

@@ -44,7 +44,7 @@ function icon(name) {
 // and users' muscle memory select by those, never by glyph).
 (function applyChromeIcons() {
   const map = [
-    ['dash-btn', 'home'], ['home-btn', 'library'], ['search-btn', 'search'], ['browse-btn', 'film'], ['live-btn', 'tv'],
+    ['dash-btn', 'home'], ['home-btn', 'library'], ['browse-btn', 'film'], ['live-btn', 'tv'],
     ['youtube-btn', 'youtube'], ['resume-btn', 'resume'], ['settings-btn', 'settings'],
     ['back', 'back'], ['forward', 'forward'], ['src-home', 'home'], ['autonext-btn', 'next-ep'],
   ];
