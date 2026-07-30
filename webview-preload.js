@@ -49,6 +49,50 @@ try {
         get: () => _yt, set: (v) => { _yt = prune(v); }, configurable: true,
       });
     } catch (e) {}
+    // YouTube reads a PRISTINE JSON.parse / Response.json out of a freshly created same-origin
+    // (about:blank) iframe, so the proxies above never see that copy. It then compares what the server
+    // sent against what the player actually got — and that mismatch is what raises the "ad blockers are
+    // not allowed on YouTube" dialog. Re-apply the same pruning inside every new same-origin child realm
+    // so no pristine copy exists to compare with. (Port of uBlock Origin's trusted-prevent-dom-bypass.)
+    const patchedRealms = new WeakSet(); // kept in OUR realm — no expando on theirs for the page to sniff
+    const patchRealm = (w) => {
+      try {
+        if (!w || patchedRealms.has(w)) return;
+        patchedRealms.add(w);
+        const cp = w.JSON.parse;
+        w.JSON.parse = function () { return prune(cp.apply(this, arguments)); };
+        const cj = w.Response.prototype.json;
+        w.Response.prototype.json = function () { return cj.apply(this, arguments).then(prune); };
+      } catch (e) {} // cross-origin child: the page can't read it either, so it's no bypass
+    };
+    // contentWindow/contentDocument are the only handles onto a child realm, and they read null until the
+    // frame is in the document — so hooking the getters catches the realm at the moment the page grabs it.
+    const hookRealm = (proto, key, toWin) => {
+      const d = proto && Object.getOwnPropertyDescriptor(proto, key);
+      if (!d || !d.get) return;
+      Object.defineProperty(proto, key, {
+        ...d, get() { const v = d.get.call(this); patchRealm(toWin(v)); return v; },
+      });
+    };
+    hookRealm(window.HTMLIFrameElement && HTMLIFrameElement.prototype, 'contentWindow', (w) => w);
+    hookRealm(window.HTMLIFrameElement && HTMLIFrameElement.prototype, 'contentDocument', (d) => d && d.defaultView);
+
+    // Escape hatch: if the enforcement dialog lands anyway, drop it and resume playback instead of
+    // leaving the user stuck behind a modal with a paused video.
+    // ponytail: selector list because YouTube renames this element; add to it when one stops matching.
+    const nagSels = ['ytd-enforcement-message-view-model', 'ytd-enforcement-message-view-model-wiz'];
+    const killNag = () => {
+      let nag = null;
+      for (const s of nagSels) { nag = document.querySelector(s); if (nag) break; }
+      if (!nag) return;
+      (nag.closest('tp-yt-paper-dialog') || nag).remove();
+      const back = document.querySelector('tp-yt-iron-overlay-backdrop');
+      if (back) back.remove();
+      if (document.body) document.body.style.overflow = ''; // the dialog scroll-locks the page behind it
+      const p = document.getElementById('movie_player');
+      if (p && typeof p.playVideo === 'function') p.playVideo();
+    };
+
     // Fallback for leaks / server-side-inserted ads: mute + fast-forward the ad and click skip.
     const skipSels = ['.ytp-ad-skip-button-modern', '.ytp-skip-ad-button', '.ytp-ad-skip-button'];
     const tick = () => {
@@ -58,6 +102,7 @@ try {
         if (v) { v.muted = true; if (isFinite(v.duration) && v.duration) v.currentTime = v.duration; }
         for (const s of skipSels) { const b = document.querySelector(s); if (b) { b.click(); break; } }
       }
+      killNag();
     };
     // ponytail: selectors because YT rotates ytp-ad-* class names; add to skipSels when one stops matching.
     const start = () => new MutationObserver(tick).observe(document.documentElement, {

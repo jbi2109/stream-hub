@@ -36,7 +36,7 @@ const DEFAULT_UA = app.userAgentFallback;
 const MAIN_DEFAULTS = {
   adblock: true,           // network+cosmetic ad-blocking on the whole session
   progressPollMs: 5000,    // playback-position poll (per webview, set at attach)
-  adlistRefreshHours: 24,  // ad-list cache age before a re-download
+  adlistRefreshHours: 8,   // ad-list cache age before a re-download (upstream quick-fixes expire in 8h)
   extraAuthHosts: [],      // extra hosts allowed to open login pop-ups
   googleUaSpoof: true,     // present Google sign-in as Firefox ("browser not secure" fix)
   autoUpdateCheck: true,   // check for updates on launch
@@ -223,7 +223,7 @@ function buildBlocker({ forceRefresh } = {}) {
     const oldPath = cachePath + '.old';
     // ponytail: refresh age is the ⚙ adlistRefreshHours setting; YouTube fights blockers so stale lists rot
     let stale = true;
-    try { stale = (Date.now() - fs.statSync(cachePath).mtimeMs) >= (ms.adlistRefreshHours || 24) * 3600 * 1000; } catch {}
+    try { stale = (Date.now() - fs.statSync(cachePath).mtimeMs) >= (ms.adlistRefreshHours || 8) * 3600 * 1000; } catch {}
     // FULL cache object ALWAYS (incl. read): a missing/corrupt/version-mismatched bin makes read() reject and
     // the engine self-heals by refetching the lists + rewriting the cache. (The old bug passed no `read` when
     // the bin was stale/missing → fromCached's unconditional read(path) threw → silent downgrade to ads-only,
@@ -436,7 +436,7 @@ app.whenReady().then(() => {
   // Skipped under the deterministic test engine (parse() lists never go stale / need re-fetching).
   if (!process.env.SH_TEST_BLOCK_PATTERN) {
     setInterval(() => {
-      if (blockingEnabled && Date.now() - adlistsBuiltAt > (ms.adlistRefreshHours || 24) * 3600e3) refreshAdlists();
+      if (blockingEnabled && Date.now() - adlistsBuiltAt > (ms.adlistRefreshHours || 8) * 3600e3) refreshAdlists();
     }, 3600e3);
   }
 

@@ -167,6 +167,11 @@ const catalog = http.createServer((req, res) => {
 
 // Stands in for a "YouTube" host in the ad-block cosmetic-skip test (SH_TEST_YT_HOST points here).
 const ytFix = http.createServer((req, res) => {
+  if (req.url.startsWith('/ads.json')) { // stands in for /youtubei/v1/player — must be pruned in ANY realm
+    res.setHeader('content-type', 'application/json');
+    res.end('{"adPlacements":[1],"x":2}');
+    return;
+  }
   res.setHeader('content-type', 'text/html');
   res.end('<!doctype html><body><div id="sh-cosmetic">ad</div></body>');
 });
@@ -1592,6 +1597,91 @@ async function main() {
   assert.strictEqual(asRes.skipped, true, 'auto-skip: the skip button should be clicked');
   asGuest.close();
   ok('⚙ YouTube auto-skip: an ad-showing player is muted, fast-forwarded, and its skip button clicked');
+
+  // ---------- v0.17 YouTube anti-adblock hardening ----------
+
+  // 37b3. The bypass YouTube's detector actually uses: create a fresh same-origin (about:blank) iframe and
+  //       read a PRISTINE JSON.parse / Response.json out of it, so the page-level proxies never see that
+  //       copy — then compare the un-pruned config with what the player rendered and raise the "ad blockers
+  //       are not allowed" dialog on the mismatch. The preload hooks contentWindow/contentDocument and
+  //       prunes inside every child realm, so no pristine copy exists. All three handles must be covered.
+  await page.eval(`document.getElementById('webview').src = '${YT_FIX}/realm'`);
+  const rlTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(`${YT_FIX}/realm`) && t.webSocketDebuggerUrl), 'guest for yt-fix (realm bypass)');
+  const rlGuest = await CDP.connect(rlTarget.webSocketDebuggerUrl);
+  await until(() => rlGuest.eval('!!document.body'), 'realm guest body ready');
+  const rlRes = await rlGuest.eval(`(async () => {
+    const f = document.createElement('iframe'); document.body.appendChild(f); // contentWindow is null until attached
+    const viaWindow = f.contentWindow.JSON.parse('{"adPlacements":[1],"x":2}');
+    const viaDoc = f.contentDocument.defaultView.JSON.parse('{"adSlots":[1],"x":3}');
+    const viaFetch = await f.contentWindow.fetch('${YT_FIX}/ads.json').then((r) => r.json());
+    return { winAd: 'adPlacements' in viaWindow, winX: viaWindow.x,
+             docAd: 'adSlots' in viaDoc, docX: viaDoc.x,
+             fetchAd: 'adPlacements' in viaFetch, fetchX: viaFetch.x };
+  })()`);
+  assert.strictEqual(rlRes.winAd, false, 'child realm via contentWindow: JSON.parse must still strip ad fields');
+  assert.strictEqual(rlRes.winX, 2, 'child realm via contentWindow: non-ad fields survive');
+  assert.strictEqual(rlRes.docAd, false, 'child realm via contentDocument.defaultView: JSON.parse must still strip ad fields');
+  assert.strictEqual(rlRes.docX, 3, 'child realm via contentDocument: non-ad fields survive');
+  assert.strictEqual(rlRes.fetchAd, false, 'child realm fetch().json() must still strip ad fields');
+  assert.strictEqual(rlRes.fetchX, 2, 'child realm fetch().json(): non-ad fields survive');
+  rlGuest.close();
+  ok('⚙ YouTube anti-detection: a pristine JSON.parse/fetch stolen from a child iframe realm is pruned too');
+
+  // 37b4. Escape hatch for when the enforcement dialog lands anyway: drop the dialog + its backdrop, undo
+  //       the scroll lock it puts on the page behind it, and resume the paused video.
+  await page.eval(`document.getElementById('webview').src = '${YT_FIX}/nag'`);
+  const nagTarget = await until(async () =>
+    (await targets()).find((t) => t.url.startsWith(`${YT_FIX}/nag`) && t.webSocketDebuggerUrl), 'guest for yt-fix (enforcement nag)');
+  const nagGuest = await CDP.connect(nagTarget.webSocketDebuggerUrl);
+  await until(() => nagGuest.eval('!!document.body'), 'nag guest body ready');
+  const nagRes = await nagGuest.eval(`new Promise((resolve) => {
+    const mp = document.createElement('div'); mp.id = 'movie_player';
+    window.__resumed = false; mp.playVideo = () => { window.__resumed = true; };
+    document.body.appendChild(mp); // player first: killNag fires on the dialog insert and must find it
+    const dlg = document.createElement('tp-yt-paper-dialog');
+    dlg.appendChild(document.createElement('ytd-enforcement-message-view-model'));
+    const back = document.createElement('tp-yt-iron-overlay-backdrop');
+    document.body.style.overflow = 'hidden';
+    document.body.appendChild(dlg); document.body.appendChild(back);
+    setTimeout(() => resolve({
+      nag: !!document.querySelector('ytd-enforcement-message-view-model'),
+      dialog: !!document.querySelector('tp-yt-paper-dialog'),
+      backdrop: !!document.querySelector('tp-yt-iron-overlay-backdrop'),
+      overflow: document.body.style.overflow, resumed: window.__resumed,
+    }), 300);
+  })`);
+  assert.strictEqual(nagRes.nag, false, 'enforcement message should be removed');
+  assert.strictEqual(nagRes.dialog, false, 'the whole dialog should go, not just its message');
+  assert.strictEqual(nagRes.backdrop, false, 'the modal backdrop should be removed');
+  assert.strictEqual(nagRes.overflow, '', 'the scroll lock on the page behind should be released');
+  assert.strictEqual(nagRes.resumed, true, 'playback should resume after the dialog is dismissed');
+  nagGuest.close();
+  ok('⚙ YouTube: the "ad blockers are not allowed" dialog is dismissed and playback resumes');
+
+  // 37b5. Ad-list refresh drops 24h -> 8h (the upstream quick-fixes list expires in 8h, so a 24h cache was
+  //       stale for most of its life). A PERSISTED 24 beats the new default, so a one-shot migration moves
+  //       it — but only the exact old default: a number the user chose themselves is left alone.
+  const mig = await page.eval(`JSON.stringify((() => {
+    const keep = settings.adlistRefreshHours;
+    settings.adlistRefreshHours = 24; saveSettings(); localStorage.removeItem('adlistV017');
+    migrateAdlistV017();
+    const moved = settings.adlistRefreshHours;
+    settings.adlistRefreshHours = 12; saveSettings(); localStorage.removeItem('adlistV017');
+    migrateAdlistV017();
+    const custom = settings.adlistRefreshHours;
+    settings.adlistRefreshHours = 24; saveSettings(); // flag still set from the run above
+    migrateAdlistV017();
+    const once = settings.adlistRefreshHours;
+    settings.adlistRefreshHours = keep; saveSettings();
+    return { moved, custom, once, dflt: SETTINGS_DEFAULTS.adlistRefreshHours };
+  })())`);
+  const migRes = JSON.parse(mig);
+  assert.strictEqual(migRes.dflt, 8, 'the shipped default should be 8 hours');
+  assert.strictEqual(migRes.moved, 8, 'a profile still on the old 24h default should move to 8');
+  assert.strictEqual(migRes.custom, 12, 'a user-chosen refresh interval must be left alone');
+  assert.strictEqual(migRes.once, 24, 'the migration must run once, not re-apply on every launch');
+  ok('⚙ ad-list refresh: 24h default migrates to 8h once, user-set values untouched');
 
   // 37c. sh.refreshAdlists() hot-swaps the engine with the ordered disable→enable — network blocking must
   //      survive the swap AND the YT/cosmetic wrapper must be re-applied on the new engine.

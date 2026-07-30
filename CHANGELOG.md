@@ -5,6 +5,23 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.17.0 — YouTube's "ad blockers are not allowed" pop-up (July 2026)
+
+- **That pop-up should stop appearing.** YouTube was catching the app out with a trick: it opens a hidden,
+  empty frame on the page and reads the video's ad list through that instead, because anything the app
+  changes on the page itself isn't changed inside a brand-new frame. It then compares the two and knows.
+  The app now covers those hidden frames as well, so there's nothing left for YouTube to compare against.
+- **If the pop-up turns up anyway, the app closes it and restarts your video** — no more being stuck
+  behind a box with a paused video.
+- **Ad lists now refresh every 8 hours instead of every 24.** The YouTube part of those lists is rewritten
+  about every 8 hours, so a full day between updates meant running on out-of-date rules most of the time.
+  If you'd already picked your own number in Settings → Advanced, yours is left alone.
+- Worth being honest about: this is a back-and-forth with YouTube, not a permanent fix. If they change
+  their check, the pop-up can come back until the lists catch up. **Settings → Privacy → YouTube
+  ad-blocking** still switches all of it off if anything ever misbehaves.
+
+---
+
 ## v0.16.0 — Pages can't drag you off to ads any more (July 2026)
 
 - **The version number jumped from 0.7 to 0.16 on purpose.** 0.7 made the app sound nearly finished, and

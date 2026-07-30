@@ -24,7 +24,7 @@ const SETTINGS_DEFAULTS = {
   googleUaSpoof: true,      // present Google sign-in as Firefox ("browser not secure" fix)
   autoUpdateCheck: true,    // check for updates on launch
   progressPollMs: 5000,     // playback-position poll interval (new players)
-  adlistRefreshHours: 24,   // ad-list cache age before re-download (next launch)
+  adlistRefreshHours: 8,    // ad-list cache age before re-download — 8h matches the upstream quick-fixes expiry
   catalogTimeoutSec: 60,    // live-catalog fetch abort
 };
 let settings = { ...SETTINGS_DEFAULTS, ...load('settings', {}) };
@@ -48,13 +48,24 @@ function migrateRailsV060() {
 }
 migrateRailsV060();
 
+// v0.17 one-shot: the upstream quick-fixes list — the one carrying YouTube's unbreak rules — expires
+// every 8h, so a 24h cache spent two thirds of its life stale, which is exactly when YouTube's ad-block
+// detection wins. Same persisted-beats-default problem as above: an upgrading profile keeps 24. Only the
+// EXACT old default moves, so anyone who deliberately typed their own number keeps it.
+function migrateAdlistV017() {
+  if (load('adlistV017', false)) return;
+  if (+settings.adlistRefreshHours === 24) { settings.adlistRefreshHours = 8; saveSettings(); }
+  store('adlistV017', true);
+}
+migrateAdlistV017();
+
 // The ⚙ subset in the shape main.js wants (extraAuthHosts: comma string -> array of hosts).
 function mainSubset(s) {
   return {
     adblock: s.adblock !== false,
     youtubeScriptlets: s.youtubeScriptlets !== false,
     progressPollMs: +s.progressPollMs || 5000,
-    adlistRefreshHours: +s.adlistRefreshHours || 24,
+    adlistRefreshHours: +s.adlistRefreshHours || 8,
     extraAuthHosts: String(s.extraAuthHosts || '').split(',').map((x) => x.trim()).filter(Boolean),
     googleUaSpoof: s.googleUaSpoof !== false,
     autoUpdateCheck: s.autoUpdateCheck !== false,
@@ -292,7 +303,7 @@ function buildPrivacy() {
   const ytToggle = toggleControl('youtubeScriptlets', pushThenRender);
   ytToggle.querySelector('input').id = 'yt-scriptlets'; // so renderAdblockState greys it by id, not a text scan
   p.append(settingRow('YouTube ad-blocking',
-    'Blocks YouTube video ads (pre-roll/mid-roll) by pruning them from the player — safe, doesn\'t touch the player. On by default. If YouTube ever misbehaves, turn this off and reload.',
+    'Blocks YouTube video ads (pre-roll/mid-roll) by pruning them from the player — safe, doesn\'t touch the player. Also hides the "ad blockers are not allowed" pop-up from YouTube. On by default. If YouTube ever misbehaves, turn this off and reload.',
     ytToggle));
 
   const updRow = mk('div', 'set-btn-row');
@@ -389,7 +400,7 @@ function buildAdvanced() {
 
   p.append(settingRow('Progress poll interval (ms)', 'How often playback position is read. Applies the next time the player is shown.',
     numControl('progressPollMs', 1000)));
-  p.append(settingRow('Ad-list refresh (hours)', 'Lists auto-refresh this often while the app runs.',
+  p.append(settingRow('Ad-list refresh (hours)', 'Lists auto-refresh this often while the app runs. 8 matches how fast YouTube\'s fix-up rules go stale.',
     numControl('adlistRefreshHours', 1)));
   p.append(settingRow('Live catalog timeout (s)', 'How long a slow live catalog may load before it is marked failed.',
     numControl('catalogTimeoutSec', 5)));

@@ -75,7 +75,10 @@ sources of its own. You add your own sites; the app just makes them nicer to use
   (plus an **Update ad lists now** button in Settings → Privacy). YouTube video-ad blocking
   (pre-roll/mid-roll) is **on by default** via an in-page config pruner that removes the ads from
   the player's config before it reads them — CSP-safe, and it never touches the player itself, so
-  no grey/black video. A toggle in Settings → Privacy turns it off if YouTube ever misbehaves.
+  no grey/black video. The same pruning is applied inside any child frame the page creates, which is
+  how YouTube's ad-block detection reads an untouched copy of the config — and if its "ad blockers are
+  not allowed" dialog appears anyway, the app dismisses it and resumes playback. Best-effort by nature:
+  a toggle in Settings → Privacy turns it off if YouTube ever misbehaves.
 - **Popup blocking** — ad pop-unders are denied; same-site `_blank` links open in place;
   real login pop-ups (Google, Apple, Discord, GitHub, Microsoft, Facebook) are allowed so you
   can sign into sites that offer accounts (Google logins get a Firefox user-agent so its
@@ -182,7 +185,7 @@ no backend and no telemetry.
 npm test
 ```
 
-Launches the real app under the Chrome DevTools Protocol and runs a 181-test end-to-end suite
+Launches the real app under the Chrome DevTools Protocol and runs a 184-test end-to-end suite
 (also run on every PR and before every release build by CI)
 covering navigation, popup rules, ad-blocking, login user-agent handling, cross-origin progress
 reading, the TMDB browse home with in-tab search, the native detail page, per-source embed patterns, the source
