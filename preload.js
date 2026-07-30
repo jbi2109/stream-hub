@@ -22,4 +22,5 @@ contextBridge.exposeInMainWorld('sh', {
   onExitPlayer: (cb) => ipcRenderer.on('exit-player', () => cb()),   // Esc pressed inside the guest player
   onOpenPalette: (cb) => ipcRenderer.on('open-palette', () => cb()), // Ctrl/Cmd+K pressed inside the guest
   onGuestPad: (cb) => ipcRenderer.on('guest-pad', (_e, action) => cb(action)), // pad pressed while the player has focus
+  onBlockedNav: (cb) => ipcRenderer.on('blocked-nav', (_e, url) => cb(url)), // main cancelled a cross-site jump the page started
 });

@@ -78,9 +78,12 @@ function skeletonCards(n, cls = 'skel-poster') {
 }
 
 // Single replace-in-place toast (top-right); a new message resets the timer. No stacking — the app
-// doesn't emit enough events to earn a queue.
+// doesn't emit enough events to earn a queue. Replace-in-place is also the rate limit: a page firing a
+// redirect loop can only ever show one toast. `action` = { label, onClick, aria? } renders an inline
+// button (the blocked-navigation "Allow"); action toasts live 8s, because 3s is not long enough to read
+// a host name AND click, and the countdown bar reads its duration from --toast-dur so the two agree.
 let toastTimer = null;
-function toast(text, kind) {
+function toast(text, kind, action) {
   let t = $('toast');
   if (!t) {
     t = document.createElement('div');
@@ -90,9 +93,21 @@ function toast(text, kind) {
     document.body.append(t);
   }
   t.className = 'toast' + (kind ? ' ' + kind : '');
-  t.replaceChildren(document.createTextNode(text), mk('div', 'toast-bar')); // fresh bar restarts its countdown animation
+  const kids = [document.createTextNode(text)];
+  if (action) {
+    const btn = mk('button', 'toast-btn', action.label);
+    btn.setAttribute('aria-label', action.aria || action.label); // tabbed to later, out of the toast's
+                                                                 // context, "Allow" alone says nothing
+    btn.onclick = () => { clearTimeout(toastTimer); t.remove(); action.onClick(); };
+    btn.onfocus = () => clearTimeout(toastTimer); // keyboard users: don't yank the button out from under the focus ring
+    kids.push(btn);
+  }
+  const life = action ? 8000 : 3000;
+  t.style.setProperty('--toast-dur', life / 1000 + 's'); // seconds, so the CSS <time> and the assertion agree
+  kids.push(mk('div', 'toast-bar')); // fresh bar restarts its countdown animation
+  t.replaceChildren(...kids);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.remove(), 3000);
+  toastTimer = setTimeout(() => t.remove(), life);
 }
 
 // prefers-reduced-motion → a live-synced body class; one CSS rule kills all animation behind it.

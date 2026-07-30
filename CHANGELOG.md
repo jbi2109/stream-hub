@@ -5,6 +5,20 @@ history. Download the latest installer from the [Releases page](https://github.c
 
 ---
 
+## v0.16.0 — Pages can't drag you off to ads any more (July 2026)
+
+- **The version number jumped from 0.7 to 0.16 on purpose.** 0.7 made the app sound nearly finished, and
+  it isn't. From here each release goes up by 0.01. Older versions keep the numbers they shipped with.
+- **No more being thrown onto an ad page while you're watching.** Some pages try to send you somewhere
+  else on their own, without you clicking anything. That now gets stopped and you stay where you were.
+- **If it was a link you did mean to follow, you can still go.** A small message appears in the corner
+  telling you where the page wanted to take you, with an **Allow** button that takes you there. It stays
+  up for eight seconds, so there's time to read it and decide.
+- **No more "Are you sure you want to leave?" boxes.** Those only exist to keep you stuck on a page, so
+  the app doesn't show them any more.
+
+---
+
 ## v0.7.0 — Search moved into the Movies / TV / Anime tabs (July 2026)
 
 - **Search now lives right where you browse.** The separate Search screen (and its rail button) is gone;

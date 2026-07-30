@@ -11,6 +11,8 @@ const { CDP, sleep, until } = require('./cdp');
 const ROOT = path.join(__dirname, '..');
 const PORT = 9223;
 const SITE = 'http://127.0.0.1:9310';
+const SITE_ALT = 'http://localhost:9310'; // the SAME fixture server under a DIFFERENT base domain
+                                          // ('localhost' vs '0.1') — how a cross-site nav is expressed on loopback
 const UA_ECHO_HOST = '127.0.0.1:9311';
 const UA_ECHO = `http://${UA_ECHO_HOST}`;
 const PLAYER = 'http://127.0.0.1:9312';
@@ -27,8 +29,14 @@ let passed = 0;
 
 function ok(name) { passed++; console.log(`  ok ${passed} - ${name}`); }
 
+// v0.16: counts requests that actually REACHED the redirect destination. A guard that cancels a
+// will-redirect never issues that request, so this one number discriminates blocked from followed.
+let redirectDestHits = 0;
+
 // ---- local test site: a media page with og tags + a cross-origin player iframe ----
 const site = http.createServer((req, res) => {
+  if (req.url === '/redirect-out') { res.writeHead(302, { location: `${SITE_ALT}/redirect-dest` }); return res.end(); } // v0.16 nav-guard chain
+  if (req.url === '/redirect-dest') redirectDestHits++; // falls through to the normal fixture HTML on purpose
   res.setHeader('content-type', 'text/html');
   res.setHeader('x-sec-ch-ua', req.headers['sec-ch-ua'] || 'NONE'); // echo the UA client hint (same-origin readable)
   res.end(`<!doctype html><html><head>
@@ -1422,16 +1430,24 @@ async function main() {
 
   // 32y. v0.2.1 (Part B): an in-page nav to a google-login host is popped out to a standalone window,
   //       and the webview does NOT follow. (will-navigate fires only for renderer-initiated nav.)
-  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/login-origin'`);
+  //       v0.16: committed under SITE_ALT so the login nav is genuinely CROSS-site — which makes this the
+  //       proof of BOTH the branch ordering (swap the Google branch below the same-site check and the nav
+  //       is cancelled, no window opens, and the `until` below times out) and of guardNav's `return`
+  //       (drop it and the pop-out ALSO falls through to the blocked-nav send, so a toast appears).
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE_ALT}/login-origin'`);
   await until(() => page.eval(`document.getElementById('webview').getURL().includes('/login-origin')`), 'webview on origin page for login-intercept');
   const liTarget = await until(async () =>
     (await targets()).find((t) => t.url.includes('/login-origin') && t.webSocketDebuggerUrl), 'guest for login-intercept');
   const liGuest = await CDP.connect(liTarget.webSocketDebuggerUrl);
+  await page.eval(`document.getElementById('toast')?.remove()`); // any earlier toast would mask the assert below
   await liGuest.eval(`location.href = '${UA_ECHO}/login'`); // renderer-initiated -> fires will-navigate
   const loginWin = await until(async () =>
     (await targets()).find((t) => t.url.startsWith(UA_ECHO) && t.type === 'page'), 'standalone login window opened');
   assert.ok(loginWin, 'a google-login nav should open a standalone window');
   assert.ok(!(await page.eval(`document.getElementById('webview').getURL().startsWith('${UA_ECHO}')`)), 'the webview must NOT follow to the login host');
+  await sleep(300); // the blocked-nav IPC is one hop; the login-window `until` above is slower, but don't race it
+  assert.strictEqual(await page.eval(`!!document.getElementById('toast')`), false,
+    'a popped-out google login must not ALSO be reported as a blocked navigation — guardNav needs its return');
   liGuest.close();
   await closeTarget(loginWin.id);
   ok('login: in-page nav to a google-login host opens a standalone window, not the webview');
@@ -2449,6 +2465,133 @@ async function main() {
   assert.strictEqual(await page.eval(`[...document.querySelectorAll('.hover-preview .hp-art img')].findIndex(i => i.classList.contains('on'))`), 0, 'reduced motion still shows frame 0');
   await page.eval(`document.body.classList.remove('reduced-motion'); hideHoverPreview(); HP_FRAME_MS = 2500; window.__hpCard.remove(); delete window.__hpCard;`);
   ok('hover preview: multi-frame backdrop cross-fade with a Ken Burns pan, fully gated by reduced-motion');
+
+  // 78. v0.16: a page that navigates ITSELF off-site is cancelled, and the host renderer is told.
+  //     SITE and SITE_ALT are the same fixture server reached under two different base domains.
+  await page.eval(`document.getElementById('toast')?.remove()`); // a stale toast would satisfy the until below
+  await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/nav-guard'`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE}/nav-guard'`), 'webview on the nav-guard page');
+  const ngTarget = await until(async () =>
+    (await targets()).find((t) => t.url === `${SITE}/nav-guard` && t.webSocketDebuggerUrl), 'guest for the nav guard');
+  const ngGuest = await CDP.connect(ngTarget.webSocketDebuggerUrl);
+  await ngGuest.eval(`location.href = '${SITE_ALT}/ad-jump'`); // renderer-initiated, main frame -> will-navigate
+  const ngToast = await until(() => page.eval(`(document.getElementById('toast')||{}).textContent || ''`), 'blocked-nav toast');
+  assert.ok(ngToast.includes('localhost'), `the toast must name the blocked host, got: ${ngToast}`);
+  // the next three run BEFORE the sleep below: an action toast lives 8s and this block spends wall-clock
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#toast .toast-btn').length`), 1, 'the blocked-nav toast needs exactly one action button');
+  assert.strictEqual(await page.eval(`getComputedStyle(document.querySelector('#toast .toast-bar')).animationDuration`), '8s', 'an action toast must run its countdown for the full 8s it lives');
+  assert.ok((await page.eval(`document.querySelector('#toast .toast-btn').getAttribute('aria-label') || ''`)).includes('localhost'),
+    'the Allow button must name what it allows — "Allow" alone is meaningless to a screen reader');
+  assert.ok(await page.eval(`(() => { document.body.classList.add('reduced-motion');
+    const w = parseFloat(getComputedStyle(document.querySelector('#toast .toast-bar')).width);
+    document.body.classList.remove('reduced-motion'); return w > 0; })()`),
+    'the countdown bar must still render under reduced motion — a static underline, not a countdown');
+  // 79's setup runs HERE, before the sleep: it clicks this toast, and every round-trip spent between
+  // now and then eats into the 8s the toast is alive for.
+  await page.eval(`document.getElementById('webview').hidden = true; document.getElementById('dashboard').hidden = false; openedFrom = 'browse';`);
+  await sleep(800); // long enough for an UNBLOCKED navigation to have committed
+  assert.strictEqual(await page.eval(`document.getElementById('webview').getURL()`), `${SITE}/nav-guard`,
+    'the webview must not follow a cross-site navigation the page started');
+  ngGuest.close();
+  ok('nav guard: a page-initiated cross-site navigation is blocked and toasted');
+
+  // 79. the toast's Allow button navigates there anyway (the escape hatch for a link you meant to click).
+  //     This is ALSO the only proof in the suite that a plain app-driven navigation (webview.src ->
+  //     loadURL) is exempt from will-navigate: the destination is a different base domain from the
+  //     committed page, so if loadURL fired will-navigate the guard would eat it and this never lands.
+  //     Park the app in tests 34/35's real state — guest alive, player view left — on a KNOWN view, so
+  //     the openedFrom assert below pins that Allow goes through open() and not a bare webview.src.
+  assert.strictEqual(await page.eval(`document.querySelectorAll('#toast .toast-btn').length`), 1,
+    "78's action toast must still be alive to be clicked — its 8s life is the only thing keeping it here");
+  await page.eval(`document.querySelector('#toast .toast-btn').click()`);
+  assert.strictEqual(await page.eval(`!!document.getElementById('toast')`), false, 'Allow dismisses the toast'); // asserted here, one eval after the click, so expiry cannot explain it
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE_ALT}/ad-jump'`), 'Allow navigates the webview to the blocked URL');
+  assert.strictEqual(await page.eval(`document.getElementById('webview').hidden`), false, 'Allow must reveal the webview — the guest outlives the player view');
+  assert.strictEqual(await page.eval(`openedFrom`), 'dashboard',
+    'Allow must record the view it launched from, or Esc out of the allowed page exits to the wrong one');
+  ok('nav guard: Allow reveals the webview and opens the blocked URL (app-driven loadURL is never blocked)');
+
+  // 80. server-side redirect chains are guarded too: hop 1 is same-site, the destination is not.
+  await page.eval(`document.getElementById('toast')?.remove()`);
+  const rdHits0 = redirectDestHits;
+  await page.eval(`document.getElementById('webview').src = '${SITE}/redir-origin'`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE}/redir-origin'`), 'webview on the redirect-origin page');
+  const rdTarget = await until(async () =>
+    (await targets()).find((t) => t.url === `${SITE}/redir-origin` && t.webSocketDebuggerUrl), 'guest for the redirect guard');
+  const rdGuest = await CDP.connect(rdTarget.webSocketDebuggerUrl);
+  await rdGuest.eval(`location.href = '${SITE}/redirect-out'`); // same-site hop that 302s to SITE_ALT
+  const rdToast = await until(() => page.eval(`(document.getElementById('toast')||{}).textContent || ''`), 'blocked-redirect toast');
+  assert.ok(rdToast.includes('localhost'), `the redirect toast must name the destination host, got: ${rdToast}`);
+  await sleep(800);
+  assert.strictEqual(await page.eval(`document.getElementById('webview').getURL()`), `${SITE}/redir-origin`,
+    'the webview must not follow a redirect that lands on another site');
+  assert.strictEqual(redirectDestHits, rdHits0, 'a blocked redirect must never reach the destination server');
+  rdGuest.close();
+  ok('nav guard: a redirect chain ending off-site is blocked and toasted');
+
+  // 81. v0.16 regression guard for the guard: will-redirect ALSO fires for SUBFRAMES, where getURL() is
+  //     the TOP page — so without the isMainFrame gate every embed that hops hosts mid-load dies, which
+  //     is the app's entire job. The fixture HTML already carries a cross-origin <iframe>; point it at a
+  //     same-site URL that 302s off-site and require the destination server to actually be hit.
+  await page.eval(`document.getElementById('toast')?.remove()`); // test 80's toast is still inside its 8s life
+  const frHits0 = redirectDestHits;
+  await page.eval(`document.getElementById('webview').src = '${SITE}/frame-host'`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE}/frame-host'`), 'webview on the frame-host page');
+  const frTarget = await until(async () =>
+    (await targets()).find((t) => t.url === `${SITE}/frame-host` && t.webSocketDebuggerUrl), 'guest for the subframe redirect');
+  const frGuest = await CDP.connect(frTarget.webSocketDebuggerUrl);
+  await frGuest.eval(`document.querySelector('iframe').src = '${SITE}/redirect-out'`); // subframe nav, real frame initiator
+  await until(() => Promise.resolve(redirectDestHits > frHits0), 'the embedded frame follows its own cross-site redirect');
+  assert.strictEqual(await page.eval(`(document.getElementById('toast')||{}).textContent || ''`), '', 'a subframe redirect must not be reported to the user');
+  frGuest.close();
+  ok('nav guard: a subframe redirect across sites still loads (embeds are not main-frame ad jumps)');
+
+  // 82. app-driven loads are exempt from the REDIRECT guard too. will-redirect (unlike will-navigate)
+  //     fires for navigations the app started, so without the `e.initiator` gate a user source whose URL
+  //     302s to another domain could never be opened at all — and Allow, which re-opens via webview.src,
+  //     would dead-end on that same block. Same fixture chain as test 80, started by the app: it must land.
+  await page.eval(`document.getElementById('webview').src = '${SITE}/redirect-out'`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE_ALT}/redirect-dest'`), 'an app-opened URL follows its own 302 across sites');
+  assert.strictEqual(await page.eval(`!document.getElementById('toast')`), true,
+    'an app-driven redirect must not be reported as blocked'); // 81 left the slate clean
+  ok('nav guard: a redirect on an app-opened URL is not blocked (so Allow can never dead-end)');
+
+  // 83. beforeunload traps never hold the player hostage (will-prevent-unload -> preventDefault ALLOWS
+  //     the unload, so Electron's dialog manager never renders one and the nav proceeds). The activation
+  //     assert is load-bearing: Chromium suppresses beforeunload entirely in a frame that never got a
+  //     user gesture, and without it this test would pass either way.
+  await page.eval(`document.getElementById('webview').src = '${SITE}/unload-trap'`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE}/unload-trap'`), 'webview on the unload-trap page');
+  const buTarget = await until(async () =>
+    (await targets()).find((t) => t.url === `${SITE}/unload-trap` && t.webSocketDebuggerUrl), 'guest for the unload trap');
+  const buGuest = await CDP.connect(buTarget.webSocketDebuggerUrl);
+  await buGuest.send('Runtime.evaluate', { expression: `window.onbeforeunload = (e) => { e.preventDefault(); return 'stay'; }`, userGesture: true, returnByValue: true });
+  assert.strictEqual(await buGuest.eval(`navigator.userActivation.hasBeenActive`), true,
+    'the guest needs sticky activation or Chromium never raises the dialog and this test is vacuous');
+  await page.eval(`document.getElementById('webview').src = '${SITE}/unload-done'`);
+  await until(() => page.eval(`document.getElementById('webview').getURL() === '${SITE}/unload-done'`), 'navigation completes despite a beforeunload trap', 8000);
+  buGuest.close();
+  ok('unload trap: a beforeunload handler cannot keep the player on an ad page');
+
+  // 84. v0.16: the three YouTube domains count as ONE site, so a short link in a video description is not
+  //     blocked on the app's own first-class YouTube surface. Every loopback fixture is 127.0.0.1 or
+  //     localhost, so no fixture pair can be two DISTINCT YouTube-shaped hosts: this reads the helper
+  //     SOURCE out of main.js and evals a copy of it, so the YT_SITE clause has no end-to-end coverage
+  //     anywhere in the suite — every other guard test exercises the live main-process helper instead.
+  //     (the \r\n strip is not cosmetic: core.autocrlf checkouts hand this regex a CRLF main.js)
+  const guardSrc = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8').replace(/\r\n/g, '\n').match(/const YT_SITE[\s\S]*?\n};\n/);
+  assert.ok(guardSrc, 'main.js must keep YT_SITE/baseDomain/sameSite as one contiguous block for this check');
+  // the `\n};\n` anchor is greedy across a reformat — if it swallows the next function this check goes
+  // quietly wrong, so pin the overshoot rather than debug it later
+  assert.ok(!guardSrc[0].includes('isGoogleLoginHost'), 'the YT_SITE/baseDomain/sameSite extraction overshot — re-anchor it');
+  const guardSameSite = eval(guardSrc[0] + 'sameSite');
+  assert.strictEqual(guardSameSite('https://youtu.be/abc', 'https://www.youtube.com/watch?v=abc'), true,
+    'a short-link hop inside the YouTube property is one site, not an ad jump');
+  assert.strictEqual(guardSameSite('https://www.youtube-nocookie.com/embed/abc', 'https://youtu.be/abc'), true,
+    'the no-cookie embed domain is the same property too');
+  assert.strictEqual(guardSameSite('https://elsewhere.example/abc', 'https://www.youtube.com/watch?v=abc'), false,
+    'leaving the YouTube property for an unrelated host is still cross-site');
+  ok('nav guard: the YouTube domains are one site; other hosts leaving it are still cross-site');
 
   page.close();
   console.log(`\nALL ${passed} TESTS PASSED`);

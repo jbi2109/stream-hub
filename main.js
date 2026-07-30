@@ -63,6 +63,25 @@ const FIREFOX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20
 const GOOGLE_LOGIN_HOSTS = ['accounts.google.com', 'accounts.youtube.com'];
 const hostOf = (u) => { try { return new URL(u).host; } catch { return ''; } };
 if (process.env.SH_TEST_UA_HOST) GOOGLE_LOGIN_HOSTS.push(process.env.SH_TEST_UA_HOST);
+// The three YouTube domains are ONE property — a short link in a video description is not an ad jump.
+// Mirrors app.js's ytHostRe. googlevideo.com is deliberately absent: a media host, never a top-frame
+// navigation target. (YT_HOSTS in applyYtPolicy is a different job and DOES include it.)
+const YT_SITE = /(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i;
+// Same-site test for the nav guards below. Base domain = the last two labels, so player.site.com,
+// www.site.com and m.site.com all count as one site and keep navigating freely.
+// An unparseable/blank side (about:blank at first load, data:, blob:) compares EQUAL, so the guard can
+// never block a first navigation.
+// ponytail: last-two-labels lumps every *.co.uk together, i.e. it UNDER-blocks on those suffixes, and it
+// over-blocks wherever the last two labels differ despite being one deployment ('example.com.' vs
+// 'example.com', 'plex' vs 'plex.local', '[::1]' vs '127.0.0.1'). Swap in a public-suffix check only if
+// either starts to matter.
+const baseDomain = (u) => { try { return new URL(u).hostname.split('.').slice(-2).join('.'); } catch { return ''; } };
+const sameSite = (a, b) => {
+  const x = baseDomain(a), y = baseDomain(b);
+  if (!x || !y || x === y) return true;
+  // Both sides parsed (baseDomain returned truthy for each), so these URL() calls cannot throw.
+  return YT_SITE.test(new URL(a).hostname) && YT_SITE.test(new URL(b).hostname);
+};
 // Single choke point for the whole Google-UA spoof (header rewrite, hint strip, pop-out window, per-nav
 // setUserAgent): gated on the ⚙ googleUaSpoof setting. The guest preload's navigator spoof can't read
 // main state and stays on — harmless alone, since the header spoof is what Google keys on.
@@ -135,9 +154,29 @@ app.on('web-contents-created', (_e, contents) => {
   contents.on('did-create-window', (win) => { if (ms.googleUaSpoof !== false) win.webContents.setUserAgent(FIREFOX_UA); });
   // In-place login navigations (e.g. YouTube → accounts.google.com in the main frame) are popped out
   // to a standalone top-level window — Google blocks its embedded-browser check on <webview> guests.
-  contents.on('will-navigate', (e, url) => {
-    if (isGoogleLoginHost(url)) { e.preventDefault(); openGoogleLoginWindow(url, hostOf(contents.getURL())); }
-  });
+  // Everything else that leaves the current site is an ad jump: once setWindowOpenHandler denies the
+  // pop-up, ad scripts fall back to navigating the page itself, and chains bounce through same-site
+  // hops before landing off-site — hence both events, same rule. The renderer offers a one-click Allow,
+  // because Electron cannot tell an ad jump from an off-site link you actually clicked.
+  const guardNav = (e, url) => {
+    if (e.isMainFrame === false) return; // will-redirect ALSO fires for subframes (will-navigate does not).
+                                         // A player iframe hopping hosts is the app's whole job, and
+                                         // getURL() is the TOP page, so it would never compare same-site.
+    if (isGoogleLoginHost(url)) { e.preventDefault(); openGoogleLoginWindow(url, hostOf(contents.getURL())); return; }
+    if (sameSite(url, contents.getURL())) return;
+    e.preventDefault();
+    contents.hostWebContents?.send('blocked-nav', url);
+  };
+  contents.on('will-navigate', guardNav);
+  // will-redirect has no renderer-initiated gate either, so it sees redirects on loads the APP started.
+  // Guard only chains a frame itself started (initiator === null means "not initiated by a frame"):
+  // a user's source URL that 302s across domains is their own choice, and blocking it would also
+  // dead-end Allow, which re-opens via webview.src -> loadURL.
+  contents.on('will-redirect', (e, url) => { if (e.initiator) guardNav(e, url); });
+  // "Are you sure you want to leave?" traps exist only to keep you on the ad page. preventDefault here
+  // ALLOWS the unload — Electron renders no dialog either way; without this listener it silently
+  // CANCELS the navigation instead.
+  contents.on('will-prevent-unload', (e) => e.preventDefault());
   contents.setWindowOpenHandler(({ url }) => {
     try {
       const host = new URL(url).host;
@@ -432,9 +471,8 @@ app.whenReady().then(() => {
   // The guest preload asks, synchronously at document_start, whether to run the YouTube video-ad
   // pruner. Gated on the youtubeScriptlets setting; matches real YT hosts + the e2e fixture host.
   ipcMain.on('yt-adblock', (e, host) => {
-    const YT = /(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i;
     const t = process.env.SH_TEST_YT_HOST; // e.g. 127.0.0.1:9315
-    e.returnValue = ms.youtubeScriptlets !== false && (YT.test(host) || (!!t && !!host && host.includes(t)));
+    e.returnValue = ms.youtubeScriptlets !== false && (YT_SITE.test(host) || (!!t && !!host && host.includes(t)));
   });
 
   // Controller buttons pressed while the guest player has focus (webview-preload.js polls there,

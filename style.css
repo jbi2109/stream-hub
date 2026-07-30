@@ -1219,6 +1219,7 @@ body:not(.reduced-motion) .hero-inner.active { animation: hero-fade var(--dur-mi
   padding: 10px 14px 12px;
   max-width: 340px;
   overflow: hidden;
+  overflow-wrap: anywhere; /* a host is one unbreakable token — naming the destination is the toast's whole job */
   box-shadow: var(--shadow-3);
   animation: sh-toast-in var(--dur-mid) ease;
 }
@@ -1227,8 +1228,28 @@ body:not(.reduced-motion) .hero-inner.active { animation: hero-fade var(--dur-mi
   position: absolute; left: 0; bottom: 0;
   height: 2px;
   background: var(--accent);
-  animation: sh-toast-bar 3s linear forwards;
+  animation: sh-toast-bar var(--toast-dur, 3s) linear forwards; /* toast() sets it; action toasts live longer */
 }
+/* the keyframe is what gives the bar a width, so the reduced-motion kill switch below would leave it
+   0px wide. Under reduced motion it stays a full-width static underline: the countdown itself is
+   deliberately not conveyed, but the bar should still be visible rather than collapsed to nothing. */
+body.reduced-motion .toast .toast-bar { width: 100%; }
+/* v0.16: optional inline action (the blocked-navigation "Allow"). Existing tokens only — every
+   theme-varying one here (--panel-2, --panel-3, --text, --border) is re-declared under
+   [data-theme="light"]; --r-pill and --focus-ring are theme-neutral and resolve from :root, which
+   matches the same <html> element. No animation, so nothing to gate on .reduced-motion. */
+.toast-btn {
+  margin-left: 10px;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.toast-btn:hover { background: var(--panel-3); }
+.toast-btn:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 @keyframes sh-toast-in { from { opacity: 0; transform: translateX(12px); } }
 @keyframes sh-toast-bar { from { width: 100%; } to { width: 0; } }
 

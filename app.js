@@ -134,6 +134,16 @@ if (window.sh && window.sh.onUpdate) window.sh.onUpdate(showUpdate);
 // After a standalone Google-login window closes, reload the webview so it picks up the sign-in cookies.
 window.sh?.onAuthReload?.(() => { if (!webview.hidden) webview.reload(); });
 
+// A page tried to send itself to another site (ad redirect) and main cancelled it. Name the destination
+// and offer one click through: will-navigate also fires for an off-site link you meant to follow.
+// open(url, false) — untracked, so the ⏯ Resume target stays on whatever you were actually watching.
+// It also records the launching view for Esc and reveals the webview, which matters because the guest
+// outlives the player view: a redirect fired after you left would otherwise load invisibly. App-driven
+// loads are exempt from both guards, so Allow always gets through. Separate `aria` because #toast is a
+// live region: repeating the text in the button's name would announce the whole message twice.
+window.sh?.onBlockedNav?.((url) => toast(`Blocked a redirect to ${hostOf(url)}`, 'error',
+  { label: 'Allow', aria: `Allow navigation to ${hostOf(url)}`, onClick: () => open(url, false) }));
+
 // ---- settings export / import (all localStorage: sources, tmdbKey, library, settings, defaults) ----
 function exportSettings() { return Object.fromEntries(Object.entries(localStorage)); }
 function importSettings(obj) {
