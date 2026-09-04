@@ -130,7 +130,8 @@ body {
   border-radius: 5px;
   padding: 5px 8px;
 }
-#watch-later {
+/* v0.20: doubled #topbar so these beat the generic `#topbar button` reset above (1,0,1 > 1,0,0) */
+#topbar #watch-later {
   font-size: 12px;
   padding: 6px 12px;
   white-space: nowrap;
@@ -140,8 +141,8 @@ body {
   color: var(--on-accent);
   cursor: pointer;
 }
-#watch-later:hover { filter: brightness(1.12); }
-#src-switch, #ep-switch, #autonext-btn {
+#topbar #watch-later:hover { filter: brightness(1.12); }
+#src-switch, #ep-switch, #topbar #autonext-btn {
   font-size: 12px;
   padding: 5px 8px;
   max-width: 160px;
@@ -151,8 +152,8 @@ body {
   color: var(--text);
   cursor: pointer;
 }
-#autonext-btn:hover { border-color: var(--accent); }
-#autonext-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+#topbar #autonext-btn:hover { border-color: var(--accent); }
+#topbar #autonext-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 #view { flex: 1; position: relative; }
 webview { width: 100%; height: 100%; }
@@ -674,11 +675,11 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 .src-lang { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .src-row::after { content: '▸'; margin-left: auto; color: var(--muted); opacity: .6; } /* pure-CSS click affordance (shared w/ live picker) */
 
-#live-sources {
+#topbar #live-sources {
   font-size: 12px; padding: 6px 12px; white-space: nowrap;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; color: var(--text); cursor: pointer;
 }
-#live-sources:hover { background: var(--panel-3); }
+#topbar #live-sources:hover { background: var(--panel-3); }
 
 /* floating "Sources" button over the player, revealed on hover (for live matches) */
 #sources-overlay {
@@ -986,7 +987,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 button svg { vertical-align: -2px; pointer-events: none; }
 .rail-btn svg { width: 20px; height: 20px; display: block; }
 #topbar button svg { display: block; }
-#live-sources svg { vertical-align: -2px; display: inline; }
+#topbar #live-sources svg { vertical-align: -2px; display: inline; }
 .card .card-actions button svg { width: 13px; height: 13px; display: block; margin: auto; }
 #sources li button svg { display: block; }
 .detail-actions button svg { margin-right: 2px; }

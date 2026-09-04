@@ -1254,6 +1254,25 @@ async function main() {
   await until(() => page.eval(`!document.getElementById('detail').hidden && document.querySelectorAll('#detail .src-row').length === 2`), 'overlay reopens the source page');
   ok('live: Sources overlay appears on the player and reopens the source page');
 
+  // 32w6b. v0.20: the text-bearing topbar controls keep their own styling under the generic `#topbar button`
+  //        reset (its 1,0,1 specificity beat their single-id rules: Watch Later rendered as bare grey text
+  //        and the Sources icon wrapped above its label).
+  await page.eval(`document.querySelector('#detail .src-row').click()`);
+  await until(() => page.eval(`!document.getElementById('topbar').classList.contains('off') && !document.getElementById('live-sources').hidden`), 'topbar chrome up for the styling check');
+  const tb = await page.eval(`(() => { const cs = (id) => getComputedStyle(document.getElementById(id));
+    const probe = document.createElement('span'); probe.style.color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    document.body.append(probe); const accRgb = getComputedStyle(probe).color; probe.remove();
+    const an = document.getElementById('autonext-btn'); const was = an.hidden; an.hidden = false;
+    const r = { wl: cs('watch-later').backgroundColor, accRgb, srcH: document.getElementById('live-sources').offsetHeight,
+      srcFont: cs('live-sources').fontSize, anFont: cs('autonext-btn').fontSize, anBg: cs('autonext-btn').backgroundColor };
+    an.hidden = was; return r; })()`);
+  assert.strictEqual(tb.wl, tb.accRgb, 'Watch Later must keep its accent background under the #topbar button reset');
+  assert.ok(tb.srcH <= 32, `the Sources button must sit on one line, got ${tb.srcH}px tall`);
+  assert.strictEqual(tb.srcFont, '12px', 'Sources keeps its 12px size');
+  assert.strictEqual(tb.anFont, '12px', '⏭ keeps its 12px size');
+  assert.notStrictEqual(tb.anBg, 'rgba(0, 0, 0, 0)', '⏭ keeps its panel background');
+  ok('topbar: Watch Later / Sources / ⏭ keep their own styling under the generic #topbar button reset');
+
   // 32w7. v0.2.7: leaving a view cancels a pending capture (fixes the live/leave-race leak)
   await page.eval(`document.getElementById('home-btn').click(); cont.length = 0; store('continue', cont);`);
   await page.eval(`document.getElementById('webview').hidden = false; document.getElementById('webview').src = '${SITE}/tv/778899';`);
