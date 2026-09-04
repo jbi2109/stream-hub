@@ -202,6 +202,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 
 #view .empty { color: var(--muted); font-size: 13px; max-width: 520px; line-height: 1.5; }
 .empty-cta { display: block; width: fit-content; margin-top: var(--sp-3); } /* Browse CTA drops below the empty-state teaching text */
+#view .grid > .empty { grid-column: 1 / -1; } /* v0.20: an empty state dropped into a grid spans it instead of squeezing into one poster column */
 #view .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--poster-min, 160px), 1fr));
@@ -934,7 +935,7 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
 /* per-rail Movies/TV toggle: the shared .segmented pill group, sized down for the rail header */
 .rail-type button { padding: 3px 10px; font-size: 11px; }
 /* horizontal card rail (same scroller pattern as .cast-row) */
-.rail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 8px; }
+.rail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 8px; align-items: flex-start; } /* v0.20: no stretch — a focus ring must hug the card, not the tallest sibling */
 /* every horizontal rail gets chevrons (.rail-chev) + edge fades via wireRail, so hide the native
    scrollbar on all of them (#dashboard/.grid keep theirs) */
 .rail, .detail-rail, .cast-row, .providers { scrollbar-width: none; }

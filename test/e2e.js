@@ -591,6 +591,14 @@ async function main() {
   await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Disc P1 MOVIE')) && document.querySelector('#browse .browse-filters').hidden === false`), 'empty query restores discovery + filter bar');
   ok('browse-search: clearing the query returns to discovery and shows the filter bar');
 
+  // N3b. v0.20 (audit V4): an empty state dropped into the results grid spans every column instead of being
+  //      squeezed into one poster-wide cell.
+  const emptyW = await page.eval(`(() => { const g = document.querySelector('#browse .grid'); const n = stateNode('empty', 'No results'); g.append(n);
+    const w = n.getBoundingClientRect().width; n.remove(); return w; })()`);
+  const posterMin = await page.eval(`parseInt(getComputedStyle(document.documentElement).getPropertyValue('--poster-min'))`);
+  assert.ok(emptyW >= posterMin * 3, `an empty state must span the grid, got ${emptyW}px against a ${posterMin}px column`);
+  ok('browse: an empty state spans the whole grid, not one column');
+
   // N4. Anime tab client-filters /search/tv down to genre 16 (Animation) — the non-anime row is dropped.
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'anime').click()`);
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'anime discovery grid');
@@ -1970,6 +1978,15 @@ async function main() {
   await page.eval(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))`);
   await until(() => page.eval(`!document.getElementById('dashboard').hidden && !document.querySelector('.palette-input')`), 'palette Open Dashboard runs');
   ok('dashboard: rail arrows, digit 0, palette entry');
+
+  // 53b. v0.20 (audit V3): rails must not stretch their cards to the tallest sibling — a keyboard/controller focus
+  //      ring otherwise outlines a huge empty box. Plant a deliberately tall sibling and require a real card to stay
+  //      its own height.
+  const railStretch = await page.eval(`(() => { const rail = document.querySelector('#dashboard .rail'); const card = rail.querySelector('.card');
+    const tall = document.createElement('div'); tall.className = 'card'; tall.style.height = '480px'; tall.style.flex = '0 0 100px'; rail.append(tall);
+    const h = card.offsetHeight; tall.remove(); return h; })()`);
+  assert.ok(railStretch < 400, `a rail card must keep its own height next to a taller sibling, got ${railStretch}px`);
+  ok('rails: cards keep their own height (no flex stretch under the focus ring)');
 
   // 54. shared stateNode classes; the 3-option landing control; landingView 'library' still boots there
   assert.strictEqual(await page.eval(`stateNode('empty', 'x').className`), 'empty', "stateNode('empty') must keep the .empty class");

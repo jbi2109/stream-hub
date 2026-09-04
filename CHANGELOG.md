@@ -8,8 +8,10 @@ history. Download the latest installer from the [Releases page](https://github.c
 ## v0.20.0 — Audit fixes, round one (September 2026)
 
 - **The top bar's buttons look like buttons again.** "+ Watch Later", the live "Sources" button and the ⏭ auto-next toggle had lost their colour and size to a styling clash, and Sources wrapped onto two lines.
+- **Keyboard and controller focus hugs the card.** On the dashboard rails the focus outline used to stretch far below the card into empty space. "No results" in Browse also no longer squeezes itself into one narrow column.
 
 ---
+
 ## v0.17.0 — YouTube's "ad blockers are not allowed" pop-up (July 2026)
 
 - **That pop-up should stop appearing.** YouTube was catching the app out with a trick: it opens a hidden,
