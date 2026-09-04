@@ -376,7 +376,8 @@ async function renderBrowse() {
     if (q !== browseQuery || browseTab !== tabAtRender) return; // stale keystroke / tab switch
     let results = ((data && data.results) || []).filter((r) => r.poster_path || r.title || r.name);
     if (browseTab === 'anime' && q) results = results.filter((r) => (r.genre_ids || []).includes(16)); // /search/tv isn't anime-only
-    if (!results.length) grid.replaceChildren(stateNode('empty', 'No results (check your TMDB key / filters).'));
+    if (data && data.error) grid.replaceChildren(stateNode('error', `TMDB said ${data.error} — check your API key in Settings.`)); // v0.20: name the failure
+    else if (!results.length) grid.replaceChildren(stateNode('empty', 'No results for these filters.'));
     else { grid.classList.add('anim-in'); grid.replaceChildren(...results.map((r) => posterCard(browseTab, r))); }
 
     // pager: 20 per page, Prev disabled on page 1, Next disabled at the last page (TMDB caps at 500)

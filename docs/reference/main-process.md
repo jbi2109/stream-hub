@@ -10,7 +10,7 @@
 
 | Channel | Direction | Purpose / validation |
 |---------|-----------|----------------------|
-| `tmdb` (invoke) | R→M | `fetch(TMDB_BASE + '/3' + path + qs)`; returns `{error, results:[]}` on failure. `SH_TEST_TMDB_BASE` redirects to a fixture. **No timeout today** (audit R2). |
+| `tmdb` (invoke) | R→M | `fetch(TMDB_BASE + '/3' + path + qs)`; returns `{error, results:[]}` on failure. `SH_TEST_TMDB_BASE` redirects to a fixture; 15 s abort (`SH_TEST_TMDB_TIMEOUT_MS` shortens it under test). |
 | `httpGet` (invoke) | R→M | Generic GET for live catalogs: https only (loopback http allowed), credentials stripped, browser UA, `catalogTimeoutSec` abort, 5 MB streamed cap. |
 | `set-setting` (invoke) | R→M | Merges a patch into `ms`, writes `settings.json`, live-applies ad-block. Keys not whitelisted (audit R6). |
 | `refresh-adlists`, `adblock-status` (invoke) | R→M | Force rebuild / engine state for the Privacy panel. |

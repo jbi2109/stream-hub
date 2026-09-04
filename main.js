@@ -445,7 +445,8 @@ app.whenReady().then(() => {
   ipcMain.handle('tmdb', async (_e, { path: p, params }) => {
     const qs = new URLSearchParams(params || {}).toString();
     try {
-      const r = await fetch(`${TMDB_BASE}/3${p}${qs ? '?' + qs : ''}`);
+      // v0.20: abort a hung request — a stalled TMDB left the detail page on "Loading…" forever (e2e shortens it)
+      const r = await fetch(`${TMDB_BASE}/3${p}${qs ? '?' + qs : ''}`, { signal: AbortSignal.timeout(+process.env.SH_TEST_TMDB_TIMEOUT_MS || 15000) });
       if (!r.ok) return { error: `HTTP ${r.status}`, results: [] };
       return await r.json();
     } catch (e) {

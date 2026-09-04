@@ -76,6 +76,8 @@ const tmdb = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const p = u.pathname;
   const q = u.searchParams;
+  if (q.get('api_key') === 'badkey') { res.statusCode = 401; return res.end('{"status_message":"Invalid API key"}'); } // v0.20 key check
+  if (p.endsWith('/hang')) return; // v0.20: never answers — the app's TMDB timeout must abort it
   if (/\/season\/\d+$/.test(p)) {
     res.end(JSON.stringify({ episodes: [
       { episode_number: 1, season_number: 1, name: 'Ep One', overview: 'first', still_path: '/s1.jpg' },
@@ -222,7 +224,7 @@ async function launchApp() {
     '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'],
     { cwd: ROOT, stdio: 'ignore', env: {
       ...process.env, SH_TEST_UA_HOST: UA_ECHO_HOST, SH_TEST_BLOCK_PATTERN: 'ads-test-marker\n###sh-cosmetic',
-      SH_TEST_YT_HOST: YT_FIX_HOST, SH_TEST_TMDB_BASE: 'http://127.0.0.1:9313' } });
+      SH_TEST_YT_HOST: YT_FIX_HOST, SH_TEST_TMDB_BASE: 'http://127.0.0.1:9313', SH_TEST_TMDB_TIMEOUT_MS: '700' } });
   return until(async () => {
     const list = await targets();
     return list.find((t) => t.url.includes('index.html') && t.webSocketDebuggerUrl);
@@ -1125,6 +1127,30 @@ async function main() {
   assert.strictEqual(qsEntry.type, 'tv', 'type from ?type=');
   assert.strictEqual(qsEntry.title, 'Fixture Title', 'the TMDB title must be looked up by the query id too');
   ok('identity: {id} in the query string gets a Continue key, TMDB title, type and S/E like a path id');
+
+  // 32n3. v0.20 (audit F2, R4, R2): a pasted TMDB key is checked at once and the answer is a toast; Browse names the
+  //       TMDB error instead of a generic "No results"; a source that fails to load gets a toast with an Edit-source
+  //       action instead of a silent Chromium error page; a hung TMDB request aborts (SH_TEST_TMDB_TIMEOUT_MS).
+  await page.eval(`document.getElementById('toast')?.remove(); showSettings(); showSettingsTab('general')`);
+  await page.eval(`(() => { const k = document.getElementById('tmdb-key'); k.value = 'badkey'; k.dispatchEvent(new Event('change')); })()`);
+  const badToast = await until(() => page.eval(`(document.getElementById('toast') || {}).textContent || ''`), 'toast for a rejected key');
+  assert.ok(/rejected/i.test(badToast) && await page.eval(`document.getElementById('toast').classList.contains('error')`), `a rejected key must say so, got: ${badToast}`);
+  await page.eval(`tmdbCache.clear(); browseQuery = ''; browseTab = 'movie'; showBrowse()`); // the cache ignores the key: drop the good key's cached discover page
+  await until(() => page.eval(`!!document.querySelector('#browse .grid .error')`), 'Browse shows the TMDB error state under a bad key');
+  assert.ok(await page.eval(`document.querySelector('#browse .grid .error').textContent.includes('401')`), 'the Browse error names the TMDB status');
+  await page.eval(`document.getElementById('toast')?.remove(); showSettings(); showSettingsTab('general')`);
+  await page.eval(`(() => { const k = document.getElementById('tmdb-key'); k.value = 'testkey'; k.dispatchEvent(new Event('change')); })()`);
+  const okToast = await until(() => page.eval(`(document.getElementById('toast') || {}).textContent || ''`), 'toast for a working key');
+  assert.ok(/works/i.test(okToast), `a working key must be confirmed, got: ${okToast}`);
+  await page.eval(`document.getElementById('toast')?.remove()`);
+  const tmdbHang = await page.eval(`window.sh.tmdb('/hang', {})`);
+  assert.ok(tmdbHang && tmdbHang.error, 'a hung TMDB request must abort with an error instead of pending forever');
+  await page.eval(`open('http://127.0.0.1:9/nothing-listens-here')`);
+  const failToast = await until(() => page.eval(`(document.getElementById('toast') || {}).textContent || ''`), 'load-failure toast');
+  assert.ok(failToast.includes("Couldn't load 127.0.0.1:9"), `the failure toast must name the host, got: ${failToast}`);
+  assert.strictEqual(await page.eval(`(document.querySelector('#toast .toast-btn') || {}).textContent`), 'Edit source', 'the failure toast offers Edit source');
+  await page.eval(`document.getElementById('toast')?.remove(); showHome()`);
+  ok('feedback: key check toast, Browse names the TMDB error, load-failure toast with Edit source, hung TMDB aborts');
 
   // 32o. v15.3: healLibrary re-titles old junk entries from TMDB using the id in each URL
   await page.eval(`document.getElementById('home-btn').click()`);

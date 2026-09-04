@@ -65,7 +65,16 @@ function wireSettingsControls() {
 
   const tmdbKeyInput = $('tmdb-key');
   tmdbKeyInput.value = tmdbKey;
-  tmdbKeyInput.onchange = () => { tmdbKey = tmdbKeyInput.value.trim(); store('tmdbKey', tmdbKey); if (!$('browse').hidden) renderBrowse(); };
+  tmdbKeyInput.onchange = () => {
+    tmdbKey = tmdbKeyInput.value.trim(); store('tmdbKey', tmdbKey);
+    if (!$('browse').hidden) renderBrowse();
+    // v0.20: say at once whether the key works — a wrong key used to mean a silently blank dashboard. Straight to
+    // main (not tmdbGet): its cache ignores the key, so a cached success from an old key could mask a bad new one.
+    if (tmdbKey) window.sh.tmdb('/configuration', { api_key: tmdbKey }).then((r) => {
+      if (r && r.error) toast(`TMDB rejected that key (${r.error}) — paste the v3 API key from themoviedb.org`, 'error');
+      else toast('TMDB key works');
+    });
+  };
 
   $('default-source').onchange = () => { defaultSource = $('default-source').value; store('defaultSource', defaultSource); };
 
@@ -100,6 +109,14 @@ function wireSettingsControls() {
 webview.addEventListener('did-navigate', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });
 webview.addEventListener('did-navigate-in-page', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });
 webview.addEventListener('did-stop-loading', scheduleCapture);
+// v0.20: a source that fails to load used to show Chromium's raw error page and nothing else. -3 = aborted (the app
+// navigated away mid-load) and subframes (ad iframes die all the time) are not the user's problem.
+webview.addEventListener('did-fail-load', (e) => {
+  if (e.isMainFrame === false || e.errorCode === -3) return;
+  const host = hostOf(e.validatedURL);
+  toast(`Couldn't load ${host} (${e.errorDescription || e.errorCode})`, 'error', { label: 'Edit source',
+    aria: `Edit the source for ${host}`, onClick: () => { const s = sources.find((x) => hostOf(x.url) === host); if (s) openAddWizard(s); else showSettings(); } });
+});
 // v0.20: links in the shell (Get a key, GitHub, release notes) open in the system browser. The host window denies
 // window.open (main.js), so without this every <a target=_blank> was dead. One delegated handler; main validates
 // the scheme. A named global so e2e can observe the call without a browser launching.

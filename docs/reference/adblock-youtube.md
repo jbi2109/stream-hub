@@ -26,6 +26,7 @@ The tick is one MutationObserver on `documentElement` (`subtree`, `childList`, `
 | `SH_TEST_YT_HOST` | A fixture host treated as YouTube by both the cosmetic policy and the pruner gate. |
 | `SH_TEST_UA_HOST` | Extra host treated as a Google login host. |
 | `SH_TEST_TMDB_BASE` | TMDB proxy base URL. |
+| `SH_TEST_TMDB_TIMEOUT_MS` | TMDB proxy abort (default 15000). |
 
 ## Known limits
 
