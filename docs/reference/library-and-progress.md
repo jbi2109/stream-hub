@@ -2,9 +2,9 @@
 
 ## Identity
 
-- `mediaKey(url)` = `type#tmdbId` when the pathname contains a `/\d{3,}` run, else `host+path`. `tmdbIdOf(url)` = that id or null. **Only the pathname is scanned** — a watch-link pattern that puts `{id}` in the query string loses all id-based features (audit B1).
+- `idFromUrl(url)` = the first `/\d{3,}` run in the pathname, else (v0.20) an `id` / `tmdb` / `tmdb_id` / `tmdbId` query parameter of 3+ digits, else null. `tmdbIdOf` is the same function. `mediaKey(url)` = `type#tmdbId` when there is an id, else `host+path`.
 - `parseSeasonEpisode(url, title)`: `?season/&episode` (or `s`/`e`) params, else `/id/S/E` path form, else `S1E2` in the title.
-- `mediaType(url, season)`: `tv` when a season is known or the path mentions tv/series/show/anime/episode; `classify` adds `live` via the source's category; `typeOf(item)` falls back for old entries.
+- `mediaType(url, season)`: `tv` when a season is known, the path mentions tv/series/show/anime/episode, or `?type=` says so; `classify` adds `live` via the source's category; `typeOf(item)` falls back for old entries.
 
 ## Capture pipeline
 

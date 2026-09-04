@@ -1076,6 +1076,22 @@ async function main() {
   assert.strictEqual(capById, 'Fixture Title', 'capture should use the TMDB title (by id), not the scraped og:title');
   ok('capture: prefers the TMDB title (by URL id) over the embed page og:title');
 
+  // 32n2. v0.20 (audit B1): a watch-link pattern that puts {id} in the query string gets the same identity as the
+  //       /embed/{type}/{id} path form — Continue key, TMDB id, type, season/episode and media detection.
+  const qs = 'https://p.example/player.html?type=tv&id=1501&s=2&e=5';
+  assert.deepStrictEqual(await page.eval(`[tmdbIdOf('${qs}'), mediaKey('${qs}'), mediaType('${qs}'), isMediaUrl('${qs}'), parseSeasonEpisode('${qs}', '').season, parseSeasonEpisode('${qs}', '').episode]`),
+    ['1501', 'tv#1501', 'tv', true, 2, 5], 'query-string ids must resolve like path ids');
+  assert.deepStrictEqual(await page.eval(`[tmdbIdOf('https://p.example/embed/tv/1501/2/5'), mediaKey('https://p.example/embed/movie/27205'), mediaKey('https://p.example/watch/abc'), tmdbIdOf('http://127.0.0.1:9310/player.html?v=abc')]`),
+    ['1501', 'movie#27205', 'p.example/watch/abc', null], 'path ids, id-less paths and digit-only hosts keep their old answers');
+  await page.eval(`cont.length = 0; store('continue', cont); open('${SITE}/player.html?type=tv&id=778899&s=1&e=2');`);
+  await until(() => page.eval(`document.getElementById('webview').getURL().includes('id=778899')`), 'query-style watch link open');
+  const qsEntry = await until(() => page.eval(`(() => { const c = JSON.parse(localStorage.getItem('continue'))[0]; return c && c.key === 'tv#778899' ? c : null; })()`), 'continue entry keyed by the query id');
+  assert.strictEqual(qsEntry.season, 1, 'season from ?s=');
+  assert.strictEqual(qsEntry.episode, 2, 'episode from ?e=');
+  assert.strictEqual(qsEntry.type, 'tv', 'type from ?type=');
+  assert.strictEqual(qsEntry.title, 'Fixture Title', 'the TMDB title must be looked up by the query id too');
+  ok('identity: {id} in the query string gets a Continue key, TMDB title, type and S/E like a path id');
+
   // 32o. v15.3: healLibrary re-titles old junk entries from TMDB using the id in each URL
   await page.eval(`document.getElementById('home-btn').click()`);
   await page.eval(`

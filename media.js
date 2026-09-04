@@ -1,23 +1,32 @@
 // Page inspection (title/poster/season/episode) + Continue-Watching capture.
 
-// Stable per-title id: first 3+ digit run in the path (TMDB id), else the path.
+// Stable per-title id: the TMDB id in the URL (idFromUrl), else host+path.
 function mediaKey(url) {
   try {
     const u = new URL(url);
-    const id = u.pathname.match(/\/(\d{3,})/);
+    const id = idFromUrl(url);
     // Key by type#tmdbId (host-independent) so the same show across sources is ONE entry and
     // switching a card's source can't fork a duplicate. Fall back to host+path when there's no id.
-    if (id) return mediaType(url) + '#' + id[1];
+    if (id) return mediaType(url) + '#' + id;
     return u.host + u.pathname;
   } catch { return url; }
 }
 
-// TMDB id from an embed URL (first 3+ digit path run — the same id mediaKey keys on). Matches the
-// PATHNAME, not the whole URL, so a host containing digits (127.0.0.1, 123movies) can't be mistaken.
-const tmdbIdOf = (url) => {
-  try { return new URL(url).pathname.match(/\/(\d{3,})/)?.[1] || null; }
-  catch { return String(url).match(/\/(\d{3,})/)?.[1] || null; }
-};
+// TMDB id from an embed URL: the first 3+ digit run in the PATHNAME (never the host — 127.0.0.1 and 123movies
+// must not match), else (v0.20) an id-shaped query parameter: a watch-link pattern that puts {id} in the query
+// (`?type={type}&id={id}`) is as valid as the /embed/{type}/{id} path form, and used to lose every id-based
+// feature (Continue key, hero Resume, switchers, auto-next, TMDB titling).
+const ID_PARAMS = ['id', 'tmdb', 'tmdb_id', 'tmdbId'];
+function idFromUrl(url) {
+  try {
+    const u = new URL(url);
+    const p = u.pathname.match(/\/(\d{3,})/);
+    if (p) return p[1];
+    for (const k of ID_PARAMS) { const v = u.searchParams.get(k); if (v && /^\d{3,}$/.test(v)) return v; }
+    return null;
+  } catch { return String(url).match(/\/(\d{3,})/)?.[1] || null; }
+}
+const tmdbIdOf = idFromUrl;
 
 // Migration: re-key Continue/Watch-Later by the host-independent key and merge duplicates that
 // collapse to the same show (keep the most-recently-touched). Idempotent; run at startup.
@@ -71,13 +80,17 @@ async function parsePage() {
 function isMediaUrl(url) {
   try {
     const u = new URL(url);
-    return /\/\d{3,}/.test(u.pathname) || /\/(tv|movie|movies|watch|series|anime|show)\b/i.test(u.pathname);
+    return !!idFromUrl(url) || /\/(tv|movie|movies|watch|series|anime|show)\b/i.test(u.pathname);
   } catch { return false; }
 }
 
 function mediaType(url, season) {
   if (season != null) return 'tv';
-  try { if (/\/(tv|series|show|anime|episode)\b/i.test(new URL(url).pathname)) return 'tv'; } catch {}
+  try {
+    const u = new URL(url);
+    if (/\/(tv|series|show|anime|episode)\b/i.test(u.pathname)) return 'tv';
+    if (/^(tv|series|show|anime)$/i.test(u.searchParams.get('type') || '')) return 'tv'; // v0.20: `?type={type}` patterns
+  } catch {}
   return 'movie';
 }
 
