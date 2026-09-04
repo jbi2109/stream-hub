@@ -345,14 +345,15 @@ function buildLibrary() {
   io.append(exp, imp, impFile);
   p.append(settingRow('Backup', 'Export / import sources, TMDB key, and library as JSON.', io));
 
-  const clearC = actionButton('Clear Continue Watching', 'danger', () => {
-    if (!confirm('Clear all Continue Watching entries?')) return;
-    cont.length = 0; store('continue', cont); if (!$('home').hidden) renderHome();
-  });
-  const clearL = actionButton('Clear Watch Later', 'danger', () => {
-    if (!confirm('Clear all Watch Later entries?')) return;
-    later.length = 0; store('watchlater', later); if (!$('home').hidden) renderHome();
-  });
+  // v0.20: no native confirm() — a controller can neither read nor answer it, and it freezes the renderer. Clear at
+  // once and offer Undo; the old list is kept until the toast expires.
+  const clearList = (list, key, what) => () => {
+    if (!list.length) return;
+    const kept = list.splice(0, list.length); store(key, list); refreshCards();
+    toast(`Cleared ${what}`, null, { label: 'Undo', aria: `Undo clearing ${what}`, onClick: () => { list.push(...kept); store(key, list); refreshCards(); } });
+  };
+  const clearC = actionButton('Clear Continue Watching', 'danger', clearList(cont, 'continue', 'Continue Watching'));
+  const clearL = actionButton('Clear Watch Later', 'danger', clearList(later, 'watchlater', 'Watch Later'));
   p.append(settingRow('Clear library', 'Remove saved entries (does not delete sources).',
     rowOf(clearC, clearL)));
 
@@ -406,12 +407,19 @@ function buildAdvanced() {
   p.append(settingRow('Live catalog timeout (s)', 'How long a slow live catalog may load before it is marked failed.',
     numControl('catalogTimeoutSec', 5)));
 
-  p.append(settingRow('Reset settings', 'Restore these settings to defaults (sources & library are kept).',
-    actionButton('Reset settings', 'danger', () => {
-      if (!confirm('Reset all settings to defaults? Sources and library are kept.')) return;
-      settings = { ...SETTINGS_DEFAULTS };
-      saveSettings(); applyThemeVars(settings); pushMain(); rebuildSettings();
-    })));
+  // v0.20: two clicks instead of a native confirm() — the button itself asks, and disarms after 4s.
+  let resetArm = null;
+  const resetBtn = actionButton('Reset settings', 'danger', () => {
+    if (!resetArm) {
+      resetBtn.textContent = 'Click again to reset';
+      resetArm = setTimeout(() => { resetArm = null; resetBtn.textContent = 'Reset settings'; }, 4000);
+      return;
+    }
+    clearTimeout(resetArm); resetArm = null;
+    settings = { ...SETTINGS_DEFAULTS };
+    saveSettings(); applyThemeVars(settings); pushMain(); rebuildSettings();
+  });
+  p.append(settingRow('Reset settings', 'Restore these settings to defaults (sources & library are kept).', resetBtn));
 
   return p;
 }

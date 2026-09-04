@@ -18,6 +18,7 @@ history. Download the latest installer from the [Releases page](https://github.c
 - **The app tells you when something is wrong.** Pasting a TMDB key now checks it on the spot and says whether it works; Browse names the TMDB error instead of a vague "No results"; a source that fails to load shows a message with an Edit-source button instead of a bare browser error page; and a stalled TMDB request gives up after 15 seconds instead of leaving a page on "Loading…" forever.
 - **Harder to break.** A backup file with a damaged entry no longer leaves the app stuck on a blank window — the bad entry is skipped and you are told. If you unplug the monitor the window was last on, it opens on the screen you still have instead of somewhere off-screen.
 - **Watch Later shows where you stand, and removing is undoable.** The button on a title page (and the hover preview) reads "✓ In Watch Later" once a title is saved and removes it on a second click. Removing a library card or a source now pops an Undo, so one mis-click on ✕ is no longer final.
+- **Keyboard and controller friendliness.** Settings switches now show a focus ring when you tab to them; the dashboard banner stops rotating while one of its buttons is selected; and the Clear / Reset buttons no longer pop a system dialog — Clear can be undone from the toast, Reset asks for a second click.
 
 ---
 

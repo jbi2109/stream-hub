@@ -460,6 +460,8 @@ webview.fullscreen { position: fixed; inset: 0; z-index: var(--z-fs); }
   transition: transform var(--dur-fast);
 }
 .switch input:checked + .slider { background: var(--accent); }
+/* v0.20: the real checkbox is a 0px invisible element, so keyboard focus drew nothing — ring the slider instead */
+.switch input:focus-visible + .slider, body.input-gamepad .switch input:focus + .slider { outline: var(--focus-ring); outline-offset: 2px; }
 .switch input:checked + .slider::before { transform: translateX(18px); }
 
 /* ---- add-player wizard (modal) ---- */

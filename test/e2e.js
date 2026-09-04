@@ -1351,6 +1351,7 @@ async function main() {
   assert.ok(await page.eval(`[...document.querySelectorAll('#settings .set-btn')].some(b => b.textContent === 'Re-fetch titles')`), 'Re-fetch titles button should exist');
   await page.eval(`document.querySelector('#settings .swatches .swatch[data-c="#22c55e"]').click()`); // set a non-default accent
   await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Reset settings').click()`);
+  await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Click again to reset').click()`); // v0.20: second click confirms
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).accent`), '#4c8dff', 'Reset should restore the default accent');
   assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).theme`), 'dark', 'Reset should restore the default theme');
   assert.strictEqual(await page.eval(`(JSON.parse(localStorage.getItem('sources')) || []).length`), 1, 'Reset must NOT drop sources');
@@ -2236,6 +2237,44 @@ async function main() {
   await until(() => page.eval(`!!document.querySelector('.modal-overlay.palette .help-key')`), 'About row opens the shortcuts overlay');
   await page.eval(`closeHelp(); showSettings()`);
   ok('links open externally through a validated IPC; shortcuts overlay reachable from the palette and About');
+
+  // 58b. v0.20 (audit A1, A5, A6): switches show a keyboard focus ring; the hero carousel pauses while one of its
+  //      controls has focus; Clear buttons undo through a toast and Reset asks with a second click — no native
+  //      confirm() dialog anywhere (a controller can neither read nor answer one).
+  await page.eval(`showSettings(); showSettingsTab('playback')`);
+  await page.eval(`document.querySelector('#settings .settings-tabs .tab.active').focus()`);
+  for (let i = 0; i < 12 && !(await page.eval(`document.activeElement.matches('.switch input')`)); i++) {
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+  }
+  assert.ok(await page.eval(`document.activeElement.matches('.switch input')`), 'Tab must reach a switch');
+  const swRing = await page.eval(`getComputedStyle(document.activeElement.nextElementSibling).outlineStyle`);
+  assert.notStrictEqual(swRing, 'none', 'a keyboard-focused switch must draw a focus ring on its slider');
+  await page.eval(`document.activeElement.blur()`);
+  await page.eval(`tmdbKey = 'testkey'; store('tmdbKey', tmdbKey); document.body.classList.remove('reduced-motion'); showDashboard();`); // the onboarding test blanked the key; the hero needs one
+  await until(() => page.eval(`document.querySelectorAll('#dashboard .hero-slides > .hero-inner').length > 1 && heroTimer !== null`), 'carousel armed for the focus-pause check');
+  await page.eval(`document.querySelector('#dashboard .hero-arrow').focus()`);
+  assert.strictEqual(await page.eval(`heroTimer`), null, 'focus on a hero control must pause auto-advance');
+  await page.eval(`document.activeElement.blur()`);
+  await until(() => page.eval(`heroTimer !== null`), 'leaving the hero re-arms auto-advance');
+  await page.eval(`clearInterval(heroTimer); heroTimer = null; document.body.classList.add('reduced-motion');`);
+  await page.eval(`window.__confirmCalls = 0; window.confirm = () => { window.__confirmCalls++; return true; };`);
+  await page.eval(`window.__contSaved = JSON.stringify(cont); cont.length = 0; cont.push({ key: 'tv#901', title: 'Undoable', url: '${SITE}/embed/tv/901/1/1', season: 1, episode: 1, type: 'tv', poster: '', updatedAt: 1, position: null, duration: null, note: '' }); store('continue', cont); showSettings(); showSettingsTab('library')`);
+  await page.eval(`document.getElementById('toast')?.remove(); [...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Clear Continue Watching').click()`);
+  assert.strictEqual(await page.eval(`cont.length`), 0, 'Clear empties the list at once');
+  assert.strictEqual(await page.eval(`(document.querySelector('#toast .toast-btn') || {}).textContent`), 'Undo', 'Clear offers Undo instead of a confirm dialog');
+  await page.eval(`document.querySelector('#toast .toast-btn').click()`);
+  assert.strictEqual(await page.eval(`cont.length`), 1, 'Undo restores the cleared list');
+  await page.eval(`document.getElementById('toast')?.remove(); showSettingsTab('advanced'); settings.accent = '#22c55e'; saveSettings();`);
+  const resetBtn = () => page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.dataset.reset === '1' || b.textContent.startsWith('Reset settings') || b.textContent.startsWith('Click again'))`);
+  await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Reset settings').click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).accent`), '#22c55e', 'the first click must not reset');
+  assert.ok(await page.eval(`[...document.querySelectorAll('#settings .set-btn')].some(b => b.textContent.startsWith('Click again'))`), 'the first click arms a second-click confirmation on the button');
+  await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent.startsWith('Click again')).click()`);
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('settings')).accent`), '#4c8dff', 'the second click resets');
+  assert.strictEqual(await page.eval(`window.__confirmCalls`), 0, 'no native confirm() dialog was raised');
+  await page.eval(`delete window.__confirmCalls; cont.length = 0; cont.push(...JSON.parse(window.__contSaved)); store('continue', cont); delete window.__contSaved; document.getElementById('toast')?.remove();`); // restore what the later hero test expects
+  ok('a11y: switch focus ring, hero pauses on focus, Clear undoes via toast, Reset confirms with a second click');
 
   // ---------- v0.3.6 "What's New" modal ----------
 

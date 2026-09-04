@@ -304,6 +304,7 @@ async function fillHeroCarousel(heroSec, heroFetch) {
   heroSec.replaceChildren(carousel);
 
   const canAuto = () => slides.length > 1 && !document.body.classList.contains('reduced-motion');
+  const pause = () => { clearInterval(heroTimer); heroTimer = null; };
   const start = () => {
     if (!canAuto()) return;
     clearInterval(heroTimer);
@@ -314,8 +315,11 @@ async function fillHeroCarousel(heroSec, heroFetch) {
   };
   if (canAuto()) {
     start();
-    heroSec.onmouseenter = () => clearInterval(heroTimer);
+    heroSec.onmouseenter = pause;
     heroSec.onmouseleave = start;
+    // v0.20: keyboard / controller focus on an arrow, dot or CTA pauses too — the slide used to rotate away under it
+    heroSec.addEventListener('focusin', pause);
+    heroSec.addEventListener('focusout', (e) => { if (!heroSec.contains(e.relatedTarget)) start(); });
   }
 }
 

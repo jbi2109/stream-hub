@@ -25,7 +25,7 @@ Cards (`.card`, `.poster-card`, `.resume-card`, `.match-card` (+ `.site` for pla
 
 ## Focus and input modes
 
-`:focus-visible` rings on cards, episodes, match cards, src rows, hero controls, chevrons, toast button. Switch inputs are `opacity:0; width:0` → no visible focus (audit A1). `body.input-touch` pins hover-only affordances and grows targets to 44 px; `body.input-gamepad` rings plain `:focus` and mirrors hover layers on focused cards. `body.reduced-motion` (synced from `prefers-reduced-motion`) kills every animation/transition with one `!important` rule; the toast bar stays a static full-width line.
+`:focus-visible` rings on cards, episodes, match cards, src rows, hero controls, chevrons, toast button. Switch inputs are `opacity:0; width:0`, so the ring is drawn on the sibling `.slider` (`input:focus-visible + .slider`, v0.20). `body.input-touch` pins hover-only affordances and grows targets to 44 px; `body.input-gamepad` rings plain `:focus` and mirrors hover layers on focused cards. `body.reduced-motion` (synced from `prefers-reduced-motion`) kills every animation/transition with one `!important` rule; the toast bar stays a static full-width line.
 
 ## Scrollbars
 

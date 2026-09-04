@@ -21,7 +21,7 @@ Add a new flag for every default change; run it before the screen that displays 
 
 ## Settings screen
 
-Built once at load (`buildSettings`), panels kept so wired controls survive tab switches; `rebuildSettings()` after Reset re-wires the legacy id'd controls (`#tmdb-key`, `#default-source`, `#export-settings`, `#import-*`, `#version`) via `wireSettingsControls()` in app.js. Tabs: General, Appearance, Sources, Playback, Privacy & blocking, Library, Updates, Advanced, About. Controls: `settingRow`, `toggleControl` (switch — no visible keyboard focus, audit A1), `segmented`, `selectControl`, `numControl` (clamps to min silently, audit B10), `dashRailsControl` (checkbox list + ▲▼), accent `swatches`. Native `confirm()` for Clear/Reset (audit A6). The Privacy panel re-queries `adblock-status` on entry and greys the YouTube toggle + Update button while master blocking is off.
+Built once at load (`buildSettings`), panels kept so wired controls survive tab switches; `rebuildSettings()` after Reset re-wires the legacy id'd controls (`#tmdb-key`, `#default-source`, `#export-settings`, `#import-*`, `#version`) via `wireSettingsControls()` in app.js. Tabs: General, Appearance, Sources, Playback, Privacy & blocking, Library, Updates, Advanced, About. Controls: `settingRow`, `toggleControl` (switch), `segmented`, `selectControl`, `numControl` (clamps to min silently, audit B10), `dashRailsControl` (checkbox list + ▲▼), accent `swatches`. No native dialogs (v0.20): Clear Continue / Watch Later clear at once with an Undo toast; Reset arms itself ("Click again to reset", 4 s). The Privacy panel re-queries `adblock-status` on entry and greys the YouTube toggle + Update button while master blocking is off.
 
 ## Theme (theme.js)
 
