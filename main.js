@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell, screen } = require('electron');
 const { ElectronBlocker } = require('@ghostery/adblocker-electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
@@ -374,6 +374,10 @@ function createWindow() {
   const boundsPath = path.join(app.getPath('userData'), 'window.json');
   let saved = null;
   try { saved = JSON.parse(fs.readFileSync(boundsPath, 'utf8')); if (!(saved.width > 200 && saved.height > 200)) saved = null; } catch {}
+  // v0.20: a monitor that was unplugged since last close must not swallow the window — keep the saved bounds only
+  // when they still overlap a display's work area, else fall back to the default size and position.
+  if (saved && !screen.getAllDisplays().some((d) => { const a = d.workArea;
+    return saved.x < a.x + a.width && saved.x + saved.width > a.x && saved.y < a.y + a.height && saved.y + saved.height > a.y; })) saved = null;
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -459,7 +463,7 @@ app.whenReady().then(() => {
   // ⚙ settings sync from the renderer: merge, persist for the next launch, live-apply what can be.
   ipcMain.handle('set-setting', async (_e, patch) => {
     if (!patch || typeof patch !== 'object') return { error: 'bad patch' };
-    Object.assign(ms, patch);
+    for (const k of Object.keys(patch)) if (k in MAIN_DEFAULTS) ms[k] = patch[k]; // v0.20: known ⚙ keys only — a typo'd key must not persist forever
     try { fs.writeFileSync(settingsPath(), JSON.stringify(ms, null, 2)); } catch (e) { console.error('settings write:', e.message); }
     await applyAdblock().catch((e) => console.error('adblock toggle:', e.message));
     return { ok: true };

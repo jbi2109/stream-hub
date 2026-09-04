@@ -33,6 +33,7 @@
       "!.plans",
       "!**/*.md",
       "!launch.bat",
+      "!.impeccable",
       "!dist"
     ],
     "win": {

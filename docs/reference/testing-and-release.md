@@ -31,4 +31,4 @@
 
 ## Build
 
-`package.json` `build.files`: everything except `test`, `docs`, `.github`, `.plans`, `*.md`, `launch.bat`, `dist` (`.impeccable` is not excluded — audit R5). NSIS one-click, per-user, GitHub publish.
+`package.json` `build.files`: everything except `test`, `docs`, `.github`, `.plans`, `*.md`, `launch.bat`, `dist` (`.impeccable` excluded since v0.20). NSIS one-click, per-user, GitHub publish.

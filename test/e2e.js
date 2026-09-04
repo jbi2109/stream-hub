@@ -251,6 +251,9 @@ async function quitApp() {
 async function main() {
   setTimeout(() => { console.error('GLOBAL TIMEOUT'); process.exit(1); }, 240000).unref();
   fs.rmSync(PROFILE, { recursive: true, force: true }); // deterministic start
+  // v0.20 (audit R3): saved bounds on a display that no longer exists must be ignored, not restored off-screen
+  fs.mkdirSync(PROFILE, { recursive: true });
+  fs.writeFileSync(path.join(PROFILE, 'window.json'), JSON.stringify({ x: 60000, y: 60000, width: 900, height: 700, maximized: false }));
   site.listen(9310);
   uaEcho.listen(9311);
   player.listen(9312);
@@ -276,6 +279,11 @@ async function main() {
   assert.strictEqual(await page.eval(`document.querySelectorAll('#browse .tabs .tab').length`), 3, 'expected 3 browse tabs (Movies/TV/Anime — Live+YouTube moved to the rail)');
   assert.ok(await page.eval(`(document.querySelector('#browse .empty')||{}).textContent?.includes('TMDB')`), 'no-key prompt should mention TMDB');
   ok('boot: dashboard landing + onboarding card; Browse shows 3 tabs + no-key prompt');
+
+  // 1b. v0.20 (audit R3): the window.json planted before launch pointed at x/y 60000 — the window must still be on a screen.
+  const winPos = await page.eval(`({ x: window.screenX, y: window.screenY, w: screen.availWidth, h: screen.availHeight })`);
+  assert.ok(winPos.x < winPos.w && winPos.y < winPos.h && winPos.x > -winPos.w, `window restored off-screen: ${JSON.stringify(winPos)}`);
+  ok('window: saved bounds on a missing display are ignored (window opens on-screen)');
 
   // 2. add local test source + click it -> interaction regression check
   await page.eval(`addSource({ name: 'LocalTest', url: '${SITE}', category: 'vod' })`);
@@ -1709,6 +1717,24 @@ async function main() {
   assert.deepStrictEqual(msFile.extraAuthHosts, [UA_ECHO_HOST], 'extraAuthHosts should persist as an array');
   stGuest.close();
   ok('⚙ settings: changes persist to userData/settings.json for the next launch');
+
+  // 32o2. v0.20 (audit R1, R6): a malformed import can't brick the app — list keys must be arrays and settings an object,
+  //       anything else is skipped and counted; the boot loaders shrug off bad localStorage the same way; main only
+  //       merges known ⚙ keys into settings.json.
+  const importBefore = await page.eval(`localStorage.getItem('sources')`);
+  const skipped = await page.eval(`importSettings({ sources: 'x', watchlater: [], settings: [1, 2], continue: '{"not":"a list"}', tmdbKey: '"k2"' })`);
+  assert.strictEqual(skipped, 3, 'sources (string), settings (array) and continue (object) must be skipped');
+  assert.strictEqual(await page.eval(`localStorage.getItem('sources')`), importBefore, 'a skipped key leaves the stored value alone');
+  assert.strictEqual(await page.eval(`localStorage.getItem('watchlater')`), '[]', 'a valid list key is written');
+  assert.strictEqual(await page.eval(`JSON.parse(localStorage.getItem('tmdbKey'))`), 'k2', 'a plain key is written');
+  assert.deepStrictEqual(await page.eval(`(() => { localStorage.setItem('qa-list', '"nope"'); const v = loadList('qa-list'); localStorage.removeItem('qa-list'); return v; })()`), [], 'loadList turns a non-array into an empty list');
+  await page.eval(`localStorage.setItem('tmdbKey', JSON.stringify(tmdbKey))`); // restore the running key
+  const msBefore = JSON.parse(fs.readFileSync(path.join(PROFILE, 'settings.json'), 'utf8'));
+  await page.eval(`window.sh.setSetting({ bogusKey: 1 })`);
+  const msAfter = JSON.parse(fs.readFileSync(path.join(PROFILE, 'settings.json'), 'utf8'));
+  assert.ok(!('bogusKey' in msAfter), 'main must not persist keys it does not know');
+  assert.strictEqual(msAfter.adblock, msBefore.adblock, 'known keys are untouched by a bogus patch');
+  ok('robustness: import skips malformed keys, loadList guards boot, set-setting merges known keys only');
 
   // ---------- v0.4.1 YouTube scriptlet kill-switch + ad-list refresh/status ----------
 

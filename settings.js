@@ -27,7 +27,8 @@ const SETTINGS_DEFAULTS = {
   adlistRefreshHours: 8,    // ad-list cache age before re-download — 8h matches the upstream quick-fixes expiry
   catalogTimeoutSec: 60,    // live-catalog fetch abort
 };
-let settings = { ...SETTINGS_DEFAULTS, ...load('settings', {}) };
+const savedSettings = load('settings', {});
+let settings = { ...SETTINGS_DEFAULTS, ...(savedSettings && typeof savedSettings === 'object' && !Array.isArray(savedSettings) ? savedSettings : {}) }; // v0.20: a non-object here must not spread garbage
 function saveSettings() { store('settings', settings); }
 
 // v0.6.0 one-shot: 'because' is the first rail added to DEFAULT_DASH_RAILS that is ON by default, and

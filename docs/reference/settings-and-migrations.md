@@ -29,7 +29,7 @@ Runs in `<head>` before the stylesheet: sets `data-theme`, `--accent`, `--poster
 
 ## Export / import
 
-Export = every `localStorage` key as one JSON file (includes the TMDB key and watch history — audit F20). Import writes every key back (strings raw, objects stringified) and reloads; **no shape validation** — a non-array `sources` bricks boot (audit R1).
+Export = every `localStorage` key as one JSON file (includes the TMDB key and watch history — audit F20). Import (v0.20) parses every value, requires `sources` / `continue` / `watchlater` to be arrays and `settings` an object, skips and counts anything else (toast), then reloads. Boot reads the three lists through `loadList` (non-array → `[]`) and spreads `settings` only when it is a plain object, so a hand-edited store cannot blank the window.
 
 ## What's New
 

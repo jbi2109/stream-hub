@@ -16,12 +16,15 @@ const mk = (tag, cls, text) => {
 
 const load = (key, fallback) => JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback;
 const store = (key, val) => localStorage.setItem(key, JSON.stringify(val));
+// v0.20: a list key that is not a list (hand-edited or imported) used to throw at boot -> blank window with no way
+// to reach Settings. Shrug it off instead.
+const loadList = (key) => { const v = load(key, []); return Array.isArray(v) ? v : []; };
 
 // category: 'vod' = Movies/TV Shows, 'live' = Live TV (not tracked in Continue Watching)
 // Sources are user-supplied — add your own with the "+ Add source" form.
-let sources = load('sources', []);
-let cont = load('continue', []);     // auto-tracked, keyed, sorted by updatedAt desc
-let later = load('watchlater', []);  // button-added, deduped by key
+let sources = loadList('sources');
+let cont = loadList('continue');     // auto-tracked, keyed, sorted by updatedAt desc
+let later = loadList('watchlater');  // button-added, deduped by key
 let tmdbKey = load('tmdbKey', '');   // user's free TMDB API key (for Browse)
 let currentSource = null;            // home URL for the topbar home button
 let activeKey = null;                // continue entry the player position attaches to

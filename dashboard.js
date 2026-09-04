@@ -92,7 +92,7 @@ const railTitle = (r) => (typeof r.title === 'function' ? r.title() : r.title);
 // 'because' goes LAST: it keeps rail index 1 = Trending (T53's ArrowDown target) and leaves the
 // EAGER=2 window on continue+trending exactly as it was.
 const DEFAULT_DASH_RAILS = ['continue', 'trending', 'top10', 'live', 'because'];
-const enabledRails = () => (settings.dashRails || DEFAULT_DASH_RAILS).map((id) => RAIL_BY_ID[id]).filter(Boolean);
+const enabledRails = () => (Array.isArray(settings.dashRails) ? settings.dashRails : DEFAULT_DASH_RAILS).map((id) => RAIL_BY_ID[id]).filter(Boolean); // v0.20: guard a bad import
 
 // One rail SHELL: title + optional Movies/TV toggle + "See all →" + a horizontal scroller of skeletons.
 // Always returned (fillRail swaps in real cards or removes the section), so R3's lazy observer always has

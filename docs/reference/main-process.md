@@ -12,7 +12,7 @@
 |---------|-----------|----------------------|
 | `tmdb` (invoke) | R→M | `fetch(TMDB_BASE + '/3' + path + qs)`; returns `{error, results:[]}` on failure. `SH_TEST_TMDB_BASE` redirects to a fixture; 15 s abort (`SH_TEST_TMDB_TIMEOUT_MS` shortens it under test). |
 | `httpGet` (invoke) | R→M | Generic GET for live catalogs: https only (loopback http allowed), credentials stripped, browser UA, `catalogTimeoutSec` abort, 5 MB streamed cap. |
-| `set-setting` (invoke) | R→M | Merges a patch into `ms`, writes `settings.json`, live-applies ad-block. Keys not whitelisted (audit R6). |
+| `set-setting` (invoke) | R→M | Merges the known `MAIN_DEFAULTS` keys of a patch into `ms`, writes `settings.json`, live-applies ad-block. |
 | `refresh-adlists`, `adblock-status` (invoke) | R→M | Force rebuild / engine state for the Privacy panel. |
 | `app-version`, `check-update`, `install-update` (invoke) | R→M | Updater controls (`{state:'dev'}` when unpackaged). |
 | `open-external` (invoke) | R→M | v0.20: `shell.openExternal` for shell links; http(s) only, `{ok, skipped}` under `--test-profile`. Renderer side: one delegated click handler in app.js (`openExternal`). |
@@ -35,7 +35,7 @@
 
 ## Window state
 
-`window.json` saved on close (`getNormalBounds` + maximized); restored without checking the display still exists (audit R3).
+`window.json` saved on close (`getNormalBounds` + maximized); restored only when the saved rectangle still overlaps a display's work area (v0.20), else the default 1400×900.
 
 ## Updater
 

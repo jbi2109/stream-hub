@@ -89,7 +89,12 @@ function wireSettingsControls() {
   $('import-file').onchange = (e) => {
     const file = e.target.files[0]; if (!file) return;
     const r = new FileReader();
-    r.onload = () => { try { importSettings(JSON.parse(r.result)); location.reload(); } catch { toast('Invalid settings file.', 'error'); } };
+    r.onload = () => {
+      let skipped;
+      try { skipped = importSettings(JSON.parse(r.result)); } catch { toast('Invalid settings file.', 'error'); return; }
+      if (skipped) { toast(`Imported — skipped ${skipped} entr${skipped > 1 ? 'ies' : 'y'} that made no sense`); setTimeout(() => location.reload(), 1800); }
+      else location.reload();
+    };
     r.readAsText(file);
     e.target.value = '';
   };
@@ -174,9 +179,21 @@ window.sh?.onBlockedNav?.((url) => toast(`Blocked a redirect to ${hostOf(url)}`,
 
 // ---- settings export / import (all localStorage: sources, tmdbKey, library, settings, defaults) ----
 function exportSettings() { return Object.fromEntries(Object.entries(localStorage)); }
+// v0.20: validate shapes on the way in — a list key that is not a list bricked the next boot. Returns how many
+// keys were skipped so the caller can say so. Values arrive as the export wrote them (JSON strings) or, from a
+// hand-made file, as raw values; both are checked after parsing.
+const IMPORT_LISTS = ['sources', 'continue', 'watchlater'];
 function importSettings(obj) {
-  if (!obj || typeof obj !== 'object') return;
-  for (const [k, v] of Object.entries(obj)) localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('not a settings file');
+  let skipped = 0;
+  for (const [k, v] of Object.entries(obj)) {
+    const raw = typeof v === 'string' ? v : JSON.stringify(v);
+    let parsed; try { parsed = JSON.parse(raw); } catch { skipped++; continue; }
+    if (IMPORT_LISTS.includes(k) && !Array.isArray(parsed)) { skipped++; continue; }
+    if (k === 'settings' && (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))) { skipped++; continue; }
+    localStorage.setItem(k, raw);
+  }
+  return skipped;
 }
 
 // ---- bootstrap ----
