@@ -779,8 +779,28 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#browse .tabs .tab')].find(b => b.dataset.tab === 'anime').click()`);
   await until(() => page.eval(`document.querySelectorAll('#browse .grid .card').length`), 'anime grid');
   await page.eval(`document.getElementById('live-btn').click()`);
-  assert.ok(await page.eval(`document.querySelectorAll('#browse .tiles .tile').length >= 1`), 'live tiles missing');
-  ok('browse: Anime grid + Live TV tiles render');
+  await until(() => page.eval(`document.querySelectorAll('#browse .match-grid .match-card.site').length >= 1`), 'live site cards (v0.20: in the match grid)');
+  ok('browse: Anime grid + Live TV site cards render');
+
+  // 25b. v0.20 (audit V7, V6, B3): a plain live site is a card inside the match grid (one card shape, one keyboard
+  //      model); the S/E badge gives way to the hover actions on a library card; Watch Later sub-lines name the type.
+  await page.eval(`document.querySelector('#browse .match-grid .match-card.site').click()`);
+  await until(() => page.eval(`!document.getElementById('webview').hidden && /^https?:/.test(document.getElementById('webview').getAttribute('src') || '')`), 'site card opens the site in the player');
+  await page.eval(`showHome(); (() => { const c = card({ key: 'qa-badge', title: 'Q', url: 'https://x.example/tv/123/1/2', season: 1, episode: 2, type: 'tv', position: 10, duration: 100 }, true); c.id = 'qa-badge'; const g = mk('div', 'grid'); g.id = 'qa-grid'; g.append(c); document.getElementById('home').append(g); c.scrollIntoView({ block: 'center' }); })()`);
+  const bRect = await page.eval(`(() => { const r = document.getElementById('qa-badge').querySelector('.poster-wrap').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(bRect.x), y: Math.round(bRect.y) });
+  await until(() => page.eval(`document.getElementById('qa-badge').matches(':hover')`), 'library card under the pointer');
+  const badge = await page.eval(`(() => { const c = document.getElementById('qa-badge'); const b = c.querySelector('.badge'), a = c.querySelector('.card-actions'); const br = b.getBoundingClientRect(), ar = a.getBoundingClientRect();
+    return { vis: getComputedStyle(b).visibility, actionsShown: getComputedStyle(a).display !== 'none', overlap: !(br.right <= ar.left || ar.right <= br.left || br.bottom <= ar.top || ar.bottom <= br.top) }; })()`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+  await page.eval(`document.getElementById('qa-grid').remove()`);
+  assert.ok(badge.actionsShown, 'hover must reveal the card actions');
+  assert.ok(badge.vis === 'hidden' || !badge.overlap, 'the S/E badge must not collide with the hover actions');
+  assert.strictEqual(await page.eval(`card({ key: 'l', title: 'N', url: 'https://news.example/', type: 'live' }, false).querySelector('.card-sub').textContent`), 'Live TV', 'a live Watch Later card must say Live TV');
+  assert.strictEqual(await page.eval(`card({ key: 't', title: 'N', url: 'https://x.example/tv/555', type: 'tv' }, false).querySelector('.card-sub').textContent`), 'TV Show', 'a TV Watch Later card without S/E must say TV Show');
+  await page.eval(`browseTab = 'live'; showBrowse()`);
+  await until(() => page.eval(`!!document.querySelector('#browse .match-grid .match-card.site')`), 'back on the Live tab');
+  ok('live sites are match-grid cards; badge yields to hover actions; Watch Later sub-line names the type');
 
   // 26. YouTube tab opens youtube.com in the webview
   await page.eval(`document.getElementById('browse-btn').click()`);
@@ -943,7 +963,7 @@ async function main() {
   await page.eval(`[...document.querySelectorAll('#browse .live-controls .pill-toggle')].find(b => b.textContent === 'Live now').click()`);
   await until(() => page.eval(`(() => { const ts = [...document.querySelectorAll('#browse .match-grid .match-card')].map(t => t.textContent); return ts.some(x => x.includes('Alpha')) && ts.every(x => !x.includes('Future')); })()`), 'Live now hides the upcoming match, keeps live ones');
   await page.eval(`(() => { const s = [...document.querySelectorAll('#browse .live-controls select')].find(x => [...x.options].some(o => o.textContent === 'Most watched')); s.value = 'popular'; s.dispatchEvent(new Event('change')); })()`);
-  await until(() => page.eval(`document.querySelector('#browse .match-grid .match-card .match-title').textContent.includes('Alpha')`), 'Most watched sorts Alpha (5000 viewers) to the top');
+  await until(() => page.eval(`document.querySelector('#browse .match-grid .match-card:not(.site) .match-title').textContent.includes('Alpha')`), 'Most watched sorts Alpha (5000 viewers) to the top'); // :not(.site) — v0.20 pins plain site cards ahead of the matches
   ok('live: Live-now hides upcoming; Most-watched sorts by popularity');
 
   // 32f3. v0.3.3: live sort + Live-now persist across visits; EPG chips + default kickoff ordering
@@ -2160,8 +2180,8 @@ async function main() {
   // 62. light theme: token-driven colors flip (the hardcoded dark pairs are gone)
   await page.eval(`document.documentElement.dataset.theme = 'light'`);
   assert.strictEqual(await page.eval(`getComputedStyle(document.documentElement).getPropertyValue('--bg-rgb').trim()`), '244, 245, 247', 'light --bg-rgb token');
-  const tileBg = await page.eval(`(() => { const t = document.createElement('div'); t.className = 'tile'; document.getElementById('browse').append(t); const v = getComputedStyle(t).backgroundImage; t.remove(); return v; })()`);
-  assert.ok(!tileBg.includes('58, 47, 47'), 'tile gradient no longer hardcodes #3a2f2f');
+  const tileBg = await page.eval(`(() => { const t = document.createElement('div'); t.className = 'match-thumb'; document.getElementById('browse').append(t); const v = getComputedStyle(t).backgroundImage; t.remove(); return v; })()`);
+  assert.ok(!tileBg.includes('58, 47, 47'), 'match-thumb gradient no longer hardcodes #3a2f2f');
   await page.eval(`document.documentElement.dataset.theme = 'dark'`);
   ok('light theme: tokens flip, hardcoded darks gone');
 

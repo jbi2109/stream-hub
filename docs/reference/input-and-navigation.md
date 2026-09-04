@@ -20,7 +20,7 @@ modal (lightbox → palette → help → What's New → wizard) → person page 
 
 ## Grid navigation (`moveGrid`)
 
-`NAV_SEL = '.card, .tile, .episode, .match-card, .src-row, .cast'`. With nothing focused, seed the first item of the visible view. Inside a `.rail` (dashboard) ←/→ walk the rail and ↑/↓ hop to the nearest rail with a focusable item; elsewhere the container is `.grid, .episodes, .src-list, .rail` and column count comes from the computed `grid-template-columns`. Movement clamps at the container edge — buttons, selects, tabs, pager, hero controls, rail buttons and every Settings control are unreachable this way (audit A2).
+`NAV_SEL = '.card, .episode, .match-card, .src-row, .cast'`. With nothing focused, seed the first item of the visible view. Inside a `.rail` (dashboard) ←/→ walk the rail and ↑/↓ hop to the nearest rail with a focusable item; elsewhere the container is `.grid, .episodes, .src-list, .rail` and column count comes from the computed `grid-template-columns`. Movement clamps at the container edge — buttons, selects, tabs, pager, hero controls, rail buttons and every Settings control are unreachable this way (audit A2).
 
 ## Controller (input.js)
 

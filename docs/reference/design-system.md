@@ -21,11 +21,11 @@ System font stack only (CSP forbids web fonts). All colour through tokens; both 
 
 ## Component families
 
-Cards (`.card`, `.poster-card`, `.resume-card`, `.match-card`, `.tile`, `.episode`, `.cast`), pills (`.pill-select`, `.pill-toggle`, `.filter-toggle`, `.subtabs .tab`), `.segmented`, `.switch`, `.set-*` settings rows, `.wiz-*` wizard, `.modal-overlay` (+ `.palette` variant top-aligned), `.palette-card` shared by palette / help / What's New, `.toast` (+ `.toast-btn`, countdown bar driven by `--toast-dur`), `.skel*` skeletons (shimmer), `.hero-*`, `.hp-*` hover preview, `.rail-chev` / `.fade-l|r`.
+Cards (`.card`, `.poster-card`, `.resume-card`, `.match-card` (+ `.site` for plain live sites), `.episode`, `.cast`), pills (`.pill-select`, `.pill-toggle`, `.filter-toggle`, `.subtabs .tab`), `.segmented`, `.switch`, `.set-*` settings rows, `.wiz-*` wizard, `.modal-overlay` (+ `.palette` variant top-aligned), `.palette-card` shared by palette / help / What's New, `.toast` (+ `.toast-btn`, countdown bar driven by `--toast-dur`), `.skel*` skeletons (shimmer), `.hero-*`, `.hp-*` hover preview, `.rail-chev` / `.fade-l|r`.
 
 ## Focus and input modes
 
-`:focus-visible` rings on cards, tiles, episodes, match cards, src rows, hero controls, chevrons, toast button. Switch inputs are `opacity:0; width:0` → no visible focus (audit A1). `body.input-touch` pins hover-only affordances and grows targets to 44 px; `body.input-gamepad` rings plain `:focus` and mirrors hover layers on focused cards. `body.reduced-motion` (synced from `prefers-reduced-motion`) kills every animation/transition with one `!important` rule; the toast bar stays a static full-width line.
+`:focus-visible` rings on cards, episodes, match cards, src rows, hero controls, chevrons, toast button. Switch inputs are `opacity:0; width:0` → no visible focus (audit A1). `body.input-touch` pins hover-only affordances and grows targets to 44 px; `body.input-gamepad` rings plain `:focus` and mirrors hover layers on focused cards. `body.reduced-motion` (synced from `prefers-reduced-motion`) kills every animation/transition with one `!important` rule; the toast bar stays a static full-width line.
 
 ## Scrollbars
 

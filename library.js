@@ -97,7 +97,7 @@ function card(item, isCont) {
 
   const sub = document.createElement('div');
   sub.className = 'card-sub';
-  sub.textContent = isCont ? (item.note || se || 'Watching') : (se || 'Movie');
+  sub.textContent = isCont ? (item.note || se || 'Watching') : (se || { live: 'Live TV', tv: 'TV Show' }[typeOf(item)] || 'Movie'); // v0.20: was 'Movie' for everything without S/E
 
   el.append(wrap, title, sourceControl(item, isCont), sub);
   el.onclick = (e) => {

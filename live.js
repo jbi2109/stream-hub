@@ -349,17 +349,23 @@ function renderLiveTab(container) {
     return;
   }
 
-  if (siteSrcs.length) {
-    const siteGrid = document.createElement('div'); siteGrid.className = 'grid tiles';
-    siteGrid.append(...siteSrcs.map((s) => {
-      const el = document.createElement('div'); el.className = 'tile'; el.textContent = s.name; el.tabIndex = 0;
-      el.onclick = () => { currentSource = s.url; open(s.url); };
-      return el;
-    }));
-    nodes.push(siteGrid);
-  }
+  // v0.20: a plain "open the site" source is a card in the SAME grid as the matches — one card shape, one
+  // keyboard model (was a separate 16:9 tile block above the category bar). Sites sit first; search filters them.
+  const siteCard = (s) => {
+    const el = document.createElement('div'); el.className = 'match-card site'; el.tabIndex = 0;
+    const thumb = document.createElement('div'); thumb.className = 'match-thumb site';
+    thumb.append(mk('span', 'site-name', s.name));
+    el.append(thumb, mk('div', 'match-title', 'Open site'));
+    el.onclick = () => { currentSource = s.url; open(s.url); };
+    return el;
+  };
+  const siteCards = (q) => siteSrcs.filter((s) => !q || s.name.toLowerCase().includes(q)).map(siteCard);
 
-  if (!catalogSrcs.length) { container.replaceChildren(...nodes); return; }
+  if (!catalogSrcs.length) {
+    const grid = document.createElement('div'); grid.className = 'grid match-grid';
+    grid.append(...siteCards(''));
+    nodes.push(grid); container.replaceChildren(...nodes); return;
+  }
 
   const controls = document.createElement('div'); controls.className = 'live-controls';
   const catBar = document.createElement('div'); catBar.className = 'subtabs';
@@ -385,10 +391,9 @@ function renderLiveTab(container) {
       const rank = (it) => (it.startsAt == null ? 2 : (it.startsAt <= Date.now() + 60000 ? 0 : 1));
       items = items.slice().sort((a, b) => rank(a) - rank(b) || (a.startsAt || 0) - (b.startsAt || 0));
     }
-    if (!items.length) { grid.replaceChildren(stateNode('empty', all.length ? 'No matches.' : 'Nothing live right now.')); return; }
     // catalogs stream in and rebuild this grid with no user input — keep keyboard focus by index
     const focusIdx = [...grid.children].indexOf(document.activeElement);
-    grid.replaceChildren(...items.slice(0, 400).map(matchCard));
+    grid.replaceChildren(...siteCards(q), ...(items.length ? items.slice(0, 400).map(matchCard) : [stateNode('empty', all.length ? 'No matches.' : 'Nothing live right now.')]));
     if (focusIdx >= 0 && grid.children[focusIdx]) grid.children[focusIdx].focus();
   };
 

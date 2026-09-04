@@ -17,7 +17,7 @@
 
 ## Library grid (library.js)
 
-`card(item, isCont)`: 2:3 poster, S/E badge, progress bar, hover actions (type select · edit note · ✕ remove — no undo, audit F12), title, per-card source select (rebuildable entries) or read-only label, sub-line (note / S/E / "Watching"; Watch Later shows "Movie" for everything without S/E — audit B3). Tabs Continue / Watch Later, sub-tabs All / Movies / TV Shows (/ Live TV for Watch Later). `openLibraryItem` re-opens the URL, sets `playing` for rebuildable entries so the topbar switchers and auto-next work, and pins the card's source as `lastSourceUrl`.
+`card(item, isCont)`: 2:3 poster, S/E badge, progress bar, hover actions (type select · edit note · ✕ remove — no undo, audit F12), title, per-card source select (rebuildable entries) or read-only label, sub-line (note / S/E / "Watching"; Watch Later shows S/E or the type — Movie / TV Show / Live TV). Tabs Continue / Watch Later, sub-tabs All / Movies / TV Shows (/ Live TV for Watch Later). `openLibraryItem` re-opens the URL, sets `playing` for rebuildable entries so the topbar switchers and auto-next work, and pins the card's source as `lastSourceUrl`.
 
 Dashboard resume cards wrap the same `card()` (16:9, timestamp/Completed chip, relative time, backdrop swapped in from `tmdbMeta` on idle). "Completed" (≥ 95 %) is only a chip — nothing advances or retires the entry (audit B5).
 

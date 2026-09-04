@@ -15,7 +15,7 @@ Fully generic walk of the JSON (cap 500 rows): title from `name|title|event|home
 
 ## Live tab (`renderLiveTab`)
 
-Site tiles (currently a separate block above the grid — audit V7) + one merged match grid: category sub-tabs (only when > 2), search, sort (default = live first then kickoff; "Most watched"), Live-now filter (both persisted in `liveView`), ↻ refresh, per-catalog status chips (`name …` → `✓ n` / `✕ failed`). Catalogs stream in incrementally; grid rebuilds are coalesced to one rAF and keyboard focus is kept by index. Match cards: 16:9 logo, `liveTimeChip` (LIVE ≤ 8 h old, "in 34m", today's time, or a date).
+One merged match grid (v0.20: plain site sources render as `.match-card.site` cards at the front of it — name over the shared gradient, "Open site" caption, filtered by the search box but not by category): category sub-tabs (only when > 2), search, sort (default = live first then kickoff; "Most watched"), Live-now filter (both persisted in `liveView`), ↻ refresh, per-catalog status chips (`name …` → `✓ n` / `✕ failed`). Catalogs stream in incrementally; grid rebuilds are coalesced to one rAF and keyboard focus is kept by index. Match cards: 16:9 logo, `liveTimeChip` (LIVE ≤ 8 h old, "in 34m", today's time, or a date).
 
 ## Source picker (`showLivePicker`)
 

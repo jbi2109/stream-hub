@@ -3,7 +3,7 @@
 // precedence chain (modal → settings → detail/live-picker → player) shared with exitPlayer, which is
 // also reachable from the main process while the guest webview owns the keyboard.
 
-const NAV_SEL = '.card, .tile, .episode, .match-card, .src-row, .cast';
+const NAV_SEL = '.card, .episode, .match-card, .src-row, .cast';
 
 // True while a form control owns the keyboard — native select arrows / text entry / wizard Enter win.
 const typing = () => {
