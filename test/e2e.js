@@ -743,6 +743,29 @@ async function main() {
   await until(() => page.eval(`!document.getElementById('detail').hidden && document.getElementById('person').hidden`), 'Esc returns to detail');
   ok('person: page renders + cast→person + Esc back to detail');
 
+  // 24k. v0.20 polish (audit V8, V9, V10, V11, C2): readable tagline, wrapping wizard preview, thin palette
+  //      scrollbar, person page aligned with its header, switch motion on the shared token.
+  const tag = await page.eval(`(() => { const t = document.querySelector('#detail .detail-tagline'); const probe = document.createElement('span'); probe.style.color = 'var(--text)'; document.body.append(probe); const want = getComputedStyle(probe).color; probe.remove(); return { got: getComputedStyle(t).color, want }; })()`);
+  assert.strictEqual(tag.got, tag.want, 'the tagline must use the text colour, not muted, over the backdrop');
+  const wiz = await page.eval(`(() => { const p = mk('div', 'wiz-preview'); document.body.append(p); const cs = getComputedStyle(p); const r = { wb: cs.wordBreak, ow: cs.overflowWrap }; p.remove(); return r; })()`);
+  assert.strictEqual(wiz.wb, 'normal', 'wizard preview must not break inside words');
+  assert.strictEqual(wiz.ow, 'anywhere', 'wizard preview wraps long URLs at any point');
+  await page.eval(`openPalette()`);
+  await until(() => page.eval(`!!document.querySelector('.palette-list')`), 'palette for the scrollbar check');
+  const sb = await page.eval(`(() => { const l = document.querySelector('.palette-list'); return { bar: l.offsetWidth - l.clientWidth, overflow: l.scrollHeight > l.clientHeight }; })()`);
+  await page.eval(`closePalette()`);
+  assert.ok(sb.overflow, 'the palette list must overflow for the scrollbar check to mean anything');
+  assert.ok(sb.bar <= 8, `palette scrollbar must be thin, got ${sb.bar}px`);
+  await page.eval(`showPerson(61)`);
+  await until(() => page.eval(`!!document.querySelector('#person .detail-rail .card')`), 'person page for the alignment check');
+  const al = await page.eval(`(() => { const a = document.querySelector('#person .person-header').firstElementChild.getBoundingClientRect().left; const b = document.querySelector('#person .detail-rail').getBoundingClientRect().left; return Math.abs(a - b); })()`);
+  assert.ok(al < 2, `person header and rail must share a left edge, got ${al}px apart`);
+  const sw = await page.eval(`(() => { const had = document.body.classList.contains('reduced-motion'); document.body.classList.remove('reduced-motion'); const s = toggleControl('trackContinue'); document.body.append(s); const d = getComputedStyle(s.querySelector('.slider')).transitionDuration; s.remove(); if (had) document.body.classList.add('reduced-motion'); return d; })()`); // lift the OS reduced-motion kill switch for the read
+  assert.strictEqual(sw, '0.12s', 'switch slider must animate on --dur-fast');
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .cast')`), 'back on the detail page');
+  ok('polish: tagline colour, wizard preview wrapping, thin palette scrollbar, person alignment, switch motion token');
+
   // 24k. R3: ▶ Play is the loud PRIMARY action — first child of .detail-actions, routes to the default source
   await page.eval(`showDetail('movie', 42)`);
   await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .detail-play')`), 'detail Play button');

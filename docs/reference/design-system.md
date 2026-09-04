@@ -7,7 +7,7 @@ System font stack only (CSP forbids web fonts). All colour through tokens; both 
 - Surfaces: `--bg`, `--panel`, `--panel-2`, `--panel-3`, `--border`; text `--text`, `--muted`; `--accent` (user-picked, inline), `--on-accent`; `--scrim` (dark in both themes — only ever over imagery); status `--danger --warn --success --info --live` (+ `-bg`/`-border` variants).
 - Type scale `--fs-xs .6875rem … --fs-3xl 2.75rem` (ratio ≈ 1.2); weights `--fw-normal … --fw-black`.
 - Spacing `--sp-1 4px … --sp-12 48px`; radii `--r-sm 6 / --r-md 10 / --r-lg 12 / --r-xl 16 / --r-pill`; elevation `--shadow-1…4` (softer in light).
-- Motion `--dur-fast 120ms`, `--dur-mid 180ms`, `--dur-slow 240ms`, `--ease-out`, `--ease-out-quart`. A few raw `.12s/.15s` remain (audit C2).
+- Motion `--dur-fast 120ms`, `--dur-mid 180ms`, `--dur-slow 240ms`, `--ease-out`, `--ease-out-quart`. Every transition rides these tokens (v0.20 folded the last raw `.12s/.15s`).
 - Z-index scale: `--z-fs 999` (HTML-fullscreen webview) < `--z-modal 1000` (overlays, hover preview, sources overlay) < `--z-banner 1200` (update) < `--z-palette 1300` < `--z-toast 1400`.
 - `--focus-ring: 2px solid var(--accent)`; `--poster-min` (grid column minimum, from Settings).
 
@@ -27,6 +27,6 @@ Cards (`.card`, `.poster-card`, `.resume-card`, `.match-card`, `.tile`, `.episod
 
 `:focus-visible` rings on cards, tiles, episodes, match cards, src rows, hero controls, chevrons, toast button. Switch inputs are `opacity:0; width:0` → no visible focus (audit A1). `body.input-touch` pins hover-only affordances and grows targets to 44 px; `body.input-gamepad` rings plain `:focus` and mirrors hover layers on focused cards. `body.reduced-motion` (synced from `prefers-reduced-motion`) kills every animation/transition with one `!important` rule; the toast bar stays a static full-width line.
 
-## Known dead rules
+## Scrollbars
 
-`#sources li input`, `.tile-logo` (audit C1).
+Every scroller hides its bar except the command palette list, which keeps a 6 px WebKit-styled one (`::-webkit-scrollbar` only — setting `scrollbar-width` too makes Chromium ignore the WebKit sizing).

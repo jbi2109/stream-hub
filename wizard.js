@@ -92,7 +92,7 @@ function openAddWizard(existing) {
     function updatePreview() {
       if (!prev) return;
       const src = { url: data.url.trim() || 'https://example-player.com', template: data.template.trim() || undefined };
-      prev.textContent = `Preview ▸ Movie: ${buildUrl(src, 'movie', 27205)}  ·  TV S1E1: ${buildUrl(src, 'tv', 27205, 1, 1)}`;
+      prev.textContent = `Movie ▸ ${buildUrl(src, 'movie', 27205)}\nTV S1E1 ▸ ${buildUrl(src, 'tv', 27205, 1, 1)}`;
     }
     if (step.choices) {
       const row = document.createElement('div'); row.className = 'wiz-choices';
