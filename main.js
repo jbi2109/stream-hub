@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell } = require('electron');
 const { ElectronBlocker } = require('@ghostery/adblocker-electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
@@ -485,6 +485,16 @@ app.whenReady().then(() => {
 
   // Version string for the sidebar footer, and a manual "check for updates" trigger.
   ipcMain.handle('app-version', () => app.getVersion());
+  // v0.20: open a shell link in the system browser. http(s) only — the renderer hands over whatever href the
+  // page carried, so the scheme check lives here. The e2e profile records instead of launching a browser.
+  ipcMain.handle('open-external', (_e, url) => {
+    let u; try { u = new URL(String(url)); } catch { return { error: 'http(s) only' }; }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return { error: 'http(s) only' };
+    if (process.argv.includes('--test-profile')) return { ok: true, skipped: true };
+    shell.openExternal(u.href);
+    return { ok: true };
+  });
+
   ipcMain.handle('check-update', async () => {
     if (!app.isPackaged) return { state: 'dev' };
     try { await autoUpdater.checkForUpdates(); return { ok: true }; }

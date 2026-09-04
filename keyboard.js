@@ -39,6 +39,7 @@ function paletteActions() {
     ['Open YouTube', () => open('https://www.youtube.com', false)], // untracked: never clobbers ⏯ Resume
     ['Open Library', showHome],
     ['Open Settings', showSettings],
+    ['Keyboard shortcuts', openHelp], // v0.20: the overlay was reachable only by pressing ?
   ];
   if (lastPlayed && lastPlayed.url) acts.push(['Resume watching', resumeLast]);
   acts.push(

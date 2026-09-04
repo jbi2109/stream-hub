@@ -15,6 +15,7 @@
 | `set-setting` (invoke) | R→M | Merges a patch into `ms`, writes `settings.json`, live-applies ad-block. Keys not whitelisted (audit R6). |
 | `refresh-adlists`, `adblock-status` (invoke) | R→M | Force rebuild / engine state for the Privacy panel. |
 | `app-version`, `check-update`, `install-update` (invoke) | R→M | Updater controls (`{state:'dev'}` when unpackaged). |
+| `open-external` (invoke) | R→M | v0.20: `shell.openExternal` for shell links; http(s) only, `{ok, skipped}` under `--test-profile`. Renderer side: one delegated click handler in app.js (`openExternal`). |
 | `player-visible` (send) | R→M | Gates the progress poll on webview visibility. |
 | `yt-adblock` (sendSync) | Guest→M | Guest preload asks at document_start whether to run the YouTube pruner. |
 | `guest-pad` (send) | Guest→M→R | Controller B/Start pressed while the guest has focus; whitelisted to `back`/`palette`. |

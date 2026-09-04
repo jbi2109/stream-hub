@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('sh', {
   installUpdate: () => ipcRenderer.invoke('install-update'),
   getVersion: () => ipcRenderer.invoke('app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-update'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url), // v0.20: shell links -> system browser (http(s) only, validated in main)
   onAuthReload: (cb) => ipcRenderer.on('auth-reload', () => cb()), // reload the webview after a standalone login
   setSetting: (patch) => ipcRenderer.invoke('set-setting', patch), // ⚙ main-process settings sync (live-apply)
   refreshAdlists: () => ipcRenderer.invoke('refresh-adlists'), // ⚙ force an ad-list re-download + hot-swap

@@ -7,7 +7,7 @@
 | `0` / `1 2 3` / `4` / `5` | Dashboard / Browse Movies, TV, Anime (clears the query) / Live TV / YouTube (untracked) |
 | `/`, Ctrl+F | Focus the Browse search (keeps the query; hops off Live) |
 | Ctrl/Cmd+K | Command palette (also forwarded from inside the guest player by main) |
-| `?` | Shortcuts + controller overlay |
+| `?` | Shortcuts + controller overlay (also: palette → "Keyboard shortcuts", Settings → About → Show shortcuts) |
 | ← ↑ → ↓ | `moveGrid` — see below |
 | Enter | Click the focused `NAV_SEL` item |
 | Esc | First Esc blurs a form field; then `goBack()` |

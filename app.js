@@ -100,6 +100,17 @@ function wireSettingsControls() {
 webview.addEventListener('did-navigate', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });
 webview.addEventListener('did-navigate-in-page', () => { $('address').textContent = webview.getURL(); scheduleCapture(); });
 webview.addEventListener('did-stop-loading', scheduleCapture);
+// v0.20: links in the shell (Get a key, GitHub, release notes) open in the system browser. The host window denies
+// window.open (main.js), so without this every <a target=_blank> was dead. One delegated handler; main validates
+// the scheme. A named global so e2e can observe the call without a browser launching.
+function openExternal(url) { return window.sh?.openExternal?.(url); }
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href]');
+  if (!a || !/^https?:/i.test(a.href)) return;
+  e.preventDefault();
+  openExternal(a.href);
+});
+
 webview.addEventListener('enter-html-full-screen', () => webview.classList.add('fullscreen'));
 webview.addEventListener('leave-html-full-screen', () => webview.classList.remove('fullscreen'));
 

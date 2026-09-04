@@ -422,6 +422,9 @@ function buildAbout() {
   const gh = mk('a', 'about-link', 'github.com/jbi2109/stream-hub');
   gh.href = 'https://github.com/jbi2109/stream-hub'; gh.target = '_blank';
   p.append(settingRow('Source', 'MIT licensed.', gh));
+  // v0.20: the shortcuts overlay is otherwise reachable only by pressing ? — keyboard.js loads after this file, so
+  // openHelp is resolved at click time.
+  p.append(settingRow('Keyboard & controller', 'Every shortcut and controller button.', actionButton('Show shortcuts', null, () => openHelp())));
   p.append(mk('div', 'set-hint', 'Movie & TV metadata from TMDB (themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.'));
   p.append(mk('div', 'set-hint', 'You are responsible for the sites you add and for accessing only content you are entitled to.'));
   return p;

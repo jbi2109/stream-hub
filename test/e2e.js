@@ -821,14 +821,14 @@ async function main() {
   await page.eval(`document.querySelector('#browse .match-grid .match-card.site').click()`);
   await until(() => page.eval(`!document.getElementById('webview').hidden && /^https?:/.test(document.getElementById('webview').getAttribute('src') || '')`), 'site card opens the site in the player');
   await page.eval(`showHome(); (() => { const c = card({ key: 'qa-badge', title: 'Q', url: 'https://x.example/tv/123/1/2', season: 1, episode: 2, type: 'tv', position: 10, duration: 100 }, true); c.id = 'qa-badge'; const g = mk('div', 'grid'); g.id = 'qa-grid'; g.append(c); document.getElementById('home').append(g); c.scrollIntoView({ block: 'center' }); })()`);
-  const bRect = await page.eval(`(() => { const r = document.getElementById('qa-badge').querySelector('.poster-wrap').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(bRect.x), y: Math.round(bRect.y) });
-  await until(() => page.eval(`document.getElementById('qa-badge').matches(':hover')`), 'library card under the pointer');
+  // :focus-within mirrors :hover for every reveal rule (input.js focus parity), and unlike a synthetic mouse move it
+  // cannot be stolen by the real pointer on the test machine.
+  await page.eval(`document.getElementById('qa-badge').focus()`);
+  await until(() => page.eval(`document.getElementById('qa-badge').matches(':focus-within')`), 'library card focused');
   const badge = await page.eval(`(() => { const c = document.getElementById('qa-badge'); const b = c.querySelector('.badge'), a = c.querySelector('.card-actions'); const br = b.getBoundingClientRect(), ar = a.getBoundingClientRect();
     return { vis: getComputedStyle(b).visibility, actionsShown: getComputedStyle(a).display !== 'none', overlap: !(br.right <= ar.left || ar.right <= br.left || br.bottom <= ar.top || ar.bottom <= br.top) }; })()`);
-  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
-  await page.eval(`document.getElementById('qa-grid').remove()`);
-  assert.ok(badge.actionsShown, 'hover must reveal the card actions');
+  await page.eval(`document.activeElement.blur(); document.getElementById('qa-grid').remove()`);
+  assert.ok(badge.actionsShown, 'focus-within (= hover) must reveal the card actions');
   assert.ok(badge.vis === 'hidden' || !badge.overlap, 'the S/E badge must not collide with the hover actions');
   assert.strictEqual(await page.eval(`card({ key: 'l', title: 'N', url: 'https://news.example/', type: 'live' }, false).querySelector('.card-sub').textContent`), 'Live TV', 'a live Watch Later card must say Live TV');
   assert.strictEqual(await page.eval(`card({ key: 't', title: 'N', url: 'https://x.example/tv/555', type: 'tv' }, false).querySelector('.card-sub').textContent`), 'TV Show', 'a TV Watch Later card without S/E must say TV Show');
@@ -2124,6 +2124,30 @@ async function main() {
   await page.eval(`showDashboard(); [...document.querySelectorAll('#dashboard .onboard-card .set-btn')].find(b => b.textContent.includes('Settings')).click()`);
   assert.strictEqual(await page.eval(`document.getElementById('settings').hidden`), false, 'onboarding should route to Settings for the key');
   ok('onboarding: buttons open the wizard and Settings');
+
+  // 55b. v0.20 (audit F1, F14): shell links open in the system browser (the host window denies window.open, so
+  //      every <a target=_blank> was dead); main accepts http(s) only and records instead of opening under the
+  //      test profile. The shortcuts overlay is reachable from the palette and Settings → About, not just "?".
+  await page.eval(`showDashboard()`);
+  await until(() => page.eval(`!!document.querySelector('#dashboard .onboard-card a[href^="https://"]')`), 'onboarding card with the Get-a-key link');
+  const extSrcBefore = await page.eval(`document.getElementById('webview').getAttribute('src') || ''`);
+  await page.eval(`window.__ext = null; openExternal = (u) => { window.__ext = u; };`);
+  await page.eval(`document.querySelector('#dashboard .onboard-card a[href^="https://"]').click()`);
+  assert.strictEqual(await page.eval(`window.__ext`), 'https://www.themoviedb.org/settings/api', 'clicking a shell link must route to openExternal');
+  assert.strictEqual(await page.eval(`document.getElementById('webview').getAttribute('src') || ''`), extSrcBefore, 'a shell link must not navigate the player');
+  assert.deepStrictEqual(await page.eval(`window.sh.openExternal('javascript:alert(1)')`), { error: 'http(s) only' }, 'main must refuse non-http(s) schemes');
+  assert.deepStrictEqual(await page.eval(`window.sh.openExternal('https://example.com/')`), { ok: true, skipped: true }, 'main accepts http(s) (and records instead of opening under --test-profile)');
+  await page.eval(`delete window.__ext`);
+  await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))`);
+  await until(() => page.eval(`!!document.querySelector('.palette-input')`), 'palette for the shortcuts entry');
+  await page.eval(`(() => { const i = document.querySelector('.palette-input'); i.value = 'shortcuts'; i.dispatchEvent(new Event('input')); })()`);
+  await page.eval(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))`);
+  await until(() => page.eval(`!!document.querySelector('.modal-overlay.palette .help-key') && !document.querySelector('.palette-input')`), 'palette entry opens the shortcuts overlay');
+  await page.eval(`closeHelp(); showSettings(); showSettingsTab('about')`);
+  await page.eval(`[...document.querySelectorAll('#settings .set-btn')].find(b => b.textContent === 'Show shortcuts').click()`);
+  await until(() => page.eval(`!!document.querySelector('.modal-overlay.palette .help-key')`), 'About row opens the shortcuts overlay');
+  await page.eval(`closeHelp(); showSettings()`);
+  ok('links open externally through a validated IPC; shortcuts overlay reachable from the palette and About');
 
   // ---------- v0.3.6 "What's New" modal ----------
 
