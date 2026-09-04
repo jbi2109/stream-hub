@@ -13,6 +13,7 @@ history. Download the latest installer from the [Releases page](https://github.c
 - **Small polish.** The tagline on a title page is readable over the artwork, the add-source preview no longer splits web addresses mid-word, the command palette gets a slim scrollbar, and the actor page lines up with its heading.
 - **Live TV sites sit in the grid with the matches** instead of a separate block above the category bar. On a library card the S2 E5 badge now steps aside when the hover buttons appear instead of colliding with them, and Watch Later says "Live TV" or "TV Show" under the title instead of "Movie" for everything.
 - **Watch links that use `?id=` now count.** If your player builds links like `player?type=tv&id=123`, Continue Watching, the hero Resume button, the source/episode switchers and auto-next now recognise the show — before, everything played that way collapsed into one entry.
+- **Back goes where you came from.** A title page opened from the Dashboard or the Library now returns there (the button says so), and pressing Esc out of a video you started from a title page brings that page back instead of dumping you on Browse.
 
 ---
 

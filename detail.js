@@ -36,7 +36,9 @@ function openGenre(type, g) {
   browsePage = 1; browseQuery = ''; showBrowse(); // discovery entry: drop any sticky Browse search
 }
 
-function detailBackTo() { showBrowse(); }
+// v0.20: Back / Esc return to the view that opened the title page (was always Browse).
+function detailBackTo() { if (detailFrom === 'dashboard') showDashboard(); else if (detailFrom === 'home') showHome(); else showBrowse(); }
+const detailBackLabel = () => '← ' + ({ dashboard: 'Dashboard', home: 'Library' }[detailFrom] || 'Browse');
 
 // Shared Watch-Later add for a KNOWN TMDB id (detail page + hover preview). Mirrors the detail WL
 // button's exact semantics: buildUrl via the first source (tmdb: fallback), dedupe by key, anime->tv.
@@ -51,6 +53,10 @@ function addLater(kind, type, id, title, poster, season = null, episode = null) 
 }
 
 async function showDetail(kind, id) {
+  // Remember the launching view. A title reached from another title page, a person page or the player keeps
+  // the ORIGINAL origin, so Back still exits to where the user actually came from (no history stack needed).
+  detailFrom = !$('dashboard').hidden ? 'dashboard' : !$('home').hidden ? 'home'
+    : (!$('detail').hidden || !$('person').hidden || !webview.hidden) ? detailFrom : 'browse';
   hideAll();
   $('detail').hidden = false;
   $('detail').replaceChildren(stateNode('loading', 'Loading…'));
@@ -71,7 +77,7 @@ function detailHeaderBar() {
   const bar = document.createElement('div');
   bar.className = 'detail-back';
   const back = document.createElement('button');
-  back.textContent = '← Browse';
+  back.textContent = detailBackLabel();
   back.onclick = detailBackTo;
   bar.append(back);
   return bar;

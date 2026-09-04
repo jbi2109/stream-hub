@@ -238,7 +238,7 @@ function goBack() {
   if (!$('detail').hidden) {
     // #detail doubles as the live source page — go back to the Live grid there (its Back button's path);
     // the stream stays loaded, ⏯ Resume returns to it.
-    if (currentLiveMatch) { browseTab = 'live'; showBrowse(); } else showBrowse();
+    if (currentLiveMatch) { browseTab = 'live'; showBrowse(); } else detailBackTo(); // v0.20: back to the title page's own origin
     return;
   }
   if (!webview.hidden) exitPlayer();
@@ -255,6 +255,7 @@ function exitPlayer() {
   if (openedFrom === 'dashboard') showDashboard();
   else if (openedFrom === 'home') showHome();
   else if (openedFrom === 'live') { browseTab = 'live'; showBrowse(); }
+  else if (openedFrom === 'detail' && detailOrigin) showDetail(detailOrigin.kind, detailOrigin.id); // v0.20: Play from a title page -> Esc returns to it
   else showBrowse();
 }
 

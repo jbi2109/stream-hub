@@ -766,6 +766,40 @@ async function main() {
   await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .cast')`), 'back on the detail page');
   ok('polish: tagline colour, wizard preview wrapping, thin palette scrollbar, person alignment, switch motion token');
 
+  // 24l. v0.20 (audit B2): Back / Esc from a title page return to the view it was opened from, and Esc out of a
+  //      player launched from a title page lands back on that title page — not on Browse every time.
+  await page.eval(`showDashboard()`);
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'dashboard as the origin');
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .detail-back button')`), 'detail from the dashboard');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .detail-back button').textContent`), '← Dashboard', 'the back button names the origin');
+  await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await until(() => page.eval(`!document.getElementById('dashboard').hidden && document.getElementById('detail').hidden`), 'Esc returns to the dashboard');
+  await page.eval(`showHome()`);
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-back button')`), 'detail from the library');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .detail-back button').textContent`), '← Library', 'origin label for the library');
+  await page.eval(`document.querySelector('#detail .detail-back button').click()`);
+  await until(() => page.eval(`!document.getElementById('home').hidden`), 'Back button returns to the library');
+  await page.eval(`browseQuery = ''; browseTab = 'movie'; showBrowse()`);
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-play') && !!document.querySelector('#detail .cast')`), 'detail from browse');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .detail-back button').textContent`), '← Browse', 'origin label for browse');
+  await page.eval(`document.querySelector('#detail .cast').click()`); // detail -> person -> detail keeps the ORIGINAL origin
+  await until(() => page.eval(`!document.getElementById('person').hidden && !!document.querySelector('#person .detail-rail .card')`), 'person page');
+  await page.eval(`document.querySelector('#person .detail-rail .card').click()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .detail-back button')`), 'detail via the person page');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .detail-back button').textContent`), '← Browse', 'a detail reached through a person page still exits to the original view');
+  await page.eval(`showDetail('movie', 42)`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-play') && !document.querySelector('#detail .detail-play').disabled`), 'detail with a playable source');
+  await page.eval(`document.querySelector('#detail .detail-play').click()`);
+  await until(() => page.eval(`!document.getElementById('webview').hidden`), 'player from the title page');
+  assert.strictEqual(await page.eval(`openedFrom`), 'detail', 'the player remembers it was launched from a title page');
+  await page.eval(`exitPlayer()`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && (document.querySelector('#detail h1') || {}).textContent === 'Fixture Title'`), 'Esc out of the player lands on the title page');
+  assert.strictEqual(await page.eval(`document.querySelector('#detail .detail-back button').textContent`), '← Browse', 'and that title page still exits to its own origin');
+  ok('navigation: Back/Esc from a title page return to its origin; Esc from its player returns to the title page');
+
   // 24k. R3: ▶ Play is the loud PRIMARY action — first child of .detail-actions, routes to the default source
   await page.eval(`showDetail('movie', 42)`);
   await until(() => page.eval(`!document.getElementById('detail').hidden && !!document.querySelector('#detail .detail-play')`), 'detail Play button');

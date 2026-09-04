@@ -16,7 +16,7 @@ Keys are ignored while `modalOpen()` or `typing()` (input/textarea/select/conten
 
 ## Esc / back chain (`goBack` → `exitPlayer`)
 
-modal (lightbox → palette → help → What's New → wizard) → person page (→ its detail or Browse) → Settings (→ Browse) → detail / live picker (→ Browse or Live) → player (`exitPlayer`: back to `openedFrom` = dashboard | home | live | browse; no-op while the guest is HTML-fullscreen). Top-level views have no back (audit B2). Esc inside the guest is forwarded by main's `before-input-event`.
+modal (lightbox → palette → help → What's New → wizard) → person page (→ its detail or Browse) → Settings (→ Browse) → detail / live picker (→ its origin via `detailBackTo`, or Live) → player (`exitPlayer`: back to `openedFrom` = dashboard | home | live | detail | browse; no-op while the guest is HTML-fullscreen). Top-level views have no back. Esc inside the guest is forwarded by main's `before-input-event`.
 
 ## Grid navigation (`moveGrid`)
 

@@ -35,7 +35,8 @@ let currentLiveMatch = null;         // the live match being watched (for the to
 // ⏯ Resume target — persisted so Resume survives a restart. { url, live, match?, playing? }:
 // live picks attach the match (Sources page restore); VOD attaches `playing` (source-switcher restore).
 let lastPlayed = load('lastPlayed', null);
-let openedFrom = 'browse';           // which view launched the player ('home'|'live'|'browse') — Esc returns there
+let openedFrom = 'browse';           // which view launched the player ('dashboard'|'home'|'live'|'detail'|'browse') — Esc returns there
+let detailFrom = 'browse';           // v0.20: which view opened the title page ('dashboard'|'home'|'browse') — its Back/Esc return there
 
 const CAT_LABEL = { vod: 'Movies / TV', anime: 'Anime', live: 'Live TV' };
 
@@ -166,7 +167,8 @@ function captureOrigin() {
   if (!webview.hidden) return;
   openedFrom = !$('dashboard').hidden ? 'dashboard'
     : !$('home').hidden ? 'home'
-    : ((browseTab === 'live' && !$('browse').hidden) || currentLiveMatch) ? 'live' : 'browse';
+    : ((browseTab === 'live' && !$('browse').hidden) || currentLiveMatch) ? 'live'
+    : (!$('detail').hidden && detailOrigin) ? 'detail' : 'browse'; // v0.20: Play on a title page -> Esc lands back on it
 }
 
 // Show the webview WITHOUT navigating: the page, its scroll position and any playing video survive.
