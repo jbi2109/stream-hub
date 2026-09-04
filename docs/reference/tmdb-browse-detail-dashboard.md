@@ -14,7 +14,7 @@ Tabs movie / tv / anime (anime = `/discover/tv` with genre 16 and `ja` unless a 
 
 ## Hover preview
 
-One fixed singleton (`hoverPreviewNode`) positioned above/below the card and clamped to the viewport; cross-fades up to 4 backdrop frames every 2.5 s (Ken Burns, all gated by `body.reduced-motion`). Hidden on scroll (capture listener), on `hideAll`, on pad move. **Not hidden on grid re-render** — audit V5.
+One fixed singleton (`hoverPreviewNode`) positioned above/below the card and clamped to the viewport; cross-fades up to 4 backdrop frames every 2.5 s (Ken Burns, all gated by `body.reduced-motion`). Hidden on scroll (capture listener), on `hideAll`, on pad move, and (v0.20) at the top of `renderBrowse` and `drawResults` so a search redraw, pager click or tab switch never leaves one behind. Hover wiring lives in `wireHover(el, kind, item)`: `mouseenter` is ignored for 400 ms after any scroll (a card sliding under a parked pointer is not a hover) and only pointer motion on the card arms the 1 s timer.
 
 ## Detail page
 

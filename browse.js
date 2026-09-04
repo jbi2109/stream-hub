@@ -144,6 +144,7 @@ function hoverDetail(kind, id) {
 }
 let HOVER_MS = 1000;                      // bare global so e2e can zero it (like heroTimer/settings)
 let hp = null, hpTimer = null, hpHide = null, hpToken = 0;
+let hpScrollAt = 0; // last scroll (performance.now()); bare global so e2e can fake a just-finished scroll
 // v0.6.0: cross-fade the preview backdrop through the frames already in the cached detail payload
 // (a real video preview is impossible under the CSP — see CHANGELOG). Bare globals so e2e can drive them.
 let hpMotion = null, HP_FRAME_MS = 2500;
@@ -176,12 +177,12 @@ function hoverPreviewNode() {              // build the singleton once, lazily, 
   hp.addEventListener('mouseenter', () => { clearTimeout(hpHide); });   // moving onto the card keeps it
   hp.addEventListener('mouseleave', scheduleHide);
   document.body.append(hp);
-  document.addEventListener('scroll', hideHoverPreview, true); // capture-phase: the fixed node's anchor moves on any scroll (rail or view)
+  document.addEventListener('scroll', () => { hpScrollAt = performance.now(); hideHoverPreview(); }, true); // capture-phase: the fixed node's anchor moves on any scroll (rail or view)
   hp._els = { art, title, meta, ov, play, later };
   return hp;
 }
 const scheduleHide = () => { clearTimeout(hpHide); hpHide = setTimeout(hideHoverPreview, 120); }; // grace period
-function hideHoverPreview() { if (hp) hp.hidden = true; hpToken++; clearTimeout(hpTimer); clearTimeout(hpHide); clearInterval(hpMotion); hpMotion = null; }
+function hideHoverPreview() { if (hp) hp.hidden = true; hpToken++; clearTimeout(hpTimer); hpTimer = null; clearTimeout(hpHide); clearInterval(hpMotion); hpMotion = null; }
 async function showHoverPreview(cardEl, kind, item) {
   const node = hoverPreviewNode(); const token = ++hpToken;
   const d = await hoverDetail(kind, item.id);
@@ -259,11 +260,7 @@ function posterCard(kind, item, rank) {
   el._preview = { kind, id: item.id }; // input.js reads this for the touch long-press / gamepad Y preview
   // Netflix expand-on-hover: after ~1s, show the floating preview card (complements the .poster-overlay).
   // Gated on real hover capability so touch devices (no hover) never trigger it.
-  if (matchMedia('(hover: hover)').matches) {
-    el.addEventListener('mouseenter', () => { clearTimeout(hpTimer); clearTimeout(hpHide);
-      hpTimer = setTimeout(() => showHoverPreview(el, kind, item), HOVER_MS); });
-    el.addEventListener('mouseleave', () => { clearTimeout(hpTimer); scheduleHide(); });
-  }
+  if (matchMedia('(hover: hover)').matches) wireHover(el, kind, item);
   return el;
 }
 
@@ -271,6 +268,16 @@ function posterCard(kind, item, rank) {
 // PRESERVES browseQuery — it's a "jump to the box" intent, not a reset. From Live it hops to a VOD tab
 // (the box lives only on Movies/TV/Anime). The input is appended before renderBrowse's first await, so
 // it's in the DOM to focus synchronously here.
+// Hover wiring for a poster card (named so e2e can attach it where matchMedia reads no-hover). v0.20: a card
+// that slides under a PARKED pointer during a wheel scroll is not a hover — mouseenter is ignored for 400ms after
+// any scroll, and only real pointer motion on the card arms the timer.
+function wireHover(el, kind, item) {
+  const arm = () => { clearTimeout(hpTimer); clearTimeout(hpHide); hpTimer = setTimeout(() => { hpTimer = null; showHoverPreview(el, kind, item); }, HOVER_MS); };
+  el.addEventListener('mouseenter', () => { if (performance.now() - hpScrollAt > 400) arm(); });
+  el.addEventListener('mousemove', () => { if (!hpTimer && !(hp && !hp.hidden)) arm(); });
+  el.addEventListener('mouseleave', () => { clearTimeout(hpTimer); hpTimer = null; scheduleHide(); });
+}
+
 function focusBrowseSearch() {
   if (browseTab === 'live') browseTab = settings.defaultBrowseTab || 'movie';
   showBrowse();
@@ -290,6 +297,7 @@ function browseTabBar() {
 }
 
 async function renderBrowse() {
+  hideHoverPreview(); // v0.20: the grid this preview belongs to is about to be replaced (tab switch re-renders in place)
   if (browseTab === 'live') { renderLiveTab($('browse')); return; }
   const nodes = [browseTabBar()];
 
@@ -361,6 +369,7 @@ async function renderBrowse() {
   // results + pager. Split into a closure so a debounced keystroke or a pager click redraws WITHOUT
   // rebuilding the #browse subtree — a full renderBrowse would blow away the focused search box (N2).
   const drawResults = async () => {
+    hideHoverPreview(); // v0.20: a search keystroke / pager click replaces the cards under a still pointer — no mouseleave ever fires
     const q = browseQuery;
     filterBar.hidden = !!q; // a query hides the discovery filters (they don't apply to /search)
     const data = await fetchBrowse(browseTab, q, browseFilters, browsePage);

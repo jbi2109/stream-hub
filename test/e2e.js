@@ -1441,6 +1441,31 @@ async function main() {
   await page.eval(`hideHoverPreview(); window.__hpCard.remove(); delete window.__hpCard;`);
   ok('hover preview: fetch-on-hover card shows detail; + Watch Later adds; ▶ Details opens the detail page');
 
+  // 32Q3c2. v0.20 (audit V5 + B9): the preview dies with its grid — a search redraw and a tab switch both re-render the
+  //         cards under a still pointer, where no mouseleave ever fires — and a card that slides under a PARKED pointer
+  //         right after a scroll does not open one; pointer motion on the card does.
+  await page.eval(`browseQuery = ''; browseTab = 'movie'; showBrowse()`);
+  await until(() => page.eval(`document.querySelectorAll('#browse .grid .poster-card').length > 0 && !!document.querySelector('#browse .browse-search')`), 'browse grid for the preview-cleanup test');
+  await page.eval(`showHoverPreview(document.querySelector('#browse .grid .poster-card'), 'movie', { id: 42 })`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview:not([hidden])')`), 'preview up before the search redraw');
+  await page.eval(`(() => { const s = document.querySelector('#browse .browse-search'); s.value = 'fixe'; s.dispatchEvent(new Event('input')); })()`);
+  await until(() => page.eval(`[...document.querySelectorAll('#browse .grid .card')].some(c => c.textContent.includes('Found fixe'))`), 'search redraw landed');
+  assert.ok(await page.eval(`!document.querySelector('.hover-preview:not([hidden])')`), 'a search redraw must hide the hover preview');
+  await page.eval(`showHoverPreview(document.querySelector('#browse .grid .poster-card'), 'movie', { id: 42 })`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview:not([hidden])')`), 'preview up before the tab switch');
+  await page.eval(`document.querySelector('#browse .tabs .tab[data-tab="tv"]').click()`);
+  assert.ok(await page.eval(`!document.querySelector('.hover-preview:not([hidden])')`), 'a tab switch must hide the hover preview');
+  await until(() => page.eval(`browseTab === 'tv' && document.querySelectorAll('#browse .grid .poster-card').length > 0`), 'TV grid after the tab switch');
+  await page.eval(`(() => { const c = document.querySelector('#browse .grid .poster-card'); wireHover(c, 'movie', { id: 42 }); window.__hpC = c; })()`);
+  await page.eval(`HOVER_MS = 0; hpScrollAt = performance.now(); window.__hpC.dispatchEvent(new MouseEvent('mouseenter'))`);
+  await sleep(200);
+  assert.ok(await page.eval(`!document.querySelector('.hover-preview:not([hidden])')`), 'mouseenter right after a scroll must not open the preview');
+  await page.eval(`window.__hpC.dispatchEvent(new MouseEvent('mousemove'))`);
+  await until(() => page.eval(`!!document.querySelector('.hover-preview:not([hidden])')`), 'pointer motion on the card opens the preview');
+  await page.eval(`hideHoverPreview(); HOVER_MS = 1000; delete window.__hpC; browseQuery = ''; browseTab = 'movie'; showDetail('movie', 42)`);
+  await until(() => page.eval(`!document.getElementById('detail').hidden && !!(document.querySelector('#detail h1') || {}).textContent`), 'back on the detail page for the next test');
+  ok('hover preview: hidden by a search redraw and a tab switch; not opened by a card scrolling under a parked pointer');
+
   // 32Q4. v0.3.0: ⏯ Resume survives a restart (lastPlayed persisted) and restores the live UI
   await page.eval(`location.reload()`);
   await until(() => page.eval(`!document.getElementById('dashboard').hidden`), 'reloaded for resume persistence');
