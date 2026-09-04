@@ -17,6 +17,7 @@ history. Download the latest installer from the [Releases page](https://github.c
 - **Links open in your browser.** "Get a key" on the welcome card, the GitHub link and the release-notes link did nothing before. The shortcuts overlay is now also reachable from the command palette and Settings → About, not just by pressing ?.
 - **The app tells you when something is wrong.** Pasting a TMDB key now checks it on the spot and says whether it works; Browse names the TMDB error instead of a vague "No results"; a source that fails to load shows a message with an Edit-source button instead of a bare browser error page; and a stalled TMDB request gives up after 15 seconds instead of leaving a page on "Loading…" forever.
 - **Harder to break.** A backup file with a damaged entry no longer leaves the app stuck on a blank window — the bad entry is skipped and you are told. If you unplug the monitor the window was last on, it opens on the screen you still have instead of somewhere off-screen.
+- **Watch Later shows where you stand, and removing is undoable.** The button on a title page (and the hover preview) reads "✓ In Watch Later" once a title is saved and removes it on a second click. Removing a library card or a source now pops an Undo, so one mis-click on ✕ is no longer final.
 
 ---
 

@@ -84,9 +84,11 @@ function card(item, isCont) {
   del.title = 'Remove';
   del.onclick = (e) => {
     e.stopPropagation();
-    if (isCont) { cont = cont.filter((c) => c.key !== item.key); store('continue', cont); }
-    else { later = later.filter((c) => c.key !== item.key); store('watchlater', later); }
-    refreshCards();
+    if (!isCont) { removeLater(item.key); refreshCards(); return; } // v0.20: shared remove + Undo
+    const idx = cont.findIndex((c) => c.key === item.key); if (idx < 0) return;
+    const [gone] = cont.splice(idx, 1); store('continue', cont); refreshCards();
+    toast(`Removed — ${gone.title}`, null, { label: 'Undo', aria: `Undo removing ${gone.title}`,
+      onClick: () => { cont.splice(Math.min(idx, cont.length), 0, gone); store('continue', cont); refreshCards(); } }); // v0.20: one mis-click was final
   };
   actions.append(del);
   wrap.append(actions);

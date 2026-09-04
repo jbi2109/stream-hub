@@ -43,14 +43,29 @@ const detailBackLabel = () => '← ' + ({ dashboard: 'Dashboard', home: 'Library
 // Shared Watch-Later add for a KNOWN TMDB id (detail page + hover preview). Mirrors the detail WL
 // button's exact semantics: buildUrl via the first source (tmdb: fallback), dedupe by key, anime->tv.
 // (app.js's topbar handler adds the CURRENT webview page — a different shape — so it does NOT use this.)
-function addLater(kind, type, id, title, poster, season = null, episode = null) {
+// v0.20: the key derivation is shared with inLater/removeLater so the button can show membership and toggle.
+function laterKey(kind, type, id, season = null, episode = null) {
   const src = sourcesFor(kind)[0];
-  const url = src ? buildUrl(src, type, id, season, episode) : `tmdb:${type}/${id}`;
-  const key = mediaKey(url);
+  const bare = src ? buildUrl(src, type, id) : `tmdb:${type}/${id}`; // key from the episode-less link: membership is per show, not per episode
+  return { key: mediaKey(bare), url: src ? buildUrl(src, type, id, season, episode) : bare };
+}
+const inLater = (key) => later.some((c) => c.key === key);
+let repaintLater = null; // the detail page's button re-reads membership after an add/remove/undo
+function addLater(kind, type, id, title, poster, season = null, episode = null) {
+  const { key, url } = laterKey(kind, type, id, season, episode);
   later = later.filter((c) => c.key !== key);
   later.unshift({ key, title, url, poster, season, episode, type: kind === 'anime' ? 'tv' : type, addedAt: Date.now() });
-  store('watchlater', later); toast(`Added to Watch Later — ${title}`);
+  store('watchlater', later); toast(`Added to Watch Later — ${title}`); repaintLater?.();
 }
+// Remove by key with an Undo toast (v0.20). Shared by the detail/hover toggle and the library card ✕.
+function removeLater(key) {
+  const idx = later.findIndex((c) => c.key === key); if (idx < 0) return;
+  const [gone] = later.splice(idx, 1); store('watchlater', later);
+  toast(`Removed from Watch Later — ${gone.title}`, null, { label: 'Undo', aria: `Undo removing ${gone.title} from Watch Later`,
+    onClick: () => { later.splice(Math.min(idx, later.length), 0, gone); store('watchlater', later); refreshCards(); repaintLater?.(); } });
+  repaintLater?.();
+}
+const laterLabel = (key) => (inLater(key) ? '✓ In Watch Later' : '+ Watch Later');
 
 async function showDetail(kind, id) {
   // Remember the launching view. A title reached from another title page, a person page or the player keeps
@@ -178,8 +193,9 @@ function renderDetail(kind, type, id, d) {
     actions.append(tb);
   }
   const wl = document.createElement('button');
-  wl.textContent = '+ Watch Later';
-  wl.onclick = () => addLater(kind, type, id, title, posterUrl, curSeason, curEpisode);
+  repaintLater = () => { wl.textContent = laterLabel(laterKey(kind, type, id).key); };
+  repaintLater();
+  wl.onclick = () => { const k = laterKey(kind, type, id).key; if (inLater(k)) removeLater(k); else addLater(kind, type, id, title, posterUrl, curSeason, curEpisode); }; // v0.20: toggles
   actions.append(wl);
   if (!playSrcs.length) { // no source at all → give a way out instead of a dead disabled button
     const hint = mk('span', 'detail-play-hint', 'Add a source in Settings to watch');

@@ -15,10 +15,12 @@ function sourceItem(src) {
   del.title = 'Remove source';
   del.onclick = (e) => {
     e.stopPropagation();
-    sources = sources.filter((s) => s !== src);
+    const idx = sources.indexOf(src); if (idx < 0) return;
+    sources.splice(idx, 1);
     store('sources', sources);
     renderSources();
-    toast(`Source removed — ${src.name}`);
+    toast(`Source removed — ${src.name}`, null, { label: 'Undo', aria: `Undo removing the source ${src.name}`,
+      onClick: () => { sources.splice(Math.min(idx, sources.length), 0, src); store('sources', sources); renderSources(); } }); // v0.20
   };
 
   li.append(grow, edit, del);

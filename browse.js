@@ -208,7 +208,9 @@ async function showHoverPreview(cardEl, kind, item) {
   e.art.hidden = !frames.length;   // no art at all -> collapse, exactly as today (style.css:60 [hidden] is !important)
   startHpMotion(frames.length);
   e.play.onclick = () => { hideHoverPreview(); showDetail(kind, item.id); };
-  e.later.onclick = () => { addLater(kind, kind === 'movie' ? 'movie' : 'tv', item.id, d.title || d.name, IMG(d.poster_path, 'w342')); hideHoverPreview(); };
+  const hpType = kind === 'movie' ? 'movie' : 'tv', hpKey = laterKey(kind, hpType, item.id).key; // v0.20: show membership, toggle
+  e.later.textContent = laterLabel(hpKey);
+  e.later.onclick = () => { if (inLater(hpKey)) removeLater(hpKey); else addLater(kind, hpType, item.id, d.title || d.name, IMG(d.poster_path, 'w342')); hideHoverPreview(); };
   node.hidden = false;
   positionHoverPreview(cardEl, node);
 }

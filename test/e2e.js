@@ -682,6 +682,42 @@ async function main() {
   assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, wlBefore + 1, 'detail Watch Later did not add');
   ok('detail: + Watch Later adds an entry');
 
+  // 24c2. v0.20 (audit B4, F10, F12): the Watch Later button shows membership and toggles; removing a library card or
+  //       a source is undoable from the toast instead of silent and final.
+  const wlBtn = () => page.eval(`[...document.querySelectorAll('#detail .detail-actions button')].find(b => b.textContent.includes('Watch Later')).textContent`);
+  assert.strictEqual(await wlBtn(), '✓ In Watch Later', 'after adding, the button must show membership');
+  await page.eval(`document.getElementById('toast')?.remove(); [...document.querySelectorAll('#detail .detail-actions button')].find(b => b.textContent.includes('Watch Later')).click()`);
+  assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, wlBefore, 'clicking again removes the entry');
+  assert.strictEqual(await wlBtn(), '+ Watch Later', 'and the button reads add again');
+  assert.strictEqual(await page.eval(`(document.querySelector('#toast .toast-btn') || {}).textContent`), 'Undo', 'removal offers Undo');
+  await page.eval(`document.querySelector('#toast .toast-btn').click()`);
+  assert.strictEqual((await page.eval(`JSON.parse(localStorage.getItem('watchlater'))`)).length, wlBefore + 1, 'Undo restores the entry');
+  assert.strictEqual(await wlBtn(), '✓ In Watch Later', 'and the button follows');
+  // library card ✕ -> Undo puts it back at the same position
+  await page.eval(`topTab = 'later'; subTab = 'all'; showHome()`);
+  await until(() => page.eval(`document.querySelectorAll('#home .grid .card').length >= 1`), 'watch-later grid');
+  const firstKey = await page.eval(`document.querySelector('#home .grid .card').dataset.key`);
+  const cardsBefore = await page.eval(`document.querySelectorAll('#home .grid .card').length`);
+  await page.eval(`document.getElementById('toast')?.remove(); document.querySelector('#home .grid .card .card-actions button[title="Remove"]').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#home .grid .card').length === ${cardsBefore} - 1`), 'card removed');
+  assert.strictEqual(await page.eval(`(document.querySelector('#toast .toast-btn') || {}).textContent`), 'Undo', 'card removal offers Undo');
+  await page.eval(`document.querySelector('#toast .toast-btn').click()`);
+  await until(() => page.eval(`document.querySelectorAll('#home .grid .card').length === ${cardsBefore}`), 'Undo restores the card');
+  assert.strictEqual(await page.eval(`document.querySelector('#home .grid .card').dataset.key`), firstKey, 'the restored card is back in its old slot');
+  // source ✕ -> Undo
+  await page.eval(`showSettings(); showSettingsTab('sources')`);
+  const srcCount = await page.eval(`sources.length`);
+  const lastSrcName = await page.eval(`sources[sources.length - 1].name`);
+  await page.eval(`document.getElementById('toast')?.remove(); [...document.querySelectorAll('#sources li button[title="Remove source"]')].pop().click()`);
+  assert.strictEqual(await page.eval(`sources.length`), srcCount - 1, 'source removed');
+  assert.strictEqual(await page.eval(`(document.querySelector('#toast .toast-btn') || {}).textContent`), 'Undo', 'source removal offers Undo');
+  await page.eval(`document.querySelector('#toast .toast-btn').click()`);
+  assert.strictEqual(await page.eval(`sources.length`), srcCount, 'Undo restores the source');
+  assert.strictEqual(await page.eval(`sources[sources.length - 1].name`), lastSrcName, 'back at its old position');
+  await page.eval(`document.getElementById('toast')?.remove(); showDetail('movie', 42)`);
+  await until(() => page.eval(`!!document.querySelector('#detail .detail-actions')`), 'back on the detail page');
+  ok('watch later: button shows membership and toggles; card and source removal are undoable');
+
   // 24d. C1: tmdbGet promise-dedupes + caches by path/params (same object for repeat calls within TTL)
   const cacheDedup = await page.eval(`(async () => {
     const a = tmdbGet('/movie/42', {});
