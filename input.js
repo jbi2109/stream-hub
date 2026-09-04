@@ -72,11 +72,12 @@ function pollPads() {
 
   // A modal (palette / help / wizard / lightbox) owns the input, exactly as in the keyboard dispatcher:
   // only B reaches through, and goBack() closes the topmost one.
+  const pal = paletteEl && paletteEl._nav; // v0.20: the palette takes the D-pad + A itself (keyboard.js exposes _nav)
   const blocked = modalOpen();
 
   const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
   let dir = null;
-  if (blocked) dir = null;
+  if (blocked && !pal) dir = null;
   else if (padPressed(pad, 14) || ax <= -PAD_DEADZONE) dir = 'ArrowLeft';
   else if (padPressed(pad, 15) || ax >= PAD_DEADZONE) dir = 'ArrowRight';
   else if (padPressed(pad, 12) || ay <= -PAD_DEADZONE) dir = 'ArrowUp';
@@ -85,20 +86,20 @@ function pollPads() {
   const now = performance.now();
   if (dir !== padDir) {                       // fresh direction: move once, then wait out the hold delay
     padDir = dir; padNextAt = now + PAD_DELAY;
-    if (dir) padMove(dir);
+    if (dir) (pal ? padPalette(dir, pal) : padMove(dir));
   } else if (dir && now >= padNextAt) {       // held: auto-repeat
     padNextAt = now + PAD_REPEAT;
-    padMove(dir);
+    if (pal) padPalette(dir, pal); else padMove(dir);
   }
 
   const edge = (i, run) => {                  // fire once per press, not once per frame
     if (padPressed(pad, i)) {
       if (padDown.has(i)) return;
       padDown.add(i); setInputMode('gamepad');
-      if (!blocked || i === PAD_BTN.B) run(); // releases stay tracked even when a modal swallows the press
+      if (!blocked || i === PAD_BTN.B || (pal && i === PAD_BTN.A)) run(); // releases stay tracked even when a modal swallows the press
     } else padDown.delete(i);
   };
-  edge(PAD_BTN.A, padActivate);
+  edge(PAD_BTN.A, () => (pal ? pal.run() : padActivate()));
   edge(PAD_BTN.B, () => goBack());
   edge(PAD_BTN.X, () => focusBrowseSearch());
   edge(PAD_BTN.Y, padPreview);
@@ -106,6 +107,12 @@ function pollPads() {
   edge(PAD_BTN.RB, () => padPage(1));
   edge(PAD_BTN.START, () => openPalette());
   return true;
+}
+
+// v0.20: with the palette open, Up/Down move its highlight instead of the grid behind it (Start opened a dead end before).
+function padPalette(dir, pal) {
+  setInputMode('gamepad');
+  if (dir === 'ArrowDown') pal.move(1); else if (dir === 'ArrowUp') pal.move(-1);
 }
 
 function padMove(dir) {

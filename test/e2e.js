@@ -2643,15 +2643,36 @@ async function main() {
     // unguarded, moveGrid would seed focus into the grid behind the palette, stealing it from the input
     const stayed = !!document.activeElement && document.activeElement.classList.contains('palette-input');
     __pad.buttons[0].pressed = true; pollPads(); __pad.buttons[0].pressed = false; pollPads();
-    const stillOpen = !!paletteEl && document.getElementById('detail').hidden;
+    const ranAction = !paletteEl && !document.getElementById('dashboard').hidden; // v0.20: A runs the highlighted palette action (Open Dashboard)
     __pad.buttons[1].pressed = true; pollPads(); __pad.buttons[1].pressed = false; pollPads();
-    return { stayed, stillOpen, closed: !paletteEl };
+    return { stayed, ranAction, closed: !paletteEl };
   })()`);
   assert.ok(padModal.stayed, 'the D-pad does not move focus behind an open modal');
-  assert.ok(padModal.stillOpen, 'A does not activate the item under an open modal');
-  assert.ok(padModal.closed, 'B reaches through and closes the modal');
+  assert.ok(padModal.ranAction, 'A runs the highlighted palette action (v0.20)');
+  assert.ok(padModal.closed, 'the palette is closed afterwards (B is a no-op on the dashboard)');
   await page.eval(`navigator.getGamepads = window.__realPads; setInputMode('pointer');`);
-  ok('input: an open modal swallows pad input except B (close)');
+  ok('input: the palette keeps focus in its box, A runs the highlighted action');
+
+  // 71b. v0.20 (audit F5, A7): the command palette takes the D-pad and A — Down moves the highlight, A runs it — while
+  //      other modals still swallow everything but B; the player's Sources overlay is pinned in controller mode.
+  const padPal = await page.eval(`(() => {
+    window.__pad = { connected: true, axes: [0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+    window.__realPads = window.__realPads || navigator.getGamepads; navigator.getGamepads = () => [window.__pad];
+    browseQuery = ''; browseTab = 'movie'; showBrowse(); openPalette();
+    const press = (i) => { __pad.buttons[i].pressed = true; pollPads(); __pad.buttons[i].pressed = false; pollPads(); };
+    press(13); // Down
+    const second = (document.querySelector('.palette-row.on') || {}).textContent;
+    press(0);  // A runs the highlighted row ("Search" -> focusBrowseSearch)
+    const closedAndRan = !paletteEl && !!document.activeElement && document.activeElement.classList.contains('browse-search');
+    openHelp(); press(0); const helpStays = !!helpEl; closeHelp();
+    return { second, closedAndRan, helpStays };
+  })()`);
+  assert.strictEqual(padPal.second, 'Search', 'D-pad Down moves the palette highlight to the second action');
+  assert.ok(padPal.closedAndRan, 'A runs the highlighted palette action and closes the palette');
+  assert.ok(padPal.helpStays, 'other modals still swallow A');
+  assert.strictEqual(await page.eval(`(() => { setInputMode('gamepad'); const o = document.getElementById('sources-overlay'); const was = o.hidden; o.hidden = false; const op = getComputedStyle(o).opacity; o.hidden = was; setInputMode('pointer'); return op; })()`), '1', 'the Sources overlay is visible in controller mode without hover');
+  await page.eval(`navigator.getGamepads = window.__realPads; setInputMode('pointer'); document.activeElement && document.activeElement.blur();`);
+  ok('controller: the palette is D-pad/A navigable; help still swallows A; Sources overlay pinned in pad mode');
 
   // 72. open() must actually navigate even when the guest is already sitting on that exact URL. Re-opening
   //     the page you are nominally already on (the YouTube rail button, re-opening a library card) has to

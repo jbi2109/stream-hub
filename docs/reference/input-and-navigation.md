@@ -24,7 +24,7 @@ modal (lightbox → palette → help → What's New → wizard) → person page 
 
 ## Controller (input.js)
 
-Gamepad API polled on rAF (started on `gamepadconnected`). D-pad / left stick (0.5 deadzone) → `padMove` (400 ms hold delay, 110 ms repeat). A = click focused (or seed), B = `goBack`, X = search, Y = preview toggle, LB/RB = page the rail or view, Start = palette. Modals swallow everything except B. Body class `input-gamepad` rings plain `:focus` (script-moved focus is not `:focus-visible`). While the guest has focus the host poll is dead, so `webview-preload.js` polls B/Start itself and main relays them (`guest-pad`), then the host re-seeds focus. One-time hint toast on first connect.
+Gamepad API polled on rAF (started on `gamepadconnected`). D-pad / left stick (0.5 deadzone) → `padMove` (400 ms hold delay, 110 ms repeat). A = click focused (or seed), B = `goBack`, X = search, Y = preview toggle, LB/RB = page the rail or view, Start = palette. Modals swallow everything except B; the palette (v0.20) takes Up/Down/A itself through `paletteEl._nav`. Body class `input-gamepad` rings plain `:focus` (script-moved focus is not `:focus-visible`). While the guest has focus the host poll is dead, so `webview-preload.js` polls B/Start itself and main relays them (`guest-pad`), then the host re-seeds focus. One-time hint toast on first connect.
 
 ## Touch
 

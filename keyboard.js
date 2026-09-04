@@ -75,6 +75,7 @@ function openPalette() {
     }));
   };
   const run = (i) => { const a = shown[i]; closePalette(); if (a) a[1](); };
+  overlay._nav = { move: (d) => { idx = Math.max(0, Math.min(shown.length - 1, idx + d)); draw(); }, run: () => run(idx) }; // v0.20: controller D-pad/A (input.js)
   input.oninput = () => { idx = 0; draw(); };
   input.onkeydown = (e) => {
     if (e.key === 'ArrowDown') { idx = Math.min(idx + 1, shown.length - 1); draw(); e.preventDefault(); }
